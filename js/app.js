@@ -63,7 +63,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='10';
-var BUILD='34';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='35';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -153,7 +153,18 @@ function persist(){
 
 /* ── Helpers ───────────────────────────────────────────────── */
 function person(id){for(var i=0;i<FAMILY.length;i++)if(FAMILY[i].id===id)return FAMILY[i];return null;}
-function trip(){for(var i=0;i<TRIPS.length;i++)if(TRIPS[i].id===S.tripId)return TRIPS[i];return TRIPS[0];}
+function trip(){for(var i=0;i<TRIPS.length;i++)if(TRIPS[i].id===S.tripId)return TRIPS[i];return visibleTrips()[0]||TRIPS[0];}
+/* trips the current persona may see: admins see all, others only their own */
+function visibleTrips(){
+  if(isAdmin())return TRIPS.slice();
+  return TRIPS.filter(function(t){return t.members&&t.members.indexOf(S.persona)>=0;});
+}
+/* keep the active trip pointed at one this persona can actually see */
+function ensureVisibleTrip(){
+  var vt=visibleTrips();if(!vt.length)return;
+  for(var i=0;i<vt.length;i++)if(vt[i].id===S.tripId)return;
+  S.tripId=vt[0].id;
+}
 /* personas assigned to the current trip (drives filters + who-select) */
 function tripMembers(){var t=trip();return (t&&t.members&&t.members.length)?t.members.filter(function(id){return !!person(id);}):ALL_IDS.slice();}
 function whoArr(who){return who==="all"?tripMembers():who;}
@@ -224,45 +235,26 @@ function pillify(t){
   return t;
 }
 function isFlightRow(it){return (it.crit&&it.crit.toLowerCase().indexOf('flight')>=0)||/^(Depart|Arrive)\b/.test(it.x);}
-/* PIN gate for deleting protected bookings (LL / resort / park reservation) */
+/* "Admin" is a persona role. Being signed in as an admin persona grants all
+   admin rights; switching into an admin persona is itself PIN-protected, so the
+   admin's login PIN is effectively the admin PIN — the two are one and the same. */
+function isAdmin(){var p=person(S.persona);return !!(p&&p.admin);}
+/* gate for deleting protected bookings (LL / resort / park reservation) — admins only */
 function pinOK(){
-  var pin=load('dtp_pin','');
-  if(!pin) return confirm('Delete this booking?\n\nTip: set an admin PIN in Settings to protect Lightning Lanes, resort and park reservations from accidental deletion.');
-  var e=prompt('Enter the admin PIN to delete this booking:');
-  if(e==null) return false;
-  if(String(e).trim()===String(pin)) return true;
-  toast('Incorrect PIN'); return false;
+  if(!isAdmin()){toast('Only an admin can delete this — switch to an admin persona first');return false;}
+  return confirm('Delete this booking? This can\'t be undone.');
 }
-/* creator-based delete: your own items delete freely; others need the admin PIN */
+/* creator-based delete: your own items delete freely; anything else needs an admin */
 function ownOK(it){
   if(!it||!it.by||it.by===S.persona) return true;
+  if(isAdmin()) return true;
   var who=person(it.by)?person(it.by).name:'someone else';
-  var pin=load('dtp_pin','');
-  if(!pin){toast('Only '+who+' or an admin can delete this');return false;}
-  var e=prompt('Added by '+who+'. Enter the admin PIN to delete it:');
-  if(e==null)return false;
-  if(String(e).trim()===String(pin))return true;
-  toast('Incorrect PIN');return false;
+  toast('Only '+who+' or an admin can delete this'); return false;
 }
-function setPin(){
-  var cur=load('dtp_pin','');
-  if(cur){var c=prompt('Enter current PIN:');if(c==null)return;if(String(c).trim()!==String(cur)){toast('Incorrect PIN');return;}}
-  var np=prompt('Set a new admin PIN:');if(np==null)return;np=String(np).trim();if(!np){toast('PIN cannot be blank');return;}
-  save('dtp_pin',np);toast('PIN set');renderScreen_inplace2();
-}
-function clearPin(){
-  var cur=load('dtp_pin','');if(!cur)return;
-  var c=prompt('Enter current PIN to remove it:');if(c==null)return;if(String(c).trim()!==String(cur)){toast('Incorrect PIN');return;}
-  try{localStorage.removeItem('dtp_pin');}catch(e){}toast('PIN removed');renderScreen_inplace2();
-}
-/* gate for admin-only areas (managing people). No admin PIN set = open (nothing to protect yet). */
+/* gate for admin-only areas (Settings, managing people) */
 function adminGate(){
-  var pin=load('dtp_pin','');
-  if(!pin) return true;
-  var e=prompt('Managing people is admin-only.\nEnter the admin PIN:');
-  if(e==null) return false;
-  if(String(e).trim()===String(pin)) return true;
-  toast('Incorrect PIN'); return false;
+  if(isAdmin()) return true;
+  toast('Admin only — switch to an admin persona first'); return false;
 }
 
 /* queries — all scoped to the current trip */
@@ -336,18 +328,30 @@ function closeScreen(){var host=document.getElementById('screen-host');var s=hos
 /* persona */
 function setPersona(id){
   var p=person(id);if(!p){closeScreen();return;}
+  /* verify access to a PIN-protected persona */
   if(p.pin&&id!==S.persona){var e=prompt('Enter '+p.name+'\'s PIN:');if(e==null)return;if(String(e).trim()!==String(p.pin)){toast('Incorrect PIN');return;}}
-  S.persona=id;save('dtp_persona',id);toast("You are "+p.name);render();closeScreen();
+  /* first login for this person (no PIN yet): force them to create one */
+  if(!p.pin){
+    var np=prompt('Welcome, '+p.name+'! Create a PIN so only you can log in as you.');
+    if(np==null||!String(np).trim()){toast('A PIN is required to continue');return;}
+    np=String(np).trim();
+    var cf=prompt('Re-enter your PIN to confirm:');
+    if(cf==null||String(cf).trim()!==np){toast('PINs didn\'t match — try again');return;}
+    p.pin=np;save('dtp_family',FAMILY);
+  }
+  S.persona=id;save('dtp_persona',id);ensureVisibleTrip();toast("You are "+p.name);render();closeScreen();
 }
-/* change your OWN persona PIN (no admin needed — it's yours) */
+/* change your OWN persona PIN (entering your current one). Admins reset others in Manage People. */
 function setMyPin(){
   var me=person(S.persona);if(!me)return;
   var has=!!me.pin;
   if(has){var c=prompt('Enter your current PIN:');if(c==null)return;if(String(c).trim()!==String(me.pin)){toast('Incorrect PIN');return;}}
-  var np=prompt(has?'New PIN (leave blank to remove):':'Set a PIN so only you can switch to '+me.name+' (leave blank for none):');
-  if(np==null)return;np=String(np).trim();
+  var np=prompt('Set a new PIN:');
+  if(np==null||!String(np).trim()){toast('A PIN is required');return;}
+  np=String(np).trim();
+  var cf=prompt('Re-enter to confirm:');if(cf==null||String(cf).trim()!==np){toast('PINs didn\'t match');return;}
   me.pin=np;save('dtp_family',FAMILY);
-  toast(np?'Your PIN is set':'Your PIN was removed');renderScreen_inplace2();
+  toast('Your PIN is updated');renderScreen_inplace2();
 }
 /* sign out — forget who you are on this device and return to the chooser */
 function logoutPersona(){
@@ -796,8 +800,9 @@ function renderPlanHub(){
   o+='<div class="hub-section-label">Trip & settings</div>';
   o+='<button class="hub-row" onclick="openScreen({type:\'tripedit\'})"><div class="hub-icon" style="background:#6B4FA0">'+IC.pencil+'</div>'
     +'<div class="hub-main"><div class="hub-title">Edit trip name & dates</div><div class="hub-sub">'+esc(trip().dates)+'</div></div><div class="chev">'+IC.chev+'</div></button>';
-  o+='<button class="hub-row" onclick="openScreen({type:\'settings\'})"><div class="hub-icon" style="background:#1C3A5E">'+IC.gear+'</div>'
-    +'<div class="hub-main"><div class="hub-title">Settings</div><div class="hub-sub">Personas & templates</div></div><div class="chev">'+IC.chev+'</div></button>';
+  if(isAdmin())
+    o+='<button class="hub-row" onclick="openScreen({type:\'settings\'})"><div class="hub-icon" style="background:#1C3A5E">'+IC.gear+'</div>'
+      +'<div class="hub-main"><div class="hub-title">Settings <span style="font-size:11px;font-weight:600;color:#92400E">· Admin</span></div><div class="hub-sub">People & templates</div></div><div class="chev">'+IC.chev+'</div></button>';
   return o;
 }
 function hubRow(r){
@@ -1029,8 +1034,10 @@ function renderSheet(){
   var groups=[['active','Active'],['planning','Planning'],['archived','Archived']];
   var h='<div class="sheet-backdrop" onclick="if(event.target===this)closeSheet()"><div class="sheet">';
   h+='<div class="sheet-grip"></div><div class="sheet-title">Your Trips</div>';
+  var vis=visibleTrips();
+  if(!vis.length) h+='<div class="body-empty" style="text-align:left;padding:6px 2px 4px">No trips yet. '+(isAdmin()?'Create one below.':'Ask an admin to add you to a trip.')+'</div>';
   for(var g=0;g<groups.length;g++){
-    var list=TRIPS.filter(function(t){return t.status===groups[g][0];});
+    var list=vis.filter(function(t){return t.status===groups[g][0];});
     if(!list.length)continue;
     h+='<div class="sheet-seclabel">'+groups[g][1]+'</div>';
     for(var i=0;i<list.length;i++){var t=list[i],on=t.id===S.tripId;
@@ -1357,18 +1364,17 @@ function createTrip(){
   closeScreen();render();
 }
 
-/* Settings */
+/* Settings — admin only */
 function scrSettings(){
-  var hasPin=!!load('dtp_pin','');
-  var body='<div class="hub-section-label" style="margin-left:0">About personas</div>';
-  body+='<div class="body-empty" style="text-align:left;padding:0 2px 14px">Switch who you are, change your own PIN, or log out anytime from the <strong>I am</strong> button in the header — your choice is stored on this device, no login. Everyone can add and edit.</div>';
+  if(!isAdmin()){
+    var b='<div class="body-empty" style="text-align:left;padding:6px 2px">Settings are admin-only. Switch to an admin persona from the <strong>I am</strong> button to manage people and templates.</div>';
+    return screenShell('Settings',b,null,null,'Done');
+  }
+  var body='<div class="hub-section-label" style="margin-left:0">Admin tools</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 14px">You\'re signed in as an admin, so you can manage the whole roster and templates here. Everyone else can still add and edit items, and delete what they create.</div>';
   body+=hubRow(['Templates',IC.suitcase,'#92400E','Packing & to-do masters','templates']);
-  body+=hubRow(['People'+(hasPin?' '+IC.lock:''),IC.home,'#1C3A5E',FAMILY.length+' people','personas']);
-  body+='<div class="body-empty" style="text-align:left;padding:0 2px 14px;font-size:12px">Adding, renaming, removing people and setting their PINs is admin-only'+(hasPin?' — protected by the admin PIN below.':'. Set an admin PIN below to lock it down.')+'</div>';
-  body+='<div class="hub-section-label" style="margin-left:0">Admin PIN</div>';
-  body+='<div class="body-empty" style="text-align:left;padding:0 2px 10px">One PIN guards the things you don\'t want changed by mistake: deleting a Lightning Lane, resort booking or park reservation, deleting a trip, deleting other people\'s items, and managing people above. '+(hasPin?'<strong>A PIN is set.</strong>':'No PIN set yet.')+'</div>';
-  body+='<button class="btn-secondary" onclick="setPin()">'+(hasPin?'Change admin PIN':'Set admin PIN')+'</button>';
-  if(hasPin) body+='<button class="btn-secondary" onclick="clearPin()">Remove PIN</button>';
+  body+=hubRow(['People',IC.home,'#1C3A5E',FAMILY.length+' people','personas']);
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 14px;font-size:12px">Add, rename, remove people, mark who\'s an admin, and reset a forgotten PIN (clear it — they\'ll set a new one next time they log in).</div>';
   body+='<div class="hub-section-label" style="margin-left:0">Device</div>';
   body+='<button class="btn-secondary" onclick="if(confirm(\'Reset all saved data on this device?\')){localStorage.clear();location.reload();}">Reset local data</button>';
   body+='<button class="btn-secondary" onclick="forceUpdate()">Force app update</button>';
@@ -1381,22 +1387,25 @@ function scrSettings(){
    - signed in: switch persona, change your own PIN, or log out */
 function scrPersona(){
   var signedIn=false;try{signedIn=!!localStorage.getItem('dtp_persona');}catch(e){}
-  var mem=tripMembers();
-  var body='<div class="hub-section-label" style="margin-left:0">Who are you on '+esc(trip().name)+'?</div>';
+  var mem=ALL_IDS;
+  var body='<div class="hub-section-label" style="margin-left:0">'+(signedIn?'Switch to':'Who are you?')+'</div>';
   body+='<div class="whoselect" style="margin-bottom:16px">';
   for(var i=0;i<mem.length;i++){var p=person(mem[i]);if(!p)continue;var on=signedIn&&S.persona===p.id;
-    body+='<div class="who-opt'+(on?' on':'')+'" onclick="setPersona(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+(p.pin?' '+IC.lock:'')+(on?'<span class="wcheck" style="display:flex">'+IC.checkw.replace('currentColor','#15803D')+'</span>':'')+'</div>';
+    body+='<div class="who-opt'+(on?' on':'')+'" onclick="setPersona(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+(p.admin?' · Admin':'')+(p.pin?' '+IC.lock:'')+(on?'<span class="wcheck" style="display:flex">'+IC.checkw.replace('currentColor','#15803D')+'</span>':'')+'</div>';
   }
   body+='</div>';
-  body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px">Personalises your packing list, to-dos, and what the family thread highlights. Stored on this device only. A '+IC.lock+' persona needs its PIN to switch into.</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px">Your choice is stored on this device only — it personalises your packing list, to-dos and assignments. First time logging in as someone, you\'ll set a PIN; after that a '+IC.lock+' persona needs that PIN to switch into.</div>';
   if(signedIn){
     var me=person(S.persona);
     body+='<div class="hub-section-label" style="margin-left:0">Your account</div>';
-    body+='<button class="btn-secondary" onclick="setMyPin()">'+((me&&me.pin)?'Change my PIN':'Set my PIN')+'</button>';
+    body+='<button class="btn-secondary" onclick="setMyPin()">Change my PIN</button>';
     body+='<button class="btn-secondary" onclick="logoutPersona()">Log out</button>';
-    body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px">Adding, renaming or removing people is admin-only — find it in <strong>Plan → Settings</strong>.</div>';
+    body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px">'+(isAdmin()?'You\'re an admin — manage people and templates in <strong>Plan → Settings</strong>.':'Forgot your PIN? An admin can reset it in <strong>Settings → People</strong>.')+'</div>';
+    body+='<div class="hub-section-label" style="margin-left:0">Device</div>';
+    body+='<button class="btn-secondary" onclick="forceUpdate()">Force app update</button>';
+    body+='<button class="btn-secondary" onclick="if(confirm(\'Reset all saved data on this device? This wipes everything and starts fresh.\')){localStorage.clear();location.reload();}">Reset local data</button>';
   }
-  return screenShell(signedIn?'Switch Persona':'Welcome',body,null,null,signedIn?'Done':'');
+  return screenShell(signedIn?'Account':'Welcome',body,null,null,signedIn?'Done':'');
 }
 
 /* Manage personas — global add / rename / recolor / delete */
@@ -1414,23 +1423,47 @@ function scrPersonas(){
     body+='<div class="field" style="flex:2;margin:0"><label class="field-label">Name</label><input class="field-input" id="pn-'+p.id+'" value="'+esc(p.name)+'"></div>';
     body+='<div class="field" style="flex:1;margin:0"><label class="field-label">Color</label><select class="field-select" id="pc-'+p.id+'">'+colorOptions(p.color)+'</select></div>';
     body+='</div>';
-    body+='<div class="field" style="margin:8px 0 0"><label class="field-label">PIN to use this persona <span class="opt">(optional)</span></label><input class="field-input" id="pp-'+p.id+'" placeholder="blank = no PIN" value="'+esc(p.pin||'')+'"></div>';
+    var lnk='style="background:none;border:none;color:#1C3A5E;font-weight:600;font-size:13px;cursor:pointer;padding:4px 2px"';
+    body+='<div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;font-size:13px">';
+    body+='<span style="color:#6B7280;display:flex;align-items:center;gap:5px">'+(p.pin?IC.lock+' PIN set':'No PIN — set on first login')+'</span>';
+    body+='<span>'+(p.pin?'<button '+lnk+' onclick="resetPersonaPin(\''+p.id+'\')">Reset PIN</button>':'<button '+lnk+' onclick="setPersonaPin(\''+p.id+'\')">Set PIN</button>')+'</span>';
+    body+='</div>';
     body+='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">';
-    body+=p.admin?'<span class="st-badge st-booked">Admin</span>':'<span></span>';
+    body+='<button '+lnk+' onclick="toggleAdmin(\''+p.id+'\')">'+(p.admin?'★ Admin · tap to remove':'Make admin')+'</button>';
     body+='<button style="color:#B91C1C;font-size:14px;font-weight:600;background:none;border:none;cursor:pointer;padding:4px 2px" onclick="delPersona(\''+p.id+'\')">Remove</button>';
     body+='</div></div>';
   }
   body+='<button class="sheet-new" style="margin:6px 0 0;width:100%" onclick="addPersona()">'+IC.plus+' Add person</button>';
-  body+='<div class="body-empty" style="text-align:left;padding:10px 2px 0">Personas are global — assign them to any trip from the trip editor (tap the trip name in the header). Names and colors update everywhere: filters, assignments and chat.</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:10px 2px 0">Personas are global — assign them to any trip from the trip editor (tap the trip name in the header). <strong>Admins</strong> can manage people, see every trip, and delete any item or booking. To reset a forgotten PIN, tap <strong>Reset PIN</strong> — the person picks a new one next time they log in.</div>';
   return screenShell('Manage People',body,'Save','savePersonas()');
 }
 function capturePersonas(){
   for(var i=0;i<FAMILY.length;i++){
-    var n=document.getElementById('pn-'+FAMILY[i].id),c=document.getElementById('pc-'+FAMILY[i].id),pn=document.getElementById('pp-'+FAMILY[i].id);
+    var n=document.getElementById('pn-'+FAMILY[i].id),c=document.getElementById('pc-'+FAMILY[i].id);
     if(n&&n.value&&n.value.trim())FAMILY[i].name=n.value.trim();
     if(c&&c.value)FAMILY[i].color=c.value;
-    if(pn)FAMILY[i].pin=(typeof pn.value==='string'?pn.value.trim():'');
   }
+}
+/* admin PIN management for other people: reset (clear → they choose next login) or set a specific one */
+function resetPersonaPin(id){
+  capturePersonas();var p=person(id);if(!p)return;
+  if(!confirm('Reset '+p.name+'\'s PIN? They\'ll choose a new one next time they log in.'))return;
+  p.pin='';save('dtp_family',FAMILY);toast(p.name+'\'s PIN was reset');renderScreen_inplace2();
+}
+function setPersonaPin(id){
+  capturePersonas();var p=person(id);if(!p)return;
+  var np=prompt('Set a PIN for '+p.name+':');if(np==null)return;np=String(np).trim();
+  if(!np){toast('PIN cannot be blank');return;}
+  p.pin=np;save('dtp_family',FAMILY);toast(p.name+'\'s PIN set');renderScreen_inplace2();
+}
+function toggleAdmin(id){
+  capturePersonas();var p=person(id);if(!p)return;
+  if(p.admin){
+    var others=FAMILY.filter(function(x){return x.admin&&x.id!==id;});
+    if(!others.length){toast('Keep at least one admin');return;}
+    p.admin=false;
+  }else p.admin=true;
+  save('dtp_family',FAMILY);toast(p.name+(p.admin?' is now an admin':' is no longer an admin'));renderScreen_inplace2();
 }
 function savePersonas(){capturePersonas();save('dtp_family',FAMILY);toast('People updated');closeScreen();render();}
 function addPersona(){
@@ -1448,6 +1481,7 @@ function addPersona(){
 function delPersona(id){
   if(FAMILY.length<=1){toast('Keep at least one person');return;}
   var p=person(id);
+  if(p&&p.admin&&!FAMILY.filter(function(x){return x.admin&&x.id!==id;}).length){toast('Make someone else an admin first');return;}
   if(!confirm('Remove '+(p?p.name:'this person')+'? They\'ll be taken off all trips and items.'))return;
   capturePersonas();
   FAMILY=FAMILY.filter(function(x){return x.id!==id;});
@@ -1905,9 +1939,8 @@ function saveTrip(){
 }
 function delTrip(id){
   if(TRIPS.length<=1){toast('Keep at least one trip');return;}
+  if(!isAdmin()){toast('Only an admin can delete a trip');return;}
   var t=tripById(id);
-  var pin=load('dtp_pin','');
-  if(pin){var e=prompt('Enter the admin PIN to delete this trip:');if(e==null)return;if(String(e).trim()!==String(pin)){toast('Incorrect PIN');return;}}
   if(!confirm('Delete '+(t?t.name:'this trip')+'? Its days and items are removed too. This can\'t be undone.'))return;
   TRIPS=TRIPS.filter(function(x){return x.id!==id;});
   // remove this trip's days and items
@@ -1916,7 +1949,7 @@ function delTrip(id){
   for(var c=CHAT.length-1;c>=0;c--)if(CHAT[c].trip===id)CHAT.splice(c,1);
   try{localStorage.removeItem('dtp_packing_'+id);localStorage.removeItem('dtp_todo_'+id);}catch(e){}
   if(S.tripId===id){S.tripId=TRIPS[0].id;loadLists();S.dayIdx=0;S.open=defOpen();S.filter.clear();}
-  persist();S._members=null;toast('Trip deleted');closeScreen();render();
+  ensureVisibleTrip();persist();S._members=null;toast('Trip deleted');closeScreen();render();
 }
 
 /* ============================================================
@@ -1937,6 +1970,7 @@ function render(){
   renderNav();
 }
 materializeAllDays();
+ensureVisibleTrip();
 loadLists();
 S.open=defOpen();
 render();
