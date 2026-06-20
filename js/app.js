@@ -61,7 +61,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
-var DATA_VERSION='4';
+var DATA_VERSION='5';
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -70,11 +70,13 @@ try{
   }
 }catch(e){}
 
-PACKING = load('dtp_packing', PACKING);
-TODO    = load('dtp_todo', TODO);
+/* keep the seed lists so new trips can start from a template */
+var PACKING_SEED=PACKING, TODO_SEED=TODO;
+
 FAMILY  = load('dtp_family', FAMILY);
 ALL_IDS = FAMILY.map(function(p){return p.id;});
 DAYS    = load('dtp_days', DAYS);
+VISITS  = load('dtp_visits', VISITS);
 DINING  = load('dtp_dining', DINING);
 LLS     = load('dtp_lls', LLS);
 SHOWS   = load('dtp_shows', SHOWS);
@@ -84,9 +86,44 @@ PARKRES = load('dtp_parkres', PARKRES);
 TRIPS   = load('dtp_trips', TRIPS);
 S.persona = load('dtp_persona', S.persona);
 
+/* every planning item belongs to a trip — default seed items to jul26 */
+function tagTrip(coll){for(var i=0;i<coll.length;i++)if(!coll[i].trip)coll[i].trip='jul26';}
+[DAYS,VISITS,DINING,LLS,SHOWS,FLIGHTS,RESORTS,PARKRES].forEach(tagTrip);
+for(var _c=0;_c<CHAT.length;_c++)if(!CHAT[_c].trip)CHAT[_c].trip='jul26';
+
+/* per-trip packing / to-do (PACKING/TODO hold the active trip's lists) */
+function listKey(base){return 'dtp_'+base+'_'+S.tripId;}
+function loadLists(){
+  PACKING=load(listKey('packing'),null)||(S.tripId==='jul26'?PACKING_SEED:{});
+  TODO=load(listKey('todo'),null)||(S.tripId==='jul26'?TODO_SEED:{});
+  ensureLists();
+}
+function ensureLists(){tripMembers().forEach(function(id){if(!PACKING[id])PACKING[id]=[];if(!TODO[id])TODO[id]=[];});}
+function saveLists(){save(listKey('packing'),PACKING);save(listKey('todo'),TODO);}
+
+/* generate day skeletons for any trip that has none, from its start/end */
+function genDays(tid){
+  var t=tripById(tid);if(!t||!t.start||!t.end)return;
+  var s=t.start.split('-'),e=t.end.split('-');
+  var cur=new Date(Date.UTC(+s[0],+s[1]-1,+s[2])),end=new Date(Date.UTC(+e[0],+e[1]-1,+e[2]));
+  var WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  while(cur<=end){
+    var ds=cur.getUTCFullYear()+'-'+('0'+(cur.getUTCMonth()+1)).slice(-2)+'-'+('0'+cur.getUTCDate()).slice(-2);
+    DAYS.push({trip:tid,date:ds,d:String(cur.getUTCDate()),dl:WD[cur.getUTCDay()],badges:[],alert:null,crowd:null,hours:'',visit:'',strategy:'',itin:[]});
+    cur.setUTCDate(cur.getUTCDate()+1);
+  }
+}
+function materializeAllDays(){
+  var changed=false;
+  for(var i=0;i<TRIPS.length;i++){var tid=TRIPS[i].id,has=false;
+    for(var j=0;j<DAYS.length;j++)if(DAYS[j].trip===tid){has=true;break;}
+    if(!has){genDays(tid);changed=true;}}
+  if(changed)save('dtp_days',DAYS);
+}
+
 /* collection savers */
 function persist(){
-  save('dtp_days',DAYS);save('dtp_dining',DINING);save('dtp_lls',LLS);
+  save('dtp_days',DAYS);save('dtp_visits',VISITS);save('dtp_dining',DINING);save('dtp_lls',LLS);
   save('dtp_shows',SHOWS);save('dtp_flights',FLIGHTS);save('dtp_resorts',RESORTS);
   save('dtp_parkres',PARKRES);save('dtp_trips',TRIPS);save('dtp_family',FAMILY);
 }
@@ -97,9 +134,16 @@ function trip(){for(var i=0;i<TRIPS.length;i++)if(TRIPS[i].id===S.tripId)return 
 /* personas assigned to the current trip (drives filters + who-select) */
 function tripMembers(){var t=trip();return (t&&t.members&&t.members.length)?t.members.filter(function(id){return !!person(id);}):ALL_IDS.slice();}
 function whoArr(who){return who==="all"?tripMembers():who;}
-function day(){return DAYS[S.dayIdx];}
-function fmtDay(ds){var d=DAYS_BY_DATE[ds];return d?("Jul "+d.d+" · "+d.dl):ds;}
-var DAYS_BY_DATE={}; for(var _i=0;_i<DAYS.length;_i++)DAYS_BY_DATE[DAYS[_i].date]=DAYS[_i];
+var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function monOf(ds){return MON[parseInt(ds.slice(5,7),10)-1]||'';}
+function tripDays(){return DAYS.filter(function(d){return d.trip===S.tripId;}).sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:0;});}
+function day(){var ds=tripDays();return ds[S.dayIdx]||ds[0]||null;}
+function dayByDate(ds){for(var i=0;i<DAYS.length;i++)if(DAYS[i].trip===S.tripId&&DAYS[i].date===ds)return DAYS[i];return null;}
+function fmtDay(ds){var d=dayByDate(ds);return d?(monOf(ds)+" "+d.d+" · "+d.dl):ds;}
+/* park visits — first-class items that drive each day's park */
+function visitsFor(ds){return VISITS.filter(function(v){return v.trip===S.tripId&&v.day===ds;});}
+function dayPrimaryPark(ds){var vs=visitsFor(ds).filter(function(v){return visible(v.who);});if(!vs.length)vs=visitsFor(ds);return vs.length?vs[0].park:null;}
+function pkOf(ds){var p=dayPrimaryPark(ds);return (p&&PARKS[p])?PARKS[p]:PARKS.trv;}
 
 /* person-filter visibility */
 function visible(who){
@@ -158,13 +202,13 @@ function pillify(t){
 }
 function isFlightRow(it){return (it.crit&&it.crit.toLowerCase().indexOf('flight')>=0)||/^(Depart|Arrive)\b/.test(it.x);}
 
-/* queries */
-function flightsFor(date){return FLIGHTS.filter(function(f){return f.day===date;});}
-function diningFor(date){return DINING.filter(function(d){return d.day===date;});}
-function llFor(date){return LLS.filter(function(l){return l.day===date;});}
-function showsFor(date){return SHOWS.filter(function(s){return s.day===date;});}
-function resortsFor(date){return RESORTS.filter(function(r){return date>=r.checkin&&date<=r.checkout;});}
-function parkResFor(date){return PARKRES.filter(function(p){return p.day===date;});}
+/* queries — all scoped to the current trip */
+function flightsFor(date){return FLIGHTS.filter(function(f){return f.trip===S.tripId&&f.day===date;});}
+function diningFor(date){return DINING.filter(function(d){return d.trip===S.tripId&&d.day===date;});}
+function llFor(date){return LLS.filter(function(l){return l.trip===S.tripId&&l.day===date;});}
+function showsFor(date){return SHOWS.filter(function(s){return s.trip===S.tripId&&s.day===date;});}
+function resortsFor(date){return RESORTS.filter(function(r){return r.trip===S.tripId&&date>=r.checkin&&date<=r.checkout;});}
+function parkResFor(date){return PARKRES.filter(function(p){return p.trip===S.tripId&&p.day===date;});}
 
 /* ── Actions ───────────────────────────────────────────────── */
 function go(tab){S.tab=tab;closeSheet();render();}
@@ -183,7 +227,7 @@ function toggleFilter(id){
 /* sheets */
 function openSheet(def){S.sheet=def;renderOverlay();requestAnimationFrame(function(){var b=document.getElementById('sheet-host').firstChild;if(b)b.classList.add('in');});}
 function closeSheet(){var host=document.getElementById('sheet-host');var b=host&&host.firstChild;if(b){b.classList.remove('in');setTimeout(function(){S.sheet=null;renderOverlay();},240);}else{S.sheet=null;renderOverlay();}}
-function switchTrip(id){S.tripId=id;S.dayIdx=1;S.tab="home";S.open=defOpen();S.filter.clear();closeSheet();toast("Switched to "+trip().name);render();}
+function switchTrip(id){saveLists();S.tripId=id;loadLists();S.dayIdx=0;S.tab="home";S.open=defOpen();S.filter.clear();closeSheet();toast("Switched to "+trip().name);render();}
 
 /* screens (slide-in) */
 function openScreen(def){
@@ -205,8 +249,8 @@ function refreshLists(){
   if(b&&S.screen&&S.screen.type==='lists'){b.innerHTML=listScreenBody(S.screen.which);}
   else render();
 }
-function savePK(){save('dtp_packing',PACKING);}
-function saveTD(){save('dtp_todo',TODO);}
+function savePK(){saveLists();}
+function saveTD(){saveLists();}
 function pkChk(pid,c,i){PACKING[pid][c].items[i].done=!PACKING[pid][c].items[i].done;savePK();refreshLists();}
 function pkInc(pid,c,i){PACKING[pid][c].items[i].qty++;savePK();refreshLists();}
 function pkDec(pid,c,i){var it=PACKING[pid][c].items[i];if(it.qty>0)it.qty--;savePK();refreshLists();}
@@ -241,11 +285,18 @@ function renderHeader(){
 }
 function renderStrip(){
   if(S.tab!=='home')return '';
+  var TD=tripDays();
+  if(!TD.length) return '';
   var h='<div class="strip-wrap"><div class="strip">';
-  for(var i=0;i<DAYS.length;i++){
-    var d=DAYS[i],p=PARKS[d.park],p2=d.park2?PARKS[d.park2]:null;
-    var bar='<div class="p-bar"><span style="background:'+p.color+'"></span>'+(p2?'<span style="background:'+p2.color+'"></span>':'')+'</div>';
-    var code=p.short+(p2?'/'+p2.short:'');
+  for(var i=0;i<TD.length;i++){
+    var d=TD[i],vs=visitsFor(d.date);
+    var bar,code;
+    if(vs.length){
+      bar='<div class="p-bar">';for(var k=0;k<Math.min(vs.length,2);k++){var pp=PARKS[vs[k].park];bar+='<span style="background:'+(pp?pp.color:PARKS.trv.color)+'"></span>';}bar+='</div>';
+      code=vs.slice(0,2).map(function(v){return PARKS[v.park]?PARKS[v.park].short:'?';}).join('/');
+    }else{
+      bar='<div class="p-bar"><span style="background:'+PARKS.trv.color+'"></span></div>';code='—';
+    }
     h+='<div class="dpill'+(i===S.dayIdx?' on':'')+'" onclick="selDay('+i+')">'
       +'<div class="p-day">'+d.dl+'</div><div class="p-date">'+d.d+'</div>'+bar
       +'<div class="p-pk">'+code+'</div></div>';
@@ -276,25 +327,30 @@ function cardHead(key,bg,pkColor,icon,title,sub,planning,addAction){
 }
 
 function renderAgenda(){
-  var d=day(),pk=PARKS[d.park],p2=d.park2?PARKS[d.park2]:null;
+  var d=day();
+  if(!d) return '<div class="body-empty" style="margin-top:30px">No days for this trip yet.<br><br>Set the trip\'s start and end dates (tap the trip name in the header → edit) and days will be generated automatically.</div>';
+  var vs=visitsFor(d.date).filter(function(v){return visible(v.who);});
+  var pk=vs.length?(PARKS[vs[0].park]||PARKS.trv):PARKS.trv;
+  var p2=vs.length>1?(PARKS[vs[1].park]||null):null;
+  var WDF={Mon:'Monday',Tue:'Tuesday',Wed:'Wednesday',Thu:'Thursday',Fri:'Friday',Sat:'Saturday',Sun:'Sunday'};
   var o='';
 
   /* Hero */
   o+='<div class="hero fadein">';
   o+='<div class="hero-body" style="background:'+pk.color+'">';
-  o+='<div class="h-date">Jul '+d.d+' · '+({Mon:'Monday',Tue:'Tuesday',Wed:'Wednesday',Thu:'Thursday',Fri:'Friday',Sat:'Saturday',Sun:'Sunday'}[d.dl])+'</div>';
+  o+='<div class="h-date">'+monOf(d.date)+' '+d.d+' · '+(WDF[d.dl]||d.dl)+'</div>';
   o+='<div class="h-park">'+pk.name+'</div>';
   if(p2) o+='<div class="h-park2"><span class="p2dot" style="background:'+p2.color+'"></span>then '+p2.name+' · evening</div>';
-  o+='<div class="h-resort">'+esc(d.visit)+'</div>';
+  if(d.visit) o+='<div class="h-resort">'+esc(d.visit)+'</div>';
   o+='<div class="h-badges">';
-  for(var b=0;b<d.badges.length;b++) o+='<span class="badge">'+esc(d.badges[b])+'</span>';
+  for(var b=0;b<(d.badges||[]).length;b++) o+='<span class="badge">'+esc(d.badges[b])+'</span>';
   o+='</div></div>';
   if(d.alert) o+='<div class="hero-alert">'+IC.warn+'<div class="hero-alert-txt">'+esc(d.alert)+'</div></div>';
   o+='</div>';
 
   /* Info bar */
   o+='<div class="info-bar">';
-  o+='<div class="ib-cell"><div class="ib-lbl">Hours</div><div class="ib-val">'+esc(d.hours)+'</div></div>';
+  o+='<div class="ib-cell"><div class="ib-lbl">Hours</div><div class="ib-val">'+esc(d.hours||'—')+'</div></div>';
   o+='<div class="ib-cell"><div class="ib-lbl">Crowd</div><div class="ib-val">'+crowdPill(d.crowd)+'</div></div>';
   o+='<div class="ib-cell"><div class="ib-lbl">Park Res.</div><div class="ib-val">';
   var prs=parkResFor(d.date).filter(function(p){return visible(p.who);});
@@ -312,7 +368,7 @@ function renderAgenda(){
 
   /* Flights */
   var flts=flightsFor(d.date).filter(function(f){return visible(f.who);});
-  if(flts.length||d.date==="2026-07-14"||d.date==="2026-07-19") o+=flightCard(flts,d);
+  o+=flightCard(flts,d);
 
   /* Day Plan */
   o+=dayPlanCard(d,pk);
@@ -340,14 +396,14 @@ function resortCard(r,date){
   var flag = date===r.checkin?'<span class="resort-flag flag-in">'+IC.check+' Check-in today</span>'
            : date===r.checkout?'<span class="resort-flag flag-out">'+IC.warn+' Check-out today</span>':'';
   var o='<div class="card'+(isPlanningStatus(r.status)?' planning':'')+'">';
-  o+=cardHead(key,'var(--hd-resort)',PARKS[day().park].color,IC.bed,'Resort',r.name,isPlanningStatus(r.status));
+  o+=cardHead(key,'var(--hd-resort)',pkOf(date).color,IC.bed,'Resort',r.name,isPlanningStatus(r.status));
   if(S.open[key]){
     o+='<div class="card-body"><div class="resort-body">';
     o+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">';
     o+='<div><div class="resort-name">'+esc(r.name)+'</div><div class="resort-room">'+esc(r.room)+'</div></div>';
     o+='<div class="row-status" style="display:flex;align-items:center;gap:8px">'+statusBadge(r.status)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280" onclick="openScreen({type:\'resortedit\',edit:\''+r.id+'\'})">'+IC.pencil+'</button></div></div>';
-    o+='<div class="resort-dates"><div class="rd-cell"><div class="rd-lbl">Check-in</div><div class="rd-day">Jul '+r.checkin.slice(8)+'</div><div class="rd-sub">'+fmtDay(r.checkin).split(' · ')[1]+' · 4:00 PM</div></div>';
-    o+='<div class="rd-cell"><div class="rd-lbl">Check-out</div><div class="rd-day">Jul '+r.checkout.slice(8)+'</div><div class="rd-sub">'+fmtDay(r.checkout).split(' · ')[1]+' · 11:00 AM</div></div></div>';
+    o+='<div class="resort-dates"><div class="rd-cell"><div class="rd-lbl">Check-in</div><div class="rd-day">'+monOf(r.checkin)+' '+(+r.checkin.slice(8))+'</div><div class="rd-sub">'+(fmtDay(r.checkin).split(' · ')[1]||'')+' · 4:00 PM</div></div>';
+    o+='<div class="rd-cell"><div class="rd-lbl">Check-out</div><div class="rd-day">'+monOf(r.checkout)+' '+(+r.checkout.slice(8))+'</div><div class="rd-sub">'+(fmtDay(r.checkout).split(' · ')[1]||'')+' · 11:00 AM</div></div></div>';
     o+='<div class="resort-conf">Confirmation #'+esc(r.conf)+'</div>';
     o+=whoChips(r.who);
     if(flag) o+=flag;
@@ -358,7 +414,7 @@ function resortCard(r,date){
 }
 
 function flightCard(flts,d){
-  var key='flight', pk=PARKS[d.park];
+  var key='flight', pk=pkOf(d.date);
   var allPlanning=flts.length>0&&flts.every(function(f){return isPlanningStatus(f.status);});
   var sub=flts.length?(flts.length+' journey'+(flts.length>1?'s':'')):'None yet';
   var o='<div class="card'+(allPlanning?' planning':'')+'">';
@@ -538,19 +594,22 @@ function showsCard(sh,pk,date){
    ============================================================ */
 function renderPlanHub(){
   var o='<div class="pg-title">Plan</div><div class="pg-sub">Build out every part of '+esc(trip().name)+'.</div>';
+  var tid=S.tripId;
+  function cnt(coll){var n=0;for(var i=0;i<coll.length;i++)if(coll[i].trip===tid)n++;return n;}
+  var nMem=tripMembers().length;
   var rows=[
-    ['Flights',IC.plane,'var(--hd-flight)',FLIGHTS.length+' journeys','addflight'],
-    ['Dining',IC.fork,'var(--hd-din)',DINING.length+' reservations','dining'],
-    ['Lightning Lanes',IC.bolt,'var(--hd-ll)',LLS.length+' rides','ll'],
-    ['Resort',IC.bed,'var(--hd-resort)',RESORTS.length+' stays (split)','resort'],
-    ['Park Reservations',IC.ticket,'#0F5F73',PARKRES.length+' confirmed','parkres'],
-    ['Park Visits',IC.map,'#3B7549','6 days mapped','visits']
+    ['Flights',IC.plane,'var(--hd-flight)',cnt(FLIGHTS)+' journeys','addflight'],
+    ['Dining',IC.fork,'var(--hd-din)',cnt(DINING)+' reservations','dining'],
+    ['Lightning Lanes',IC.bolt,'var(--hd-ll)',cnt(LLS)+' rides','ll'],
+    ['Resort',IC.bed,'var(--hd-resort)',cnt(RESORTS)+' stays','resort'],
+    ['Park Reservations',IC.ticket,'#0F5F73',cnt(PARKRES)+' reservations','parkres'],
+    ['Park Visits',IC.map,'#3B7549',cnt(VISITS)+' visits','visits']
   ];
   o+='<div class="hub-section-label">Trip components</div>';
   for(var i=0;i<rows.length;i++) o+=hubRow(rows[i]);
   o+='<div class="hub-section-label">Per-person lists</div>';
-  o+=hubRow(['Packing',IC.suitcase,'#92400E','5 lists','packing']);
-  o+=hubRow(['To Do',IC.checks,'#166534','5 lists','todo']);
+  o+=hubRow(['Packing',IC.suitcase,'#92400E',nMem+' lists','packing']);
+  o+=hubRow(['To Do',IC.checks,'#166534',nMem+' lists','todo']);
   o+='<div class="hub-section-label">Get started fast</div>';
   o+='<button class="hub-row" onclick="openScreen({type:\'import\'})"><div class="hub-icon" style="background:#1E40AF">'+IC.sparkles+'</div>'
     +'<div class="hub-main"><div class="hub-title">AI Import</div><div class="hub-sub">Pull details from emails, PDFs & spreadsheets</div></div><div class="chev">'+IC.chev+'</div></button>';
@@ -594,25 +653,25 @@ function renderOverview(){
   return o;
 }
 function dayHd(date){
-  var d=DAYS_BY_DATE[date],pk=PARKS[d.park];
-  return '<div class="day-hd" style="background:'+pk.color+'"><div class="day-hd-name">'+pk.name+'</div><div class="day-hd-date">Jul '+d.d+' · '+d.dl+'</div></div>';
+  var d=dayByDate(date),pk=pkOf(date);
+  return '<div class="day-hd" style="background:'+pk.color+'"><div class="day-hd-name">'+pk.name+'</div><div class="day-hd-date">'+monOf(date)+' '+(d?d.d:(+date.slice(8)))+(d?' · '+d.dl:'')+'</div></div>';
 }
 function ovDining(){
-  var o='',any=false;
-  for(var i=0;i<DAYS.length;i++){
-    var din=diningFor(DAYS[i].date).filter(function(x){return visible(x.who);});
+  var o='',any=false,TD=tripDays();
+  for(var i=0;i<TD.length;i++){
+    var din=diningFor(TD[i].date).filter(function(x){return visible(x.who);});
     if(!din.length)continue;any=true;
-    o+=dayHd(DAYS[i].date);
+    o+=dayHd(TD[i].date);
     for(var j=0;j<din.length;j++){o+='<div class="ov-card'+(isPlanningStatus(din[j].status)?' planning':'')+'">'+diningRow(din[j])+'</div>';}
   }
   return any?o:'<div class="body-empty">No dining for the selected people.</div>';
 }
 function ovParkRes(){
-  var o='',any=false;
-  for(var i=0;i<DAYS.length;i++){
-    var prl=parkResFor(DAYS[i].date).filter(function(p){return visible(p.who);});
+  var o='',any=false,TD=tripDays();
+  for(var i=0;i<TD.length;i++){
+    var prl=parkResFor(TD[i].date).filter(function(p){return visible(p.who);});
     if(!prl.length)continue;any=true;
-    o+=dayHd(DAYS[i].date);
+    o+=dayHd(TD[i].date);
     o+='<div class="ov-card">';
     for(var j=0;j<prl.length;j++){var pr=prl[j],ppk=PARKS[pr.park];
       o+='<div class="din-row"><span style="width:12px;height:12px;border-radius:50%;background:'+(ppk?ppk.color:'#999')+';flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name" style="color:'+(ppk?ppk.color:'#333')+'">'+(ppk?esc(ppk.name):esc(pr.park))+'</div>'+(pr.who!=='all'?whoChips(pr.who):'')+'</div>'+statusBadge(pr.status)+'</div>';
@@ -622,24 +681,27 @@ function ovParkRes(){
   return any?o:'<div class="body-empty">No park reservations'+(S.filter.size?' for the selected people':'')+'. These days are Park Hopper.</div>';
 }
 function ovResort(){
+  var rs=RESORTS.filter(function(r){return r.trip===S.tripId&&visible(r.who);});
+  if(!rs.length)return '<div class="body-empty">No resort stays'+(S.filter.size?' for the selected people':'')+' yet.</div>';
+  rs.sort(function(a,b){return a.checkin<b.checkin?-1:1;});
   var o='<div class="ov-card"><div class="timeline">';
-  for(var i=0;i<RESORTS.length;i++){var r=RESORTS[i];
-    o+='<div class="tl-stay"><div class="tl-bar" style="background:'+(i===0?'#8C9BAA':PARKS.ep.color)+'"></div>';
+  for(var i=0;i<rs.length;i++){var r=rs[i];
+    var nights=Math.max(0,Math.round((Date.parse(r.checkout)-Date.parse(r.checkin))/86400000));
+    o+='<div class="tl-stay"><div class="tl-bar" style="background:'+PALETTE[i%PALETTE.length][0]+'"></div>';
     o+='<div style="flex:1"><div style="display:flex;justify-content:space-between;gap:8px"><div class="resort-name" style="font-size:17px">'+esc(r.name)+'</div>'+statusBadge(r.status)+'</div>';
     o+='<div class="resort-room">'+esc(r.room)+'</div>';
-    o+='<div style="font-size:14px;color:var(--ink);font-weight:600;margin-top:6px">Jul '+r.checkin.slice(8)+' → Jul '+r.checkout.slice(8)+' · '+(parseInt(r.checkout.slice(8))-parseInt(r.checkin.slice(8)))+' nights</div>';
+    o+='<div style="font-size:14px;color:var(--ink);font-weight:600;margin-top:6px">'+monOf(r.checkin)+' '+(+r.checkin.slice(8))+' → '+monOf(r.checkout)+' '+(+r.checkout.slice(8))+' · '+nights+' night'+(nights===1?'':'s')+'</div>';
     o+='<div class="resort-conf">#'+esc(r.conf)+'</div></div></div>';
   }
   o+='</div></div>';
-  o+='<div class="body-empty" style="text-align:left;padding:6px 4px">Split stay — Pop Century for the first two nights, then moving to the BoardWalk Villas (1-BR) for the rest of the trip.</div>';
   return o;
 }
 function ovLL(){
-  var o='';
-  for(var i=0;i<DAYS.length;i++){
-    var lls=llFor(DAYS[i].date).filter(function(x){return visible(x.who);});
+  var o='',TD=tripDays();
+  for(var i=0;i<TD.length;i++){
+    var lls=llFor(TD[i].date).filter(function(x){return visible(x.who);});
     if(!lls.length)continue;
-    o+=dayHd(DAYS[i].date);
+    o+=dayHd(TD[i].date);
     o+='<div class="ov-card">';
     o+='<div class="ll-bookdate">'+IC.bolt+' Book '+esc(lls[0].bookDate)+'</div>';
     for(var j=0;j<lls.length;j++){var l=lls[j];
@@ -651,12 +713,12 @@ function ovLL(){
   return o||'<div class="body-empty">No Lightning Lanes for the selected people.</div>';
 }
 function ovFlights(){
-  var o='',any=false;
-  for(var i=0;i<DAYS.length;i++){
-    var flts=flightsFor(DAYS[i].date).filter(function(x){return visible(x.who);});
+  var o='',any=false,TD=tripDays();
+  for(var i=0;i<TD.length;i++){
+    var flts=flightsFor(TD[i].date).filter(function(x){return visible(x.who);});
     if(!flts.length)continue;any=true;
-    o+=dayHd(DAYS[i].date);
-    for(var j=0;j<flts.length;j++) o+='<div class="ov-card'+(isPlanningStatus(flts[j].status)?' planning':'')+'">'+flightJourney(flts[j],DAYS_BY_DATE[DAYS[i].date])+'</div>';
+    o+=dayHd(TD[i].date);
+    for(var j=0;j<flts.length;j++) o+='<div class="ov-card'+(isPlanningStatus(flts[j].status)?' planning':'')+'">'+flightJourney(flts[j],dayByDate(TD[i].date))+'</div>';
   }
   return any?o:'<div class="body-empty">No flights for the selected people.</div>';
 }
@@ -669,8 +731,10 @@ function renderChat(){
   var h='<div id="chatwrap">';
   h+='<div class="chat-asof">Family thread · '+esc(trip().name)+'</div>';
   var lastDay=null;
-  for(var i=0;i<CHAT.length;i++){
-    var m=CHAT[i],p=person(m.from),mine=m.from===me;
+  var msgs=CHAT.filter(function(m){return m.trip===S.tripId;});
+  if(!msgs.length) h+='<div class="body-empty" style="margin-top:20px">No messages yet for this trip.</div>';
+  for(var i=0;i<msgs.length;i++){
+    var m=msgs[i],p=person(m.from),mine=m.from===me;
     if(m.day&&m.day!==lastDay){lastDay=m.day;h+='<div class="chat-day"><span>'+fmtDay(m.day)+'</span></div>';}
     h+='<div class="msg'+(mine?' me':'')+'">';
     h+='<div class="msg-av" style="background:'+p.color+'">'+p.name[0]+'</div>';
@@ -689,7 +753,7 @@ function renderChat(){
 }
 function refIcon(t){var i=t==='dining'?IC.fork:t==='flight'?IC.planexs:t==='show'?IC.star:IC.route;return '<span style="display:flex">'+i+'</span>';}
 function sendChat(){var e=document.getElementById('chat-inp');if(!e||!e.value.trim())return;
-  CHAT.push({from:S.persona,text:e.value.trim(),time:'Now'});render();
+  CHAT.push({from:S.persona,text:e.value.trim(),time:'Now',trip:S.tripId});render();
   setTimeout(function(){var w=document.getElementById('chatwrap');if(w)window.scrollTo(0,document.body.scrollHeight);},30);
 }
 
@@ -829,6 +893,7 @@ function renderScreen(){
   if(t==='templates') return scrTemplates();
   if(t==='dayedit')   return scrDayEdit();
   if(t==='predit')    return scrPREdit();
+  if(t==='visedit')   return scrVisitEdit();
   if(t==='stopedit')  return scrStopEdit();
   if(t==='showedit')  return scrShowEdit();
   if(t==='resortedit')return scrResortEdit();
@@ -862,7 +927,7 @@ function toggleWho(id){if(S._who.has(id))S._who.delete(id);else S._who.add(id);
 }
 function renderScreen_inplace(){var host=document.getElementById('screen-host');host.innerHTML=renderScreen();var s=host.firstChild;if(s)s.classList.add('in');}
 
-function dayOptions(sel){var h='';for(var i=0;i<DAYS.length;i++){var d=DAYS[i];h+='<option value="'+d.date+'"'+(d.date===sel?' selected':'')+'>Jul '+d.d+' · '+d.dl+' · '+PARKS[d.park].name+'</option>';}return h;}
+function dayOptions(sel){var h='',TD=tripDays();for(var i=0;i<TD.length;i++){var d=TD[i];var vsd=visitsFor(d.date);var pp=vsd.length?vsd[0].park:null;var lbl=(pp&&PARKS[pp])?PARKS[pp].name:(d.visit||'—');h+='<option value="'+d.date+'"'+(d.date===sel?' selected':'')+'>'+monOf(d.date)+' '+d.d+' · '+d.dl+' · '+esc(lbl)+'</option>';}return h;}
 
 /* Add Flight (with connecting leg) */
 function scrAddFlight(){
@@ -909,7 +974,7 @@ function saveFlight(){
       depApt:ap,depCity:ap,depTime:val('ff-l'+i+'-depTime'),depDate:dy,
       arrApt:aap,arrCity:aap,arrTime:val('ff-l'+i+'-arrTime'),arrDate:dy});
   }
-  var rec=edit||{id:'f'+Date.now()};
+  var rec=edit||{id:'f'+Date.now(),trip:S.tripId};
   rec.label=val('ff-label')||'Flight';rec.day=dy;rec.who=whoVal();
   rec.status=S._formStatus.ff||'planning';rec.legs=legs;
   if(!edit)FLIGHTS.push(rec);
@@ -947,9 +1012,9 @@ function saveDining(){
   var nm=val('dd-name');
   if(!nm){toast('Add a restaurant name');return;}
   var dy=val('dd-day')||S.screen.day||'2026-07-15';
-  var rec=edit||{id:'d'+Date.now()};
+  var rec=edit||{id:'d'+Date.now(),trip:S.tripId};
   rec.day=dy;rec.meal=val('dd-meal')||'Dinner';rec.name=nm;rec.time=val('dd-time')||'TBD';
-  rec.loc=S._formLoc||'in';rec.park=(S._formLoc==='in'&&DAYS_BY_DATE[dy])?DAYS_BY_DATE[dy].park:null;
+  rec.loc=S._formLoc||'in';rec.park=(S._formLoc==='in')?dayPrimaryPark(dy):null;
   rec.status=S._formStatus.dd||'want';rec.conf=val('dd-conf')||'';rec.who=whoVal();
   if(!edit)DINING.push(rec);
   save('dtp_dining',DINING);S._who=null;toast('Dining saved');closeScreen();render();
@@ -1004,10 +1069,10 @@ function saveLL(){
   var ride=val('ll-ride');
   if(!ride){toast('Add a ride name');return;}
   var dy=val('ll-day')||S.screen.day;
-  var rec=edit||{id:'ll'+Date.now(),status:'planning',bookedTime:'',conf:'',bookDate:''};
-  rec.day=dy;rec.park=DAYS_BY_DATE[dy]?DAYS_BY_DATE[dy].park:null;rec.ride=ride;
+  var rec=edit||{id:'ll'+Date.now(),trip:S.tripId,status:'planning',bookedTime:'',conf:'',bookDate:''};
+  rec.day=dy;rec.park=dayPrimaryPark(dy);rec.ride=ride;
   rec.tier=S._formTier||'sp';rec.window=val('ll-window')||'~TBD';rec.who=whoVal();
-  if(!rec.bookDate)rec.bookDate='Jul '+dy.slice(8)+' @ 7:00 AM';
+  if(!rec.bookDate)rec.bookDate=monOf(dy)+' '+(+dy.slice(8))+' @ 7:00 AM';
   if(!edit)LLS.push(rec);
   save('dtp_lls',LLS);S._who=null;toast('Ride saved');closeScreen();render();
 }
@@ -1059,7 +1124,8 @@ function reviewItem(kind,type,val,extra){
 function scrNewTrip(){
   var body='';
   body+='<div class="field"><label class="field-label">Trip name</label><input class="field-input" id="nt-name" placeholder="e.g. Thanksgiving 2026"></div>';
-  body+='<div class="field"><label class="field-label">Dates</label><input class="field-input" id="nt-dates" placeholder="Nov 24 – 29, 2026"></div>';
+  body+='<div class="field-row"><div class="field"><label class="field-label">Start date</label><input class="field-input" type="date" id="nt-start"></div>';
+  body+='<div class="field"><label class="field-label">End date</label><input class="field-input" type="date" id="nt-end"></div></div>';
   body+=memberSelectField(ALL_IDS);
   body+='<div class="hub-section-label" style="margin-left:0">Start from your template?</div>';
   body+=tmplCard('mine','My template','Each person\'s packing & to-do pre-loaded',true);
@@ -1077,14 +1143,19 @@ function tmplCard(id,title,sub,people){
 }
 function createTrip(){
   var nm=val('nt-name')||'New Trip';
-  var dt=val('nt-dates')||'Dates TBD';
+  var start=val('nt-start'),end=val('nt-end');
   var mem=S._members?ALL_IDS.filter(function(id){return S._members.has(id);}):ALL_IDS.slice();
   if(!mem.length)mem=ALL_IDS.slice();
   var col=PALETTE[TRIPS.length%PALETTE.length][0];
   var id='t'+Date.now();
-  TRIPS.push({id:id,name:nm,sub:'Walt Disney World',status:'planning',start:'',end:'',dates:dt,color:col,members:mem});
-  save('dtp_trips',TRIPS);S._members=null;
-  toast('Trip created from '+(S.newTmpl==='mine'?'your template':'blank'));
+  var dates=(start&&end)?(monOf(start)+' '+(+start.slice(8))+' – '+monOf(end)+' '+(+end.slice(8))+', '+start.slice(0,4)):'Dates TBD';
+  TRIPS.push({id:id,name:nm,sub:'Walt Disney World',status:'planning',start:start||'',end:end||'',dates:dates,color:col,members:mem});
+  genDays(id);
+  var np={},nt={};
+  mem.forEach(function(pid){np[pid]=(S.newTmpl==='mine'&&PACKING_SEED[pid])?JSON.parse(JSON.stringify(PACKING_SEED[pid])):[];nt[pid]=(S.newTmpl==='mine'&&TODO_SEED[pid])?JSON.parse(JSON.stringify(TODO_SEED[pid])):[];});
+  save('dtp_packing_'+id,np);save('dtp_todo_'+id,nt);
+  save('dtp_trips',TRIPS);save('dtp_days',DAYS);S._members=null;
+  toast('Trip created'+(S.newTmpl==='mine'?' from your template':''));
   closeScreen();render();
 }
 
@@ -1154,7 +1225,7 @@ function addPersona(){
   FAMILY.push({id:id,name:'New Person',color:col});
   ALL_IDS=FAMILY.map(function(p){return p.id;});
   PACKING[id]=[];TODO[id]=[];
-  save('dtp_family',FAMILY);save('dtp_packing',PACKING);save('dtp_todo',TODO);
+  save('dtp_family',FAMILY);saveLists();
   renderScreen_inplace2();
 }
 function delPersona(id){
@@ -1171,7 +1242,9 @@ function delPersona(id){
   });
   if(S.persona===id){S.persona=FAMILY[0].id;save('dtp_persona',S.persona);}
   S.filter.delete(id);
-  persist();save('dtp_packing',PACKING);save('dtp_todo',TODO);
+  // pull from park-visit assignments too
+  VISITS.forEach(function(v){if(Array.isArray(v.who)){v.who=v.who.filter(function(m){return m!==id;});if(!v.who.length)v.who='all';}});
+  persist();saveLists();
   renderScreen_inplace2();
 }
 
@@ -1216,46 +1289,52 @@ function scrSection(){
     parkres:['Park Reservations',IC.ticket,'#0F5F73'], visits:['Park Visits',IC.map,'#3B7549']
   };
   var m=map[sec]||['Section',IC.route,'var(--ink)'];
-  var body='';
+  var body='',TD=tripDays(),dft=(TD[1]||TD[0]||{date:''}).date;
   if(sec==='dining'){
-    for(var i=0;i<DAYS.length;i++){var din=diningFor(DAYS[i].date);if(!din.length)continue;
-      body+=dayHd(DAYS[i].date);for(var j=0;j<din.length;j++)body+='<div class="ov-card'+(isPlanningStatus(din[j].status)?' planning':'')+'">'+diningRow(din[j])+'</div>';}
-    body+='<button class="btn-primary" onclick="openScreen({type:\'adddining\',day:\'2026-07-15\'})">'+'Add dining</button>';
+    for(var i=0;i<TD.length;i++){var din=diningFor(TD[i].date);if(!din.length)continue;
+      body+=dayHd(TD[i].date);for(var j=0;j<din.length;j++)body+='<div class="ov-card'+(isPlanningStatus(din[j].status)?' planning':'')+'">'+diningRow(din[j])+'</div>';}
+    body+='<button class="btn-primary" onclick="openScreen({type:\'adddining\',day:\''+dft+'\'})">Add dining</button>';
   }else if(sec==='addflight'){
-    for(var i2=0;i2<DAYS.length;i2++){var fl=flightsFor(DAYS[i2].date);if(!fl.length)continue;
-      body+=dayHd(DAYS[i2].date);for(var j2=0;j2<fl.length;j2++)body+='<div class="ov-card'+(isPlanningStatus(fl[j2].status)?' planning':'')+'">'+flightJourney(fl[j2],DAYS_BY_DATE[DAYS[i2].date])+'</div>';}
-    body+='<button class="btn-primary" onclick="openScreen({type:\'addflight\',day:\'2026-07-14\'})">Add flight</button>';
+    for(var i2=0;i2<TD.length;i2++){var fl=flightsFor(TD[i2].date);if(!fl.length)continue;
+      body+=dayHd(TD[i2].date);for(var j2=0;j2<fl.length;j2++)body+='<div class="ov-card'+(isPlanningStatus(fl[j2].status)?' planning':'')+'">'+flightJourney(fl[j2],dayByDate(TD[i2].date))+'</div>';}
+    body+='<button class="btn-primary" onclick="openScreen({type:\'addflight\',day:\''+((TD[0]||{date:''}).date)+'\'})">Add flight</button>';
   }else if(sec==='ll'){
-    body=ovLL();body+='<button class="btn-primary" onclick="openScreen({type:\'addll\',day:\'2026-07-16\'})">Add ride</button>';
+    body=ovLL();body+='<button class="btn-primary" onclick="openScreen({type:\'addll\',day:\''+dft+'\'})">Add ride</button>';
   }else if(sec==='resort'){
-    for(var ir=0;ir<RESORTS.length;ir++){var rr=RESORTS[ir];
-      body+='<div class="ov-card'+(isPlanningStatus(rr.status)?' planning':'')+'"><div class="din-row"><div style="flex:1"><div class="din-name">'+esc(rr.name)+'</div><div class="din-time">'+esc(rr.room)+' · Jul '+rr.checkin.slice(8)+' → Jul '+rr.checkout.slice(8)+'</div></div>'
+    var rsl=RESORTS.filter(function(r){return r.trip===S.tripId;});
+    for(var ir=0;ir<rsl.length;ir++){var rr=rsl[ir];
+      body+='<div class="ov-card'+(isPlanningStatus(rr.status)?' planning':'')+'"><div class="din-row"><div style="flex:1"><div class="din-name">'+esc(rr.name)+'</div><div class="din-time">'+esc(rr.room)+' · '+monOf(rr.checkin)+' '+(+rr.checkin.slice(8))+' → '+monOf(rr.checkout)+' '+(+rr.checkout.slice(8))+'</div></div>'
         +statusBadge(rr.status)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'resortedit\',edit:\''+rr.id+'\'})">'+IC.pencil+'</button></div></div>';
     }
+    if(!rsl.length) body+='<div class="body-empty">No resort stays yet.</div>';
     body+='<button class="btn-primary" onclick="openScreen({type:\'resortedit\'})">Add resort stay</button>';
   }else if(sec==='parkres'){
     var anyPR=false;
-    for(var ip=0;ip<DAYS.length;ip++){var dp=DAYS[ip];var prl=parkResFor(dp.date);if(!prl.length)continue;anyPR=true;
+    for(var ip=0;ip<TD.length;ip++){var dp=TD[ip];var prl=parkResFor(dp.date);if(!prl.length)continue;anyPR=true;
       body+=dayHd(dp.date);
       for(var pj=0;pj<prl.length;pj++){var prx=prl[pj],ppk=PARKS[prx.park];
         body+='<div class="ov-card'+(isPlanningStatus(prx.status)?' planning':'')+'"><div class="din-row"><span style="background:'+(ppk?ppk.color:'#999')+';width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name">'+(ppk?esc(ppk.name):esc(prx.park))+'</div>'+(prx.who!=='all'?whoChips(prx.who):'<div class="din-time">Everyone</div>')+'</div>'+statusBadge(prx.status)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'predit\',edit:\''+prx.id+'\',day:\''+prx.day+'\'})">'+IC.pencil+'</button></div></div>';
       }
     }
     if(!anyPR) body+='<div class="body-empty">No park reservations yet.</div>';
-    body+='<button class="btn-primary" onclick="openScreen({type:\'predit\',day:\''+DAYS[1].date+'\'})">Add park reservation</button>';
+    body+='<button class="btn-primary" onclick="openScreen({type:\'predit\',day:\''+dft+'\'})">Add park reservation</button>';
   }else if(sec==='visits'){
-    for(var i3=0;i3<DAYS.length;i3++){var d=DAYS[i3];
-      body+='<div class="ov-card"><div class="din-row" onclick="openScreen({type:\'dayedit\',day:\''+d.date+'\'})" style="cursor:pointer"><div style="flex:1"><div class="din-name">Jul '+d.d+' · '+d.dl+'</div><div class="din-time">'+esc(d.visit)+'</div></div>'
-        +'<span class="inpark-badge" style="background:'+PARKS[d.park].color+'">'+PARKS[d.park].short+'</span>'+(d.park2?'<span class="inpark-badge" style="background:'+PARKS[d.park2].color+';margin-left:4px">'+PARKS[d.park2].short+'</span>':'')
-        +'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px">'+IC.pencil+'</button></div></div>';
+    var anyV=false;
+    for(var i3=0;i3<TD.length;i3++){var dvs=visitsFor(TD[i3].date);if(!dvs.length)continue;anyV=true;
+      body+=dayHd(TD[i3].date);
+      for(var vj=0;vj<dvs.length;vj++){var vv=dvs[vj],vpk=PARKS[vv.park];
+        body+='<div class="ov-card"><div class="din-row"><span style="background:'+(vpk?vpk.color:'#999')+';width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name">'+(vpk?esc(vpk.name):esc(vv.park))+'</div>'+(vv.who!=='all'?whoChips(vv.who):'<div class="din-time">Everyone</div>')+'</div>'+(vj===0?'<span class="st-badge st-booked">Primary</span>':'<span class="st-badge st-todo">Hopper</span>')+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'visedit\',edit:\''+vv.id+'\',day:\''+vv.day+'\'})">'+IC.pencil+'</button></div></div>';
+      }
     }
+    if(!anyV) body+='<div class="body-empty">No park visits yet.</div>';
+    body+='<button class="btn-primary" onclick="openScreen({type:\'visedit\',day:\''+dft+'\'})">Add park visit</button>';
   }
   return screenShell(m[0],body,null,null,'Done');
 }
 function scrGeneric(){return screenShell('Coming soon','<div class="body-empty">This section editor is part of the full build.</div>',null,null,'Done');}
 
 /* ── shared form helpers ───────────────────────────────────── */
-function val(id){var e=document.getElementById(id);return e?e.value.trim():'';}
+function val(id){var e=document.getElementById(id);return (e&&typeof e.value==='string')?e.value.trim():'';}
 function whoVal(){
   var mem=tripMembers();
   if(!S._who||S._who.size===0||S._who.size>=mem.length)return 'all';
@@ -1277,10 +1356,16 @@ function crowdOptions(sel){
 
 /* ── Day details ───────────────────────────────────────────── */
 function scrDayEdit(){
-  var d=DAYS_BY_DATE[S.screen.day];if(!d)return scrGeneric();
-  var body='<div class="hub-section-label" style="margin-left:0">Jul '+d.d+' · '+d.dl+'</div>';
-  body+='<div class="field"><label class="field-label">Main park</label><select class="field-select" id="dy-park">'+parkOptions(d.park,null)+'</select></div>';
-  body+='<div class="field"><label class="field-label">Second park <span class="opt">(two-park / hopper days)</span></label><select class="field-select" id="dy-park2">'+parkOptions(d.park2,'None')+'</select></div>';
+  var d=dayByDate(S.screen.day);if(!d)return scrGeneric();
+  var body='<div class="hub-section-label" style="margin-left:0">'+monOf(d.date)+' '+d.d+' · '+d.dl+'</div>';
+  body+='<div class="field"><label class="field-label">Park visits <span class="opt">(assigned items — tap to edit)</span></label>';
+  var vis=visitsFor(d.date);
+  for(var vi=0;vi<vis.length;vi++){var vv=vis[vi],vpk=PARKS[vv.park];
+    body+='<div class="ov-card" style="margin:0 0 8px"><div class="din-row" style="padding:10px 12px"><span style="background:'+(vpk?vpk.color:'#999')+';width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name">'+(vpk?esc(vpk.name):esc(vv.park))+'</div>'+(vv.who!=='all'?whoChips(vv.who):'<div class="din-time">Everyone</div>')+'</div>'+(vi===0?'<span class="st-badge st-booked">Primary</span>':'<span class="st-badge st-todo">Hopper</span>')+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'visedit\',edit:\''+vv.id+'\',day:\''+d.date+'\'})">'+IC.pencil+'</button></div></div>';
+  }
+  if(!vis.length) body+='<div class="body-empty" style="text-align:left;padding:2px 2px 4px">No park visit — travel / rest day.</div>';
+  body+='<button class="add-link" style="margin-top:0" onclick="openScreen({type:\'visedit\',day:\''+d.date+'\'})">'+IC.plus+' Add park visit</button>';
+  body+='</div>';
   body+='<div class="field"><label class="field-label">Park reservations <span class="opt">(assigned items — tap to edit)</span></label>';
   var prs=parkResFor(d.date);
   for(var pi=0;pi<prs.length;pi++){var pr=prs[pi],ppk=PARKS[pr.park];
@@ -1296,9 +1381,7 @@ function scrDayEdit(){
   return screenShell('Edit Day',body,'Save','saveDay()');
 }
 function saveDay(){
-  var d=DAYS_BY_DATE[S.screen.day];if(!d){closeScreen();return;}
-  d.park=val('dy-park')||d.park;
-  d.park2=val('dy-park2')||null;
+  var d=dayByDate(S.screen.day);if(!d){closeScreen();return;}
   d.hours=val('dy-hours');
   var c=val('dy-crowd');d.crowd=c?parseInt(c,10):null;
   d.visit=val('dy-visit');
@@ -1328,7 +1411,7 @@ function scrPREdit(){
 }
 function savePR(){
   var edit=S.screen.edit?PARKRES.filter(function(x){return x.id===S.screen.edit;})[0]:null;
-  var rec=edit||{id:'pr'+Date.now()};
+  var rec=edit||{id:'pr'+Date.now(),trip:S.tripId};
   rec.park=val('pr-park')||'mk';rec.day=val('pr-day')||S.screen.day;
   rec.status=S._formStatus.pr||'booked';rec.who=whoVal();
   if(!edit)PARKRES.push(rec);
@@ -1339,9 +1422,32 @@ function delPR(id){
   save('dtp_parkres',PARKRES);toast('Reservation removed');closeScreen();render();
 }
 
+/* ── Park visit (first-class item: park + day + people) ─────── */
+function scrVisitEdit(){
+  var edit=S.screen.edit?VISITS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
+  var pre=edit?edit.who:'all';
+  var body='<div class="field"><label class="field-label">Park</label><select class="field-select" id="vs-park">'+parkResOptions(edit?edit.park:'mk')+'</select></div>';
+  body+='<div class="field"><label class="field-label">Day</label><select class="field-select" id="vs-day">'+dayOptions((edit&&edit.day)||S.screen.day)+'</select></div>';
+  body+=whoSelectField(pre);
+  body+='<div class="body-empty" style="text-align:left;padding:2px 2px 0">The first visit on a day is the primary park (sets the day\'s color and hero); add a second visit for a hopper / two-park day.</div>';
+  if(edit) body+='<button class="btn-danger-link" onclick="delVisit(\''+edit.id+'\')">Delete this visit</button>';
+  return screenShell(edit?'Edit Park Visit':'Add Park Visit',body,'Save','saveVisit()');
+}
+function saveVisit(){
+  var edit=S.screen.edit?VISITS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
+  var rec=edit||{id:'v'+Date.now(),trip:S.tripId};
+  rec.park=val('vs-park')||'mk';rec.day=val('vs-day')||S.screen.day;rec.who=whoVal();
+  if(!edit)VISITS.push(rec);
+  save('dtp_visits',VISITS);S._who=null;toast('Park visit saved');closeScreen();render();
+}
+function delVisit(id){
+  for(var i=0;i<VISITS.length;i++)if(VISITS[i].id===id){VISITS.splice(i,1);break;}
+  save('dtp_visits',VISITS);toast('Visit removed');closeScreen();render();
+}
+
 /* ── Day-plan stop ─────────────────────────────────────────── */
 function scrStopEdit(){
-  var d=DAYS_BY_DATE[S.screen.day];if(!d)return scrGeneric();
+  var d=dayByDate(S.screen.day);if(!d)return scrGeneric();
   var has=S.screen.idx!=null,it=has?d.itin[S.screen.idx]:null;
   var body='<div class="field"><label class="field-label">Time</label><input class="field-input" id="st-time" placeholder="9:30 AM" value="'+(it?esc(it.t):'')+'"></div>';
   body+='<div class="field"><label class="field-label">What\'s happening</label><input class="field-input" id="st-text" placeholder="e.g. Rope drop — Test Track" value="'+(it?esc(it.x):'')+'"></div>';
@@ -1350,7 +1456,7 @@ function scrStopEdit(){
   return screenShell(has?'Edit Stop':'Add Stop',body,'Save','saveStop()');
 }
 function saveStop(){
-  var d=DAYS_BY_DATE[S.screen.day];if(!d){closeScreen();return;}
+  var d=dayByDate(S.screen.day);if(!d){closeScreen();return;}
   var tx=val('st-text');if(!tx){toast('Add a description');return;}
   var rec={t:val('st-time')||'TBD',x:tx};
   var cr=val('st-crit');if(cr)rec.crit=cr;
@@ -1359,7 +1465,7 @@ function saveStop(){
   save('dtp_days',DAYS);toast('Stop saved');closeScreen();render();
 }
 function delStop(){
-  var d=DAYS_BY_DATE[S.screen.day];
+  var d=dayByDate(S.screen.day);
   if(d&&S.screen.idx!=null)d.itin.splice(S.screen.idx,1);
   save('dtp_days',DAYS);toast('Stop removed');closeScreen();render();
 }
@@ -1378,7 +1484,7 @@ function scrShowEdit(){
 function saveShow(){
   var edit=S.screen.edit?SHOWS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
   var nm=val('sh-name');if(!nm){toast('Add a show name');return;}
-  var rec=edit||{id:'s'+Date.now()};
+  var rec=edit||{id:'s'+Date.now(),trip:S.tripId};
   rec.name=nm;rec.time=val('sh-time')||'TBD';rec.day=val('sh-day')||S.screen.day;rec.who=whoVal();
   if(!edit)SHOWS.push(rec);
   save('dtp_shows',SHOWS);S._who=null;toast('Show saved');closeScreen();render();
@@ -1395,8 +1501,9 @@ function scrResortEdit(){
   var st=S._formStatus.rs,pre=edit?edit.who:'all';
   var body='<div class="field"><label class="field-label">Resort name</label><input class="field-input" id="rs-name" placeholder="Disney\'s Pop Century Resort" value="'+(edit?esc(edit.name):'')+'"></div>';
   body+='<div class="field"><label class="field-label">Room type</label><input class="field-input" id="rs-room" placeholder="Standard Room · Pool View" value="'+(edit?esc(edit.room):'')+'"></div>';
-  body+='<div class="field-row"><div class="field"><label class="field-label">Check-in</label><select class="field-select" id="rs-in">'+dayOptions(edit?edit.checkin:DAYS[0].date)+'</select></div>';
-  body+='<div class="field"><label class="field-label">Check-out</label><select class="field-select" id="rs-out">'+dayOptions(edit?edit.checkout:DAYS[DAYS.length-1].date)+'</select></div></div>';
+  var _td=tripDays();var _d0=(_td[0]||{date:''}).date,_dN=(_td[_td.length-1]||{date:''}).date;
+  body+='<div class="field-row"><div class="field"><label class="field-label">Check-in</label><select class="field-select" id="rs-in">'+dayOptions(edit?edit.checkin:_d0)+'</select></div>';
+  body+='<div class="field"><label class="field-label">Check-out</label><select class="field-select" id="rs-out">'+dayOptions(edit?edit.checkout:_dN)+'</select></div></div>';
   body+='<div class="field"><label class="field-label">Confirmation #</label><input class="field-input" id="rs-conf" placeholder="A10293847" value="'+(edit&&edit.conf?esc(edit.conf):'')+'"></div>';
   body+='<div class="field"><label class="field-label">Status</label><div class="seg">';
   body+='<button class="seg-btn'+(st==='planning'?' on':'')+'" onclick="pickStatus(\'rs\',\'planning\')">Planning</button>';
@@ -1408,7 +1515,7 @@ function scrResortEdit(){
 function saveResort(){
   var edit=S.screen.edit?RESORTS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
   var nm=val('rs-name');if(!nm){toast('Add a resort name');return;}
-  var rec=edit||{id:'r'+Date.now()};
+  var rec=edit||{id:'r'+Date.now(),trip:S.tripId};
   rec.name=nm;rec.room=val('rs-room')||'Room';rec.checkin=val('rs-in');rec.checkout=val('rs-out');
   rec.conf=val('rs-conf')||'';rec.status=S._formStatus.rs||'planning';rec.who=whoVal();
   if(!edit)RESORTS.push(rec);
@@ -1452,10 +1559,15 @@ function saveTrip(){
 function delTrip(id){
   if(TRIPS.length<=1){toast('Keep at least one trip');return;}
   var t=tripById(id);
-  if(!confirm('Delete '+(t?t.name:'this trip')+'? This can\'t be undone.'))return;
+  if(!confirm('Delete '+(t?t.name:'this trip')+'? Its days and items are removed too. This can\'t be undone.'))return;
   TRIPS=TRIPS.filter(function(x){return x.id!==id;});
-  if(S.tripId===id){S.tripId=TRIPS[0].id;S.dayIdx=1;S.open=defOpen();S.filter.clear();}
-  save('dtp_trips',TRIPS);S._members=null;toast('Trip deleted');closeScreen();render();
+  // remove this trip's days and items
+  function drop(coll){for(var i=coll.length-1;i>=0;i--)if(coll[i].trip===id)coll.splice(i,1);}
+  [DAYS,VISITS,DINING,LLS,SHOWS,FLIGHTS,RESORTS,PARKRES].forEach(drop);
+  for(var c=CHAT.length-1;c>=0;c--)if(CHAT[c].trip===id)CHAT.splice(c,1);
+  try{localStorage.removeItem('dtp_packing_'+id);localStorage.removeItem('dtp_todo_'+id);}catch(e){}
+  if(S.tripId===id){S.tripId=TRIPS[0].id;loadLists();S.dayIdx=0;S.open=defOpen();S.filter.clear();}
+  persist();S._members=null;toast('Trip deleted');closeScreen();render();
 }
 
 /* ============================================================
@@ -1475,4 +1587,6 @@ function render(){
   else{document.getElementById('app').style.padding='';}
   renderNav();
 }
+materializeAllDays();
+loadLists();
 render();

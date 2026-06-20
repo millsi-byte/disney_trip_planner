@@ -43,7 +43,7 @@ var TRIPS = [
 /* ── Days of the active trip ──────────────────────────────── */
 /* park2 = secondary park visit (handles two-park days)        */
 var DAYS = [
-  { date:"2026-07-14", d:"14", dl:"Tue", park:"trv", park2:null,
+  { date:"2026-07-14", d:"14", dl:"Tue", trip:"jul26",
     badges:["Travel Day","Check-in","Activate APs"],
     alert:null, crowd:null, hours:"Parks 8:30 AM – 9:00 PM",
     visit:"Evening at Disney Springs",
@@ -57,7 +57,7 @@ var DAYS = [
       {t:"Evening",  x:"Stroll Disney Springs, early night"}
     ]
   },
-  { date:"2026-07-15", d:"15", dl:"Wed", park:"ep", park2:null,
+  { date:"2026-07-15", d:"15", dl:"Wed", trip:"jul26",
     badges:["Single Pass Day","Park Reservation"],
     alert:null, crowd:4, hours:"8:30 AM – 9:00 PM",
     visit:"EPCOT all day",
@@ -75,7 +75,7 @@ var DAYS = [
       {t:"9:00 PM",  x:"Luminous — The Symphony of Us"}
     ]
   },
-  { date:"2026-07-16", d:"16", dl:"Thu", park:"mk", park2:null,
+  { date:"2026-07-16", d:"16", dl:"Thu", trip:"jul26",
     badges:["Early Entry 8:30 AM","Multi Pass Day","Park Reservation"],
     alert:"Severe afternoon thunderstorms likely 2–4 PM. Be at the tap stiles by 7:45 AM — the whole rope-drop morning depends on it.",
     crowd:7, hours:"8:30 AM – 10:00 PM",
@@ -95,7 +95,7 @@ var DAYS = [
       {t:"Evening",  x:"Monorail Crawl → fireworks + 2 nighttime re-rides"}
     ]
   },
-  { date:"2026-07-17", d:"17", dl:"Fri", park:"hs", park2:"ep",
+  { date:"2026-07-17", d:"17", dl:"Fri", trip:"jul26",
     badges:["Park Hopper","Single Pass Day"],
     alert:null, crowd:5, hours:"HS 8:30 AM – 9:00 PM · EPCOT to 9:00 PM",
     visit:"Morning Hollywood Studios · evening EPCOT via International Gateway",
@@ -113,7 +113,7 @@ var DAYS = [
       {t:"9:00 PM",  x:"Luminous → stroll home to BoardWalk"}
     ]
   },
-  { date:"2026-07-18", d:"18", dl:"Sat", park:"ak", park2:null,
+  { date:"2026-07-18", d:"18", dl:"Sat", trip:"jul26",
     badges:["Early Entry","Multi Pass Day","Park Reservation"],
     alert:null, crowd:6, hours:"7:00 AM – 8:00 PM",
     visit:"Animal Kingdom all day",
@@ -131,7 +131,7 @@ var DAYS = [
       {t:"7:00 PM",  x:"Pandora after dark"}
     ]
   },
-  { date:"2026-07-19", d:"19", dl:"Sun", park:"trv", park2:"mk",
+  { date:"2026-07-19", d:"19", dl:"Sun", trip:"jul26",
     badges:["Last Day","Check-out","Two Return Flights"],
     alert:"Resort check-out is 11:00 AM. Drop the Owners Locker at Bell Services for pickup before you leave.",
     crowd:6, hours:"MK 8:00 AM – 11:00 PM",
@@ -147,6 +147,18 @@ var DAYS = [
       {t:"8:10 PM",  x:"Depart MCO — JetBlue B6 1186", crit:"Flight"}
     ]
   }
+];
+
+/* ── Park visits (first-class items: park + day + people) ───── */
+/* The first visit on a day is the primary park (drives the hero +    */
+/* day strip color); a second is a hopper / two-park visit.           */
+var VISITS = [
+  {id:"v15",  trip:"jul26", day:"2026-07-15", park:"ep", who:"all"},
+  {id:"v16",  trip:"jul26", day:"2026-07-16", park:"mk", who:"all"},
+  {id:"v17a", trip:"jul26", day:"2026-07-17", park:"hs", who:"all"},
+  {id:"v17b", trip:"jul26", day:"2026-07-17", park:"ep", who:"all"},
+  {id:"v18",  trip:"jul26", day:"2026-07-18", park:"ak", who:"all"},
+  {id:"v19",  trip:"jul26", day:"2026-07-19", park:"mk", who:"all"}
 ];
 
 /* ── Resort stays (split stay) ────────────────────────────── */
