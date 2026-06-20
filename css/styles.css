@@ -386,6 +386,10 @@ button{font-family:inherit}
 .add-inp:focus{border-color:var(--ink)}
 .add-ok{padding:10px 14px;background:var(--ink);color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;white-space:nowrap;font-family:inherit;min-height:44px}
 .add-cancel{padding:8px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer}
+/* inline edit panel — visually lifted off the surrounding list */
+.inline-editor{display:flex;flex-direction:column;align-items:stretch;gap:10px;margin:8px 10px 12px;padding:14px;background:#EEF2FF;border:1.5px solid #C7D2FE;border-radius:14px;box-shadow:0 6px 18px rgba(30,41,99,.12)}
+.inline-editor-title{font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#4338CA;display:flex;align-items:center;gap:6px}
+.priv-note{font-size:12px;color:#6B7280;line-height:1.45}
 
 /* ── AI Import ───────────────────────────────────────────── */
 .import-drop{border:2px dashed #B6C2D6;border-radius:var(--r);background:#F1F5FB;padding:34px 20px;text-align:center;margin-bottom:16px}

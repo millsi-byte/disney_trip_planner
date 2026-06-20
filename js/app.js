@@ -65,7 +65,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='51';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='52';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -489,9 +489,18 @@ function pkItemEdit(pid,c,i){var it=PACKING[pid][c].items[i];if(!pkCanItem(pid,i
 function pkItemCancel(){S.pkForm=null;S._who=null;refreshLists();}
 function pkFormStore(v){var it=pkFormItem();if(!it)return;it.l=v;if(v)it.qty=0;else if(!it.qty)it.qty=1;saveLists();renderScreen_inplace2();}
 function pkFormNeed(v){var it=pkFormItem();if(!it)return;it.needBuy=v;saveLists();renderScreen_inplace2();}
+function pkFormPriv(v){var it=pkFormItem();if(!it)return;it.priv=v;saveLists();renderScreen_inplace2();}
 function pkItemSave(){var it=pkFormItem();if(!it){pkItemCancel();return;}var nm=val('pki-name');if(nm)it.n=nm;it.who=S._who?tripMembers().filter(function(id){return S._who.has(id);}):[];saveLists();S.pkForm=null;S._who=null;toast('Saved');refreshLists();}
 /* trip-wide Need to Buy (shared) */
-function needBuyCount(){var n=0;tripMembers().forEach(function(o){(PACKING[o]||[]).forEach(function(c){(c.items||[]).forEach(function(it){if(it.needBuy)n++;});});});return n;}
+/* shared shopping entries — private items only surface to their own owner */
+function needBuyEntries(){
+  var out=[];
+  tripMembers().forEach(function(owner){(PACKING[owner]||[]).forEach(function(cat,ci){(cat.items||[]).forEach(function(it,ii){
+    if(it.needBuy&&(!it.priv||owner===S.persona))out.push({owner:owner,ci:ci,ii:ii,it:it});
+  });});});
+  return out;
+}
+function needBuyCount(){return needBuyEntries().length;}
 function pkGotIt(owner,ci,ii){var it=PACKING[owner]&&PACKING[owner][ci]&&PACKING[owner][ci].items[ii];if(!it)return;
   var buyers=(it.who&&it.who.length)?it.who:[owner];
   if(!(buyers.indexOf(S.persona)>=0||owner===S.persona||listOversight())){toast('Only the buyer, the owner or an admin can do this');return;}
@@ -1204,11 +1213,13 @@ function pbHead(pid,done,total){var p=person(pid);
 }
 function packingPerson(pid){
   var editable=pkCanList(pid);
+  var owner=(pid===S.persona);                 /* private items show only to their owner */
+  function shown(it){return owner||!it.priv;}
   var cats=PACKING[pid]||(PACKING[pid]=[]),done=0,tot=0;
-  cats.forEach(function(c){c.items.forEach(function(it){tot++;if(it.done)done++;});});
+  cats.forEach(function(c){c.items.forEach(function(it){if(shown(it)){tot++;if(it.done)done++;}});});
   var o='';
   if(listOversight()&&S.pkScope==='all')o+=pbHead(pid,done,tot);
-  for(var c=0;c<cats.length;c++){var cat=cats[c],cd=cat.items.filter(function(x){return x.done;}).length;
+  for(var c=0;c<cats.length;c++){var cat=cats[c],vis=cat.items.filter(shown),cd=vis.filter(function(x){return x.done;}).length;
     o+='<div class="card">';
     if(S._pksect===pid+'|'+c){
       o+='<div class="add-row" style="padding:10px 12px"><input id="psname-inp" class="add-inp" value="'+esc(cat.cat)+'" onkeydown="if(event.key===\'Enter\')pkSectRenameOk(\''+pid+'\','+c+');if(event.key===\'Escape\')pkSectRenameCancel()">';
@@ -1217,11 +1228,12 @@ function packingPerson(pid){
         ?'<button class="del-confirm-btn" style="margin:0 12px 10px" onclick="pkSectDel(\''+pid+'\','+c+')">Delete section &amp; its items?</button>'
         :'<button class="add-link" style="color:#B91C1C;padding-left:12px" onclick="pkSectDel(\''+pid+'\','+c+')">Delete this section</button>';
     }else{
-      o+='<div class="cat-hdr"><div class="cat-name">'+esc(cat.cat)+'</div><div style="display:flex;align-items:center;gap:8px"><div class="cat-count">'+cd+'/'+cat.items.length+'</div>';
+      o+='<div class="cat-hdr"><div class="cat-name">'+esc(cat.cat)+'</div><div style="display:flex;align-items:center;gap:8px"><div class="cat-count">'+cd+'/'+vis.length+'</div>';
       if(editable)o+='<button class="hdr-icon" style="width:26px;height:26px;background:#F3F1EC;color:#6B7280" onclick="pkSectRenameOpen(\''+pid+'\','+c+')">'+IC.pencil+'</button>';
       o+='</div></div>';
     }
     for(var j=0;j<cat.items.length;j++){
+      if(!shown(cat.items[j]))continue;                /* hide private items from non-owners */
       if(S.pkForm&&S.pkForm.pid===pid&&S.pkForm.c===c&&S.pkForm.i===j){o+=pkItemEditor(pid,c,j);continue;}
       o+=pkItemRow(pid,c,j);
     }
@@ -1244,6 +1256,7 @@ function pkItemRow(pid,c,j){
   var subs=[];
   if(it.by&&it.by!==pid&&person(it.by))subs.push('Added by '+esc(person(it.by).name));
   if(it.needBuy){var bs=(it.who&&it.who.length)?it.who.map(function(p){var pp=person(p);return pp?esc(pp.name):'';}).filter(Boolean).join(', '):(person(pid)?esc(person(pid).name):'');subs.push('Buy · '+bs);}
+  if(it.priv)subs.push(IC.lock+' Hidden');
   var o='<div class="pk-row">';
   o+='<div class="chkbox'+(it.done?' on':'')+'" onclick="pkChk(\''+pid+'\','+c+','+j+')">'+(it.done?IC.checkw:'')+'</div>';
   o+='<div class="pk-name'+(it.done?' done':'')+'" onclick="pkChk(\''+pid+'\','+c+','+j+')">'+esc(it.n)+(subs.length?'<div class="pk-by">'+subs.join(' · ')+'</div>':'')+'</div>';
@@ -1256,11 +1269,14 @@ function pkItemRow(pid,c,j){
 }
 function pkItemEditor(pid,c,j){
   var it=PACKING[pid][c].items[j];
-  var o='<div class="add-row" style="flex-direction:column;align-items:stretch;gap:10px;padding:12px">';
+  var o='<div class="inline-editor">';
+  o+='<div class="inline-editor-title">'+IC.pencil+' Edit item</div>';
   o+='<div class="field" style="margin:0"><label class="field-label">Item</label><input class="field-input" id="pki-name" value="'+esc(it.n)+'"></div>';
   o+='<div class="field" style="margin:0"><label class="field-label">Storage</label><div class="seg"><button class="seg-btn'+(!it.l?' on':'')+'" onclick="pkFormStore(false)">Suitcase</button><button class="seg-btn'+(it.l?' on':'')+'" onclick="pkFormStore(true)">Owners Locker</button></div></div>';
   o+='<div class="field" style="margin:0"><label class="field-label">Need to buy</label><div class="seg"><button class="seg-btn'+(!it.needBuy?' on':'')+'" onclick="pkFormNeed(false)">No</button><button class="seg-btn'+(it.needBuy?' on book':'')+'" onclick="pkFormNeed(true)">Need to buy</button></div></div>';
   if(it.needBuy)o+=pkBuyerField();
+  o+='<div class="field" style="margin:0"><label class="field-label">Privacy</label><div class="seg"><button class="seg-btn'+(!it.priv?' on':'')+'" onclick="pkFormPriv(false)">Visible</button><button class="seg-btn'+(it.priv?' on book':'')+'" onclick="pkFormPriv(true)">'+IC.lock+' Hidden</button></div></div>';
+  if(it.priv)o+='<div class="priv-note">Hidden from the trip owner and admins, and kept off the shared Need to Buy list. Only you can see it — handy for surprises.</div>';
   o+='<div style="display:flex;gap:8px"><button class="btn-primary" style="margin:0;flex:1" onclick="pkItemSave()">Save</button><button class="btn-secondary" style="margin:0;flex:1" onclick="pkItemCancel()">Cancel</button></div>';
   o+='</div>';
   return o;
@@ -1980,8 +1996,7 @@ function scrPackList(){
 
 /* trip-wide Need to Buy — shared shopping list, grouped by buyer */
 function scrNeedBuy(){
-  var entries=[];
-  tripMembers().forEach(function(owner){(PACKING[owner]||[]).forEach(function(cat,ci){(cat.items||[]).forEach(function(it,ii){if(it.needBuy)entries.push({owner:owner,ci:ci,ii:ii,it:it});});});});
+  var entries=needBuyEntries();
   var body=listContext()+'<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:16px;color:var(--ink)">Everything flagged <strong>Need to buy</strong>, grouped by who’s buying. The whole group can see this list.</div>';
   if(!entries.length)return screenShell('Need to Buy',body+'<div class="body-empty">Nothing to buy right now. Flag a packing item “Need to buy” and it shows up here.</div>',null,null,'Done');
   var groups={},order=[];
