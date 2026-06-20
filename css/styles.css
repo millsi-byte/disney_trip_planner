@@ -23,7 +23,7 @@ button{font-family:inherit}
 .hdr-trip{flex:1;display:flex;flex-direction:column;align-items:center;cursor:pointer;background:none;border:none;color:#fff;padding:4px 8px;border-radius:10px;min-width:0}
 .hdr-trip.left{align-items:flex-start;text-align:left;padding-left:2px}
 .hdr-trip:active{background:rgba(255,255,255,.08)}
-.hdr-iam{flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:2px;background:rgba(255,255,255,.1);border:none;color:#fff;padding:6px 10px;border-radius:10px;cursor:pointer;min-height:44px}
+.hdr-iam{flex-shrink:0;display:flex;align-items:center;background:rgba(255,255,255,.1);border:none;color:#fff;padding:8px 10px;border-radius:10px;cursor:pointer}
 .hdr-iam:active{background:rgba(255,255,255,.2)}
 .iam-lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.6)}
 .iam-name{display:flex;align-items:center;gap:6px;font-size:15px;font-weight:700}
