@@ -66,7 +66,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='55';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='56';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -410,48 +410,84 @@ function sendNotifPlan(items){
 }
 function bumpBell(){var hh=document.getElementById('header-host');if(hh)hh.innerHTML=renderHeader();}
 
-/* orchestrate after a who-change: forced always fire; optional are prompted
-   on active trips (or when opted in during planning), otherwise dropped */
+/* orchestrate after a who-change. On active trips (or planning + opt-in) we
+   open the "who to notify" picker: the creator is preselected (and locked for
+   real bookings), the people added/removed are preselected, and everyone else
+   on the trip is available to add. On a planning trip with no opt-in we stay
+   silent except for the must-notify creator of an action-required item. */
 function notifyChange(o){
   var plan=buildNotifPlan(o);
-  var forcedTo={};plan.forced.forEach(function(p){forcedTo[p.to]=1;});
-  var optional=plan.optional.filter(function(p){return !forcedTo[p.to];});  /* don't double-notify the creator */
-  if(plan.forced.length)sendNotifPlan(plan.forced);
+  if(!plan.forced.length&&!plan.optional.length){bumpBell();return;}
   var t=tripById(o.trip)||trip();
-  var wantPrompt=(t&&t.status==='active')||!!o.optIn;
-  if(wantPrompt&&optional.length){ openNotifConfirm(optional); }
-  bumpBell();
+  var active=(t&&t.status==='active');
+  if(!active&&!o.optIn){ if(plan.forced.length)sendNotifPlan(plan.forced); bumpBell(); return; }
+  openNotifConfirm(o,plan);
+}
+function tripMembersFor(tid){var t=tripById(tid)||trip();return (t&&t.members&&t.members.length)?t.members.slice():tripMembers();}
+
+/* the notification we'd deliver a given recipient for this change */
+function notifForRecipient(id,o){
+  var b=(S._notifById||{})[id];if(b)return b;
+  /* someone the actor chose to also tell — a plain heads-up */
+  var who=pname(o.actor),oldA=whoArrFor(o.oldWho,o.trip),newA=whoArrFor(o.newWho,o.trip),text;
+  if(oldA.indexOf(o.actor)>=0&&newA.indexOf(o.actor)<0) text=who+' left “'+o.label+'” ('+o.cat+')';
+  else if(oldA.indexOf(o.actor)<0&&newA.indexOf(o.actor)>=0) text=who+' joined “'+o.label+'” ('+o.cat+')';
+  else text=who+' updated who’s on “'+o.label+'” ('+o.cat+')';
+  return {to:id,from:o.actor,trip:o.trip,cat:o.cat,label:o.label,kind:'change',text:text};
 }
 
-/* confirm sheet — pick who to notify (everyone preselected, can remove) */
-function openNotifConfirm(items){
-  S._notifQ=items;S._notifSel=new Set();for(var i=0;i<items.length;i++)S._notifSel.add(i);
+/* confirm picker — choose who to notify */
+function openNotifConfirm(o,plan){
+  var byId={};
+  plan.forced.forEach(function(p){byId[p.to]={to:p.to,from:p.from,trip:p.trip,cat:p.cat,label:p.label,kind:p.kind,text:p.text,locked:true};});
+  plan.optional.forEach(function(p){if(!byId[p.to])byId[p.to]={to:p.to,from:p.from,trip:p.trip,cat:p.cat,label:p.label,kind:p.kind,text:p.text,locked:false};});
+  S._notifCtx=o;S._notifById=byId;
+  S._notifSel=new Set(Object.keys(byId));
+  S._notifLocked=new Set();Object.keys(byId).forEach(function(id){if(byId[id].locked)S._notifLocked.add(id);});
+  S._notifPool=tripMembersFor(o.trip).filter(function(id){return id!==o.actor&&person(id);});
+  Object.keys(byId).forEach(function(id){if(S._notifPool.indexOf(id)<0&&person(id))S._notifPool.push(id);});
   var host=document.getElementById('notif-host');
   if(!host){host=document.createElement('div');host.id='notif-host';document.body.appendChild(host);}
   renderNotifConfirm();
 }
-function notifKindShort(k){return k==='removed'?'removed':k==='left'?'left':k==='action'?'needs action':'added';}
+function notifKindShort(k){return k==='removed'?'removed':k==='left'?'left':k==='action'?'must act':k==='added'?'added':'';}
+function notifRoleSub(id){var b=(S._notifById||{})[id];return b?(b.locked?'must act':notifKindShort(b.kind)):'';}
 function renderNotifConfirm(){
   var host=document.getElementById('notif-host');if(!host)return;
-  var items=S._notifQ||[];if(!items.length){host.innerHTML='';return;}
-  var h='<div class="pin-backdrop" onclick="if(event.target===this)skipNotif()"><div class="pin-modal" style="max-width:340px">';
+  var pool=S._notifPool||[];if(!pool.length){host.innerHTML='';return;}
+  var anyLocked=!!(S._notifLocked&&S._notifLocked.size);
+  var h='<div class="pin-backdrop" onclick="if(event.target===this)skipNotif()"><div class="pin-modal" style="max-width:340px;text-align:left">';
   h+='<div class="pin-title">Send a notification?</div>';
-  h+='<div class="pin-sub">Everyone affected is selected — tap to leave anyone out.</div>';
+  h+='<div class="pin-sub">Choose who to let know. '+(anyLocked?'Whoever booked it is always told.':'Tap to add or remove anyone.')+'</div>';
   h+='<div class="whoselect" style="margin:12px 0 4px">';
-  for(var i=0;i<items.length;i++){var it=items[i],p=person(it.to);if(!p)continue;var on=S._notifSel.has(i);
-    h+='<div class="who-opt'+(on?' on':'')+'" onclick="toggleNotifSel('+i+')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+'<span class="notif-sel-kind">'+notifKindShort(it.kind)+'</span><span class="wcheck">'+IC.checkw.replace('currentColor','#15803D')+'</span></div>';
+  for(var i=0;i<pool.length;i++){var id=pool[i],p=person(id);if(!p)continue;
+    var locked=S._notifLocked&&S._notifLocked.has(id);
+    var on=locked||(S._notifSel&&S._notifSel.has(id));
+    var sub=notifRoleSub(id);
+    h+='<div class="who-opt'+(on?' on':'')+(locked?' locked':'')+'"'+(locked?'':' onclick="toggleNotifSel(\''+id+'\')"')+'>'
+      +'<span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)
+      +(sub?'<span class="notif-sel-kind">'+sub+(locked?' '+IC.lock:'')+'</span>':'')
+      +'<span class="wcheck">'+IC.checkw.replace('currentColor','#15803D')+'</span></div>';
   }
   h+='</div>';
-  h+='<div style="display:flex;gap:8px;margin-top:14px"><button class="btn-secondary" style="margin:0;flex:1" onclick="skipNotif()">Skip</button><button class="btn-secondary green" style="margin:0;flex:1" onclick="sendNotif()">Send</button></div>';
+  h+='<div style="display:flex;gap:8px;margin-top:14px"><button class="btn-secondary" style="margin:0;flex:1" onclick="skipNotif()">'+(anyLocked?'Just them':'Skip')+'</button><button class="btn-secondary green" style="margin:0;flex:1" onclick="sendNotif()">Send</button></div>';
   h+='</div></div>';
   host.innerHTML=h;
 }
-function toggleNotifSel(i){if(S._notifSel.has(i))S._notifSel.delete(i);else S._notifSel.add(i);renderNotifConfirm();}
-function skipNotif(){S._notifQ=null;S._notifSel=null;var host=document.getElementById('notif-host');if(host)host.innerHTML='';}
+function toggleNotifSel(id){if(!S._notifSel)S._notifSel=new Set();if(S._notifSel.has(id))S._notifSel.delete(id);else S._notifSel.add(id);renderNotifConfirm();}
+function closeNotifConfirm(){S._notifCtx=null;S._notifById=null;S._notifSel=null;S._notifLocked=null;S._notifPool=null;var host=document.getElementById('notif-host');if(host)host.innerHTML='';}
+function skipNotif(){ /* still deliver the must-notify (locked) recipients */
+  var o=S._notifCtx,sel=[];
+  if(o&&S._notifLocked)S._notifLocked.forEach(function(id){sel.push(notifForRecipient(id,o));});
+  var n=sendNotifPlan(sel);closeNotifConfirm();bumpBell();
+  if(n)toast('Notified '+n+' '+(n===1?'person':'people'));
+}
 function sendNotif(){
-  var items=S._notifQ||[],sel=[];
-  (S._notifSel||new Set()).forEach(function(i){if(items[i])sel.push(items[i]);});
-  var n=sendNotifPlan(sel);skipNotif();bumpBell();
+  var o=S._notifCtx,ids=new Set(),sel=[];
+  if(S._notifSel)S._notifSel.forEach(function(id){ids.add(id);});
+  if(S._notifLocked)S._notifLocked.forEach(function(id){ids.add(id);});
+  ids.forEach(function(id){sel.push(notifForRecipient(id,o));});
+  var n=sendNotifPlan(sel);closeNotifConfirm();bumpBell();
   toast(n?('Notified '+n+' '+(n===1?'person':'people')):'No notifications sent');
 }
 
