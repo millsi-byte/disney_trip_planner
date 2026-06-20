@@ -62,7 +62,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='10';
-var BUILD='25';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='26';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -771,17 +771,17 @@ function renderOverview(){
   else o+=ovFlights();
   return o;
 }
-function dayHd(date){
+function dayHd(date,noPark){
   var d=dayByDate(date),pp=dayPrimaryPark(date),pk=(pp&&PARKS[pp])?PARKS[pp]:null;
   var bg=pk?pk.color:PARKS.trv.color;
-  return '<div class="day-hd" style="background:'+bg+'"><div class="day-hd-name">'+monOf(date)+' '+(d?d.d:(+date.slice(8)))+(d?' · '+d.dl:'')+'</div>'+(pk?'<div class="day-hd-date">'+esc(pk.name)+'</div>':'')+'</div>';
+  return '<div class="day-hd" style="background:'+bg+'"><div class="day-hd-name">'+monOf(date)+' '+(d?d.d:(+date.slice(8)))+(d?' · '+d.dl:'')+'</div>'+((pk&&!noPark)?'<div class="day-hd-date">'+esc(pk.name)+'</div>':'')+'</div>';
 }
 function ovDining(){
   var o='',any=false,TD=tripDays();
   for(var i=0;i<TD.length;i++){
     var din=diningFor(TD[i].date).filter(function(x){return visible(x.who);});
     if(!din.length)continue;any=true;
-    o+=dayHd(TD[i].date);
+    o+=dayHd(TD[i].date,true);
     for(var j=0;j<din.length;j++){o+='<div class="ov-card'+(isPlanningStatus(din[j].status)?' planning':'')+'">'+diningRow(din[j])+'</div>';}
   }
   return any?o:'<div class="body-empty">No dining for the selected people.</div>';
