@@ -60,6 +60,18 @@ button{font-family:inherit}
 /* ── Scroll area ─────────────────────────────────────────── */
 #app{padding:8px 12px calc(78px + env(safe-area-inset-bottom))}
 
+/* ── Per-park conditions (hours / crowd / reservation) ───── */
+.cond{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--card);border:1px solid var(--border);border-radius:12px;margin:8px 0 6px}
+.cond+.cond{margin-top:-2px}
+.cond-dot{width:13px;height:13px;border-radius:50%;flex-shrink:0}
+.cond-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cond-pk{font-weight:700;font-size:15px;color:var(--ink)}
+.cond-time{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#fff;background:var(--muted);border-radius:10px;padding:2px 7px}
+.cond-res{display:flex;align-items:center;gap:3px;font-size:11px;font-weight:700;color:#15803D}
+.cond-hours{font-size:13px;color:var(--ink);font-weight:600;margin-top:2px}
+.cond-chip{display:inline-block;font-size:10px;font-weight:700;color:var(--muted);background:#F3F1EC;border-radius:8px;padding:1px 6px;margin-left:2px}
+.cond-meta{margin-left:auto;flex-shrink:0;display:flex;align-items:center}
+
 /* ── Hero ────────────────────────────────────────────────── */
 .hero{border-radius:var(--r);overflow:hidden;margin-bottom:10px;box-shadow:0 2px 8px rgba(0,0,0,.12)}
 .hero-body{padding:16px 18px 14px}

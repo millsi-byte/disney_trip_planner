@@ -61,7 +61,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
-var DATA_VERSION='5';
+var DATA_VERSION='6';
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -77,6 +77,7 @@ FAMILY  = load('dtp_family', FAMILY);
 ALL_IDS = FAMILY.map(function(p){return p.id;});
 DAYS    = load('dtp_days', DAYS);
 VISITS  = load('dtp_visits', VISITS);
+PARKHOURS = load('dtp_hours', PARKHOURS);
 DINING  = load('dtp_dining', DINING);
 LLS     = load('dtp_lls', LLS);
 SHOWS   = load('dtp_shows', SHOWS);
@@ -88,7 +89,7 @@ S.persona = load('dtp_persona', S.persona);
 
 /* every planning item belongs to a trip — default seed items to jul26 */
 function tagTrip(coll){for(var i=0;i<coll.length;i++)if(!coll[i].trip)coll[i].trip='jul26';}
-[DAYS,VISITS,DINING,LLS,SHOWS,FLIGHTS,RESORTS,PARKRES].forEach(tagTrip);
+[DAYS,VISITS,PARKHOURS,DINING,LLS,SHOWS,FLIGHTS,RESORTS,PARKRES].forEach(tagTrip);
 for(var _c=0;_c<CHAT.length;_c++)if(!CHAT[_c].trip)CHAT[_c].trip='jul26';
 
 /* per-trip packing / to-do (PACKING/TODO hold the active trip's lists) */
@@ -109,7 +110,7 @@ function genDays(tid){
   var WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   while(cur<=end){
     var ds=cur.getUTCFullYear()+'-'+('0'+(cur.getUTCMonth()+1)).slice(-2)+'-'+('0'+cur.getUTCDate()).slice(-2);
-    DAYS.push({trip:tid,date:ds,d:String(cur.getUTCDate()),dl:WD[cur.getUTCDay()],badges:[],alert:null,crowd:null,hours:'',visit:'',strategy:'',itin:[]});
+    DAYS.push({trip:tid,date:ds,d:String(cur.getUTCDate()),dl:WD[cur.getUTCDay()],badges:[],alert:null,visit:'',strategy:'',itin:[]});
     cur.setUTCDate(cur.getUTCDate()+1);
   }
 }
@@ -123,7 +124,7 @@ function materializeAllDays(){
 
 /* collection savers */
 function persist(){
-  save('dtp_days',DAYS);save('dtp_visits',VISITS);save('dtp_dining',DINING);save('dtp_lls',LLS);
+  save('dtp_days',DAYS);save('dtp_visits',VISITS);save('dtp_hours',PARKHOURS);save('dtp_dining',DINING);save('dtp_lls',LLS);
   save('dtp_shows',SHOWS);save('dtp_flights',FLIGHTS);save('dtp_resorts',RESORTS);
   save('dtp_parkres',PARKRES);save('dtp_trips',TRIPS);save('dtp_family',FAMILY);
 }
@@ -144,6 +145,11 @@ function fmtDay(ds){var d=dayByDate(ds);return d?(monOf(ds)+" "+d.d+" · "+d.dl)
 function visitsFor(ds){return VISITS.filter(function(v){return v.trip===S.tripId&&v.day===ds;});}
 function dayPrimaryPark(ds){var vs=visitsFor(ds).filter(function(v){return visible(v.who);});if(!vs.length)vs=visitsFor(ds);return vs.length?vs[0].park:null;}
 function pkOf(ds){var p=dayPrimaryPark(ds);return (p&&PARKS[p])?PARKS[p]:PARKS.trv;}
+/* park hours (a park-on-a-date fact: open/close/early/late + crowd) */
+function parkHoursFor(ds){return PARKHOURS.filter(function(h){return h.trip===S.tripId&&h.day===ds;});}
+function hoursFor(park,ds){var l=parkHoursFor(ds);for(var i=0;i<l.length;i++)if(l[i].park===park)return l[i];return null;}
+var TIMING={morning:'Morning',day:'Day',evening:'Evening',late:'Late'};
+function timingLbl(t){return TIMING[t]||'Day';}
 
 /* person-filter visibility */
 function visible(who){
@@ -326,6 +332,30 @@ function cardHead(key,bg,pkColor,icon,title,sub,planning,addAction){
   return h;
 }
 
+function dayConditions(d){
+  var vs=visitsFor(d.date).filter(function(v){return visible(v.who);});
+  if(!vs.length){
+    return '<div class="cond"><span class="cond-dot" style="background:'+PARKS.trv.color+'"></span><div style="flex:1"><div class="cond-pk">No park visit</div><div class="cond-hours" style="color:var(--muted)">Travel / rest day</div></div></div>';
+  }
+  var o='';
+  for(var i=0;i<vs.length;i++){
+    var v=vs[i],pk=PARKS[v.park]||PARKS.trv,h=hoursFor(v.park,d.date);
+    var pr=null,prl=parkResFor(d.date);
+    for(var j=0;j<prl.length;j++){if(prl[j].park===v.park&&visible(prl[j].who)){pr=prl[j];break;}}
+    o+='<div class="cond"><span class="cond-dot" style="background:'+pk.color+'"></span>';
+    o+='<div style="flex:1;min-width:0"><div class="cond-top"><span class="cond-pk">'+esc(pk.name)+'</span><span class="cond-time">'+timingLbl(v.timing)+'</span>';
+    if(pr) o+='<span class="cond-res">'+(pr.status==='booked'?'<span style="display:flex">'+IC.check+'</span> Reserved':'Res · planning')+'</span>';
+    o+='</div>';
+    if(h){
+      o+='<div class="cond-hours">'+esc((h.open||'—')+' – '+(h.close||'—'));
+      if(h.early) o+=' <span class="cond-chip">Early '+esc(h.early)+'</span>';
+      if(h.late) o+=' <span class="cond-chip">Late '+esc(h.late)+'</span>';
+      o+='</div>';
+    }else o+='<div class="cond-hours" style="color:var(--muted)">Hours not set</div>';
+    o+='</div><div class="cond-meta">'+crowdPill(h?h.crowd:null)+'</div></div>';
+  }
+  return o;
+}
 function renderAgenda(){
   var d=day();
   if(!d) return '<div class="body-empty" style="margin-top:30px">No days for this trip yet.<br><br>Set the trip\'s start and end dates (tap the trip name in the header → edit) and days will be generated automatically.</div>';
@@ -348,19 +378,9 @@ function renderAgenda(){
   if(d.alert) o+='<div class="hero-alert">'+IC.warn+'<div class="hero-alert-txt">'+esc(d.alert)+'</div></div>';
   o+='</div>';
 
-  /* Info bar */
-  o+='<div class="info-bar">';
-  o+='<div class="ib-cell"><div class="ib-lbl">Hours</div><div class="ib-val">'+esc(d.hours||'—')+'</div></div>';
-  o+='<div class="ib-cell"><div class="ib-lbl">Crowd</div><div class="ib-val">'+crowdPill(d.crowd)+'</div></div>';
-  o+='<div class="ib-cell"><div class="ib-lbl">Park Res.</div><div class="ib-val">';
-  var prs=parkResFor(d.date).filter(function(p){return visible(p.who);});
-  if(prs.length){
-    var seen={};
-    for(var pi=0;pi<prs.length;pi++){var rp=PARKS[prs[pi].park];if(!rp||seen[prs[pi].park])continue;seen[prs[pi].park]=1;
-      o+='<div class="ib-res"><span class="ib-res-dot" style="background:'+rp.color+'"></span><span style="color:'+rp.color+'">'+rp.short+'</span>'+(prs[pi].status==='booked'?' '+IC.check:'')+'</div>';}
-  }else{o+='<span style="color:var(--muted);font-weight:600;font-size:13px">None · Hopper</span>';}
-  o+='</div></div></div>';
-  o+='<button class="add-link" style="margin:-2px 0 6px" onclick="openScreen({type:\'dayedit\',day:\''+d.date+'\'})">'+IC.pencil+' Edit day details</button>';
+  /* Per-park conditions (hours + crowd + reservation per park visited) */
+  o+=dayConditions(d);
+  o+='<button class="add-link" style="margin:2px 0 6px" onclick="openScreen({type:\'dayedit\',day:\''+d.date+'\'})">'+IC.pencil+' Edit day details</button>';
 
   /* Resort card(s) */
   var stays=resortsFor(d.date).filter(function(r){return visible(r.who);});
@@ -603,7 +623,8 @@ function renderPlanHub(){
     ['Lightning Lanes',IC.bolt,'var(--hd-ll)',cnt(LLS)+' rides','ll'],
     ['Resort',IC.bed,'var(--hd-resort)',cnt(RESORTS)+' stays','resort'],
     ['Park Reservations',IC.ticket,'#0F5F73',cnt(PARKRES)+' reservations','parkres'],
-    ['Park Visits',IC.map,'#3B7549',cnt(VISITS)+' visits','visits']
+    ['Park Visits',IC.map,'#3B7549',cnt(VISITS)+' visits','visits'],
+    ['Park Hours',IC.bolt,'#0F5F73',cnt(PARKHOURS)+' set','hours']
   ];
   o+='<div class="hub-section-label">Trip components</div>';
   for(var i=0;i<rows.length;i++) o+=hubRow(rows[i]);
@@ -894,6 +915,7 @@ function renderScreen(){
   if(t==='dayedit')   return scrDayEdit();
   if(t==='predit')    return scrPREdit();
   if(t==='visedit')   return scrVisitEdit();
+  if(t==='hoursedit') return scrHoursEdit();
   if(t==='stopedit')  return scrStopEdit();
   if(t==='showedit')  return scrShowEdit();
   if(t==='resortedit')return scrResortEdit();
@@ -1286,7 +1308,8 @@ function scrSection(){
   var map={
     addflight:['Flights',IC.plane,'var(--hd-flight)'], dining:['Dining',IC.fork,'var(--hd-din)'],
     ll:['Lightning Lanes',IC.bolt,'var(--hd-ll)'], resort:['Resort',IC.bed,'var(--hd-resort)'],
-    parkres:['Park Reservations',IC.ticket,'#0F5F73'], visits:['Park Visits',IC.map,'#3B7549']
+    parkres:['Park Reservations',IC.ticket,'#0F5F73'], visits:['Park Visits',IC.map,'#3B7549'],
+    hours:['Park Hours',IC.bolt,'#0F5F73']
   };
   var m=map[sec]||['Section',IC.route,'var(--ink)'];
   var body='',TD=tripDays(),dft=(TD[1]||TD[0]||{date:''}).date;
@@ -1323,11 +1346,21 @@ function scrSection(){
     for(var i3=0;i3<TD.length;i3++){var dvs=visitsFor(TD[i3].date);if(!dvs.length)continue;anyV=true;
       body+=dayHd(TD[i3].date);
       for(var vj=0;vj<dvs.length;vj++){var vv=dvs[vj],vpk=PARKS[vv.park];
-        body+='<div class="ov-card"><div class="din-row"><span style="background:'+(vpk?vpk.color:'#999')+';width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name">'+(vpk?esc(vpk.name):esc(vv.park))+'</div>'+(vv.who!=='all'?whoChips(vv.who):'<div class="din-time">Everyone</div>')+'</div>'+(vj===0?'<span class="st-badge st-booked">Primary</span>':'<span class="st-badge st-todo">Hopper</span>')+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'visedit\',edit:\''+vv.id+'\',day:\''+vv.day+'\'})">'+IC.pencil+'</button></div></div>';
+        body+='<div class="ov-card"><div class="din-row"><span style="background:'+(vpk?vpk.color:'#999')+';width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name">'+(vpk?esc(vpk.name):esc(vv.park))+'</div><div class="din-time">'+timingLbl(vv.timing)+(vv.who==='all'?' · Everyone':'')+'</div>'+(vv.who!=='all'?whoChips(vv.who):'')+'</div>'+(vj===0?'<span class="st-badge st-booked">Primary</span>':'<span class="st-badge st-todo">Hopper</span>')+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'visedit\',edit:\''+vv.id+'\',day:\''+vv.day+'\'})">'+IC.pencil+'</button></div></div>';
       }
     }
     if(!anyV) body+='<div class="body-empty">No park visits yet.</div>';
     body+='<button class="btn-primary" onclick="openScreen({type:\'visedit\',day:\''+dft+'\'})">Add park visit</button>';
+  }else if(sec==='hours'){
+    var anyH=false;
+    for(var i4=0;i4<TD.length;i4++){var dhs=parkHoursFor(TD[i4].date);if(!dhs.length)continue;anyH=true;
+      body+=dayHd(TD[i4].date);
+      for(var hj=0;hj<dhs.length;hj++){var hh=dhs[hj],hpk=PARKS[hh.park];
+        body+='<div class="ov-card"><div class="din-row"><span style="background:'+(hpk?hpk.color:'#999')+';width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name">'+(hpk?esc(hpk.name):esc(hh.park))+'</div><div class="din-time">'+esc((hh.open||'—')+' – '+(hh.close||'—'))+(hh.early?' · Early '+esc(hh.early):'')+(hh.late?' · Late '+esc(hh.late):'')+'</div></div>'+crowdPill(hh.crowd)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'hoursedit\',edit:\''+hh.id+'\',day:\''+hh.day+'\'})">'+IC.pencil+'</button></div></div>';
+      }
+    }
+    if(!anyH) body+='<div class="body-empty">No park hours yet.</div>';
+    body+='<button class="btn-primary" onclick="openScreen({type:\'hoursedit\',day:\''+dft+'\'})">Add park hours</button>';
   }
   return screenShell(m[0],body,null,null,'Done');
 }
@@ -1361,7 +1394,7 @@ function scrDayEdit(){
   body+='<div class="field"><label class="field-label">Park visits <span class="opt">(assigned items — tap to edit)</span></label>';
   var vis=visitsFor(d.date);
   for(var vi=0;vi<vis.length;vi++){var vv=vis[vi],vpk=PARKS[vv.park];
-    body+='<div class="ov-card" style="margin:0 0 8px"><div class="din-row" style="padding:10px 12px"><span style="background:'+(vpk?vpk.color:'#999')+';width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name">'+(vpk?esc(vpk.name):esc(vv.park))+'</div>'+(vv.who!=='all'?whoChips(vv.who):'<div class="din-time">Everyone</div>')+'</div>'+(vi===0?'<span class="st-badge st-booked">Primary</span>':'<span class="st-badge st-todo">Hopper</span>')+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'visedit\',edit:\''+vv.id+'\',day:\''+d.date+'\'})">'+IC.pencil+'</button></div></div>';
+    body+='<div class="ov-card" style="margin:0 0 8px"><div class="din-row" style="padding:10px 12px"><span style="background:'+(vpk?vpk.color:'#999')+';width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name">'+(vpk?esc(vpk.name):esc(vv.park))+'</div><div class="din-time">'+timingLbl(vv.timing)+(vv.who==='all'?' · Everyone':'')+'</div>'+(vv.who!=='all'?whoChips(vv.who):'')+'</div>'+(vi===0?'<span class="st-badge st-booked">Primary</span>':'<span class="st-badge st-todo">Hopper</span>')+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'visedit\',edit:\''+vv.id+'\',day:\''+d.date+'\'})">'+IC.pencil+'</button></div></div>';
   }
   if(!vis.length) body+='<div class="body-empty" style="text-align:left;padding:2px 2px 4px">No park visit — travel / rest day.</div>';
   body+='<button class="add-link" style="margin-top:0" onclick="openScreen({type:\'visedit\',day:\''+d.date+'\'})">'+IC.plus+' Add park visit</button>';
@@ -1374,16 +1407,20 @@ function scrDayEdit(){
   if(!prs.length) body+='<div class="body-empty" style="text-align:left;padding:2px 2px 4px">No park reservation — Hopper day.</div>';
   body+='<button class="add-link" style="margin-top:0" onclick="openScreen({type:\'predit\',day:\''+d.date+'\'})">'+IC.plus+' Add park reservation</button>';
   body+='</div>';
-  body+='<div class="field"><label class="field-label">Park hours</label><input class="field-input" id="dy-hours" placeholder="8:30 AM – 9:00 PM" value="'+esc(d.hours||'')+'"></div>';
-  body+='<div class="field"><label class="field-label">Expected crowd</label><select class="field-select" id="dy-crowd">'+crowdOptions(d.crowd)+'</select></div>';
+  body+='<div class="field"><label class="field-label">Park hours & crowd <span class="opt">(per park — tap to edit)</span></label>';
+  var phl=parkHoursFor(d.date);
+  for(var hi=0;hi<phl.length;hi++){var hh=phl[hi],hpk=PARKS[hh.park];
+    body+='<div class="ov-card" style="margin:0 0 8px"><div class="din-row" style="padding:10px 12px"><span style="background:'+(hpk?hpk.color:'#999')+';width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name">'+(hpk?esc(hpk.name):esc(hh.park))+'</div><div class="din-time">'+esc((hh.open||'—')+' – '+(hh.close||'—'))+(hh.early?' · Early '+esc(hh.early):'')+(hh.late?' · Late '+esc(hh.late):'')+'</div></div>'+crowdPill(hh.crowd)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'hoursedit\',edit:\''+hh.id+'\',day:\''+d.date+'\'})">'+IC.pencil+'</button></div></div>';
+  }
+  if(!phl.length) body+='<div class="body-empty" style="text-align:left;padding:2px 2px 4px">No park hours set for this day.</div>';
+  body+='<button class="add-link" style="margin-top:0" onclick="openScreen({type:\'hoursedit\',day:\''+d.date+'\'})">'+IC.plus+' Add park hours</button>';
+  body+='</div>';
   body+='<div class="field"><label class="field-label">Day summary</label><input class="field-input" id="dy-visit" placeholder="EPCOT all day" value="'+esc(d.visit||'')+'"></div>';
   body+='<div class="field"><label class="field-label">Alert / heads-up <span class="opt">(optional)</span></label><textarea class="field-input" id="dy-alert" rows="3" placeholder="e.g. Storms likely 2–4 PM">'+esc(d.alert||'')+'</textarea></div>';
   return screenShell('Edit Day',body,'Save','saveDay()');
 }
 function saveDay(){
   var d=dayByDate(S.screen.day);if(!d){closeScreen();return;}
-  d.hours=val('dy-hours');
-  var c=val('dy-crowd');d.crowd=c?parseInt(c,10):null;
   d.visit=val('dy-visit');
   d.alert=val('dy-alert')||null;
   save('dtp_days',DAYS);toast('Day updated');closeScreen();render();
@@ -1426,23 +1463,55 @@ function delPR(id){
 function scrVisitEdit(){
   var edit=S.screen.edit?VISITS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
   var pre=edit?edit.who:'all';
+  var tm=edit&&edit.timing?edit.timing:'day';
   var body='<div class="field"><label class="field-label">Park</label><select class="field-select" id="vs-park">'+parkResOptions(edit?edit.park:'mk')+'</select></div>';
   body+='<div class="field"><label class="field-label">Day</label><select class="field-select" id="vs-day">'+dayOptions((edit&&edit.day)||S.screen.day)+'</select></div>';
+  body+='<div class="field"><label class="field-label">Timing <span class="opt">(when you plan to be there)</span></label><select class="field-select" id="vs-timing">';
+  ['morning','day','evening','late'].forEach(function(k){body+='<option value="'+k+'"'+(tm===k?' selected':'')+'>'+TIMING[k]+'</option>';});
+  body+='</select></div>';
   body+=whoSelectField(pre);
-  body+='<div class="body-empty" style="text-align:left;padding:2px 2px 0">The first visit on a day is the primary park (sets the day\'s color and hero); add a second visit for a hopper / two-park day.</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:2px 2px 0">The first visit on a day is the primary park (sets the day\'s color and hero); add a second visit for a hopper / two-park day. Park hours & crowd are set separately, per park.</div>';
   if(edit) body+='<button class="btn-danger-link" onclick="delVisit(\''+edit.id+'\')">Delete this visit</button>';
   return screenShell(edit?'Edit Park Visit':'Add Park Visit',body,'Save','saveVisit()');
 }
 function saveVisit(){
   var edit=S.screen.edit?VISITS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
   var rec=edit||{id:'v'+Date.now(),trip:S.tripId};
-  rec.park=val('vs-park')||'mk';rec.day=val('vs-day')||S.screen.day;rec.who=whoVal();
+  rec.park=val('vs-park')||'mk';rec.day=val('vs-day')||S.screen.day;rec.timing=val('vs-timing')||'day';rec.who=whoVal();
   if(!edit)VISITS.push(rec);
   save('dtp_visits',VISITS);S._who=null;toast('Park visit saved');closeScreen();render();
 }
 function delVisit(id){
   for(var i=0;i<VISITS.length;i++)if(VISITS[i].id===id){VISITS.splice(i,1);break;}
   save('dtp_visits',VISITS);toast('Visit removed');closeScreen();render();
+}
+
+/* ── Park hours (first-class item: park + day + hours + crowd) ─ */
+function scrHoursEdit(){
+  var edit=S.screen.edit?PARKHOURS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
+  var body='<div class="field"><label class="field-label">Park</label><select class="field-select" id="ph-park">'+parkResOptions(edit?edit.park:'mk')+'</select></div>';
+  body+='<div class="field"><label class="field-label">Day</label><select class="field-select" id="ph-day">'+dayOptions((edit&&edit.day)||S.screen.day)+'</select></div>';
+  body+='<div class="field-row"><div class="field"><label class="field-label">Opening</label><input class="field-input" id="ph-open" placeholder="8:30 AM" value="'+(edit?esc(edit.open||''):'')+'"></div>';
+  body+='<div class="field"><label class="field-label">Closing</label><input class="field-input" id="ph-close" placeholder="9:00 PM" value="'+(edit?esc(edit.close||''):'')+'"></div></div>';
+  body+='<div class="field-row"><div class="field"><label class="field-label">Early Entry <span class="opt">(opt)</span></label><input class="field-input" id="ph-early" placeholder="8:00 AM" value="'+(edit?esc(edit.early||''):'')+'"></div>';
+  body+='<div class="field"><label class="field-label">Extended / Late <span class="opt">(opt)</span></label><input class="field-input" id="ph-late" placeholder="11:00 PM" value="'+(edit?esc(edit.late||''):'')+'"></div></div>';
+  body+='<div class="field"><label class="field-label">Expected crowd</label><select class="field-select" id="ph-crowd">'+crowdOptions(edit?edit.crowd:null)+'</select></div>';
+  body+='<div class="body-empty" style="text-align:left;padding:2px 2px 0">Park hours & crowd are facts about a park on a date — independent of whether you visit. On a two-park day, add hours for each park.</div>';
+  if(edit) body+='<button class="btn-danger-link" onclick="delHours(\''+edit.id+'\')">Delete these hours</button>';
+  return screenShell(edit?'Edit Park Hours':'Add Park Hours',body,'Save','saveHours()');
+}
+function saveHours(){
+  var edit=S.screen.edit?PARKHOURS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
+  var rec=edit||{id:'h'+Date.now(),trip:S.tripId};
+  rec.park=val('ph-park')||'mk';rec.day=val('ph-day')||S.screen.day;
+  rec.open=val('ph-open');rec.close=val('ph-close');rec.early=val('ph-early');rec.late=val('ph-late');
+  var c=val('ph-crowd');rec.crowd=c?parseInt(c,10):null;
+  if(!edit)PARKHOURS.push(rec);
+  save('dtp_hours',PARKHOURS);toast('Park hours saved');closeScreen();render();
+}
+function delHours(id){
+  for(var i=0;i<PARKHOURS.length;i++)if(PARKHOURS[i].id===id){PARKHOURS.splice(i,1);break;}
+  save('dtp_hours',PARKHOURS);toast('Hours removed');closeScreen();render();
 }
 
 /* ── Day-plan stop ─────────────────────────────────────────── */
@@ -1563,7 +1632,7 @@ function delTrip(id){
   TRIPS=TRIPS.filter(function(x){return x.id!==id;});
   // remove this trip's days and items
   function drop(coll){for(var i=coll.length-1;i>=0;i--)if(coll[i].trip===id)coll.splice(i,1);}
-  [DAYS,VISITS,DINING,LLS,SHOWS,FLIGHTS,RESORTS,PARKRES].forEach(drop);
+  [DAYS,VISITS,PARKHOURS,DINING,LLS,SHOWS,FLIGHTS,RESORTS,PARKRES].forEach(drop);
   for(var c=CHAT.length-1;c>=0;c--)if(CHAT[c].trip===id)CHAT.splice(c,1);
   try{localStorage.removeItem('dtp_packing_'+id);localStorage.removeItem('dtp_todo_'+id);}catch(e){}
   if(S.tripId===id){S.tripId=TRIPS[0].id;loadLists();S.dayIdx=0;S.open=defOpen();S.filter.clear();}
