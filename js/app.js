@@ -61,8 +61,8 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
-var DATA_VERSION='8';
-var BUILD='15';   /* bumped each deploy — shown in Settings to spot stale caches */
+var DATA_VERSION='9';
+var BUILD='16';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -182,15 +182,16 @@ function whoStack(who){
 /* status badge */
 function statusBadge(st){
   var map={
-    booked:['st-booked','Booked'], planning:['st-planning','Planning'],
-    reserved:['st-reserved','Reserved'], want:['st-want','Want to Try'],
+    booked:['st-booked','Booked'], planning:['st-planning','Planned'],
+    reserved:['st-reserved','Reserved'], planned:['st-planned','Planned'], want:['st-want','Want to Try'],
+    attend:['st-booked','Attend'], scheduled:['st-todo','Scheduled'],
     todo:['st-todo','To Do'], done:['st-done','Done'], na:['st-na','N/A']
   };
   var m=map[st]||['st-todo',st];
-  var ic = (st==='booked'||st==='reserved'||st==='done')?'<span style="display:flex">'+IC.checkw+'</span>':'';
+  var ic = (st==='booked'||st==='reserved'||st==='done'||st==='attend')?'<span style="display:flex">'+IC.checkw+'</span>':'';
   return '<span class="st-badge '+m[0]+'">'+ic+m[1]+'</span>';
 }
-function isPlanningStatus(st){return st==='planning'||st==='want';}
+function isPlanningStatus(st){return st==='planning'||st==='want'||st==='planned'||st==='scheduled';}
 
 function tagCls(t){return t==='sp'?'sp':t==='mp1'?'mp1':'mp2';}
 function tagLbl(t){return t==='sp'?'Single Pass':t==='mp1'?'Multi Pass T1':'Multi Pass T2';}
@@ -476,8 +477,8 @@ function resortCard(r,date){
     o+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">';
     o+='<div><div class="resort-name">'+esc(r.name)+'</div><div class="resort-room">'+esc(r.room)+'</div></div>';
     o+='<div class="row-status" style="display:flex;align-items:center;gap:8px">'+statusBadge(r.status)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280" onclick="openScreen({type:\'resortedit\',edit:\''+r.id+'\'})">'+IC.pencil+'</button></div></div>';
-    o+='<div class="resort-dates"><div class="rd-cell"><div class="rd-lbl">Check-in</div><div class="rd-day">'+monOf(r.checkin)+' '+(+r.checkin.slice(8))+'</div><div class="rd-sub">'+(fmtDay(r.checkin).split(' · ')[1]||'')+' · 4:00 PM</div></div>';
-    o+='<div class="rd-cell"><div class="rd-lbl">Check-out</div><div class="rd-day">'+monOf(r.checkout)+' '+(+r.checkout.slice(8))+'</div><div class="rd-sub">'+(fmtDay(r.checkout).split(' · ')[1]||'')+' · 11:00 AM</div></div></div>';
+    o+='<div class="resort-dates"><div class="rd-cell"><div class="rd-lbl">Check-in</div><div class="rd-day">'+monOf(r.checkin)+' '+(+r.checkin.slice(8))+'</div><div class="rd-sub">'+(fmtDay(r.checkin).split(' · ')[1]||'')+' · '+esc(r.inTime||'4:00 PM')+'</div></div>';
+    o+='<div class="rd-cell"><div class="rd-lbl">Check-out</div><div class="rd-day">'+monOf(r.checkout)+' '+(+r.checkout.slice(8))+'</div><div class="rd-sub">'+(fmtDay(r.checkout).split(' · ')[1]||'')+' · '+esc(r.outTime||'11:00 AM')+'</div></div></div>';
     o+='<div class="resort-conf">Confirmation #'+esc(r.conf)+'</div>';
     o+=whoChips(r.who);
     if(flag) o+=flag;
@@ -529,15 +530,15 @@ function flightJourney(f,d){
 /* assemble the day plan: derived booked items + manual stops, time-sorted */
 function dayPlanItems(d){
   var date=d.date,out=[];
-  for(var i=0;i<RESORTS.length;i++){var r=RESORTS[i];if(r.trip!==S.tripId)continue;
-    if(r.checkin===date) out.push({t:'4:00 PM',x:'Check in — '+r.name,type:'resort',who:r.who});
-    if(r.checkout===date) out.push({t:'11:00 AM',x:'Check out — '+r.name,type:'resort',who:r.who});}
-  flightsFor(date).forEach(function(f){f.legs.forEach(function(lg){
+  for(var i=0;i<RESORTS.length;i++){var r=RESORTS[i];if(r.trip!==S.tripId||r.status!=='booked')continue;
+    if(r.checkin===date) out.push({t:r.inTime||'4:00 PM',x:'Check in — '+r.name,type:'resort',who:r.who});
+    if(r.checkout===date) out.push({t:r.outTime||'11:00 AM',x:'Check out — '+r.name,type:'resort',who:r.who});}
+  flightsFor(date).forEach(function(f){if(f.status!=='booked')return;f.legs.forEach(function(lg){
     if(lg.depDate===date) out.push({t:lg.depTime,x:'Depart '+lg.depApt+' — '+lg.airline+(lg.num?' '+lg.num:''),type:'flight',who:f.who});
     if(lg.arrDate===date) out.push({t:lg.arrTime,x:'Arrive '+lg.arrApt+(lg.arrCity&&lg.arrCity!==lg.arrApt?' ('+lg.arrCity+')':''),type:'flight',who:f.who});
   });});
-  diningFor(date).forEach(function(dn){out.push({t:dn.time,x:dn.meal+' — '+dn.name,type:'dining',who:dn.who});});
-  showsFor(date).forEach(function(s){out.push({t:s.time,x:s.name,type:'show',who:s.who});});
+  diningFor(date).forEach(function(dn){if(dn.status==='reserved'||dn.status==='planned')out.push({t:dn.time,x:dn.meal+' — '+dn.name,type:'dining',who:dn.who});});
+  showsFor(date).forEach(function(s){if((s.status||'attend')==='attend')out.push({t:s.time,x:s.name,type:'show',who:s.who});});
   llFor(date).forEach(function(l){if(l.status==='booked')out.push({t:l.bookedTime||l.window,x:l.ride+' ('+tagShort(l.tier)+')',type:'ll',who:l.who});});
   (d.itin||[]).forEach(function(it,idx){out.push({t:it.t,x:it.x,type:'manual',who:it.who||'all',crit:it.crit,idx:idx});});
   out=out.filter(function(e){return visible(e.who);});
@@ -661,7 +662,7 @@ function diningRow(dn){
   o+='</div>';
   o+='<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">';
   o+=statusBadge(dn.status);
-  o+=(dn.loc==='in'&&dn.park)?'<span class="inpark-badge" style="background:'+PARKS[dn.park].color+'">In-Park</span>':'<span class="nonpark-badge">Off-Site</span>';
+  o+=(dn.loc==='in'&&dn.park)?'<span class="inpark-badge" style="background:'+PARKS[dn.park].color+'">In-Park</span>':'<span class="nonpark-badge">Non-Park</span>';
   o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280" onclick="openScreen({type:\'adddining\',edit:\''+dn.id+'\',day:\''+dn.day+'\'})">'+IC.pencil+'</button>';
   o+='</div></div>';
   return o;
@@ -674,7 +675,7 @@ function showsCard(sh,pk,date){
     o+='<div class="card-body">';
     if(!sh.length) o+='<div class="body-empty">No shows'+(S.filter.size?' for the selected people':'')+' on this day.</div>';
     for(var i=0;i<sh.length;i++){var x=sh[i];
-      o+='<div class="show-row"><div style="flex:1"><div class="show-name">'+esc(x.name)+'</div>'+(x.who!=='all'?whoChips(x.who):'')+'</div><div class="show-time">'+esc(x.time)+'</div>';
+      o+='<div class="show-row"><div style="flex:1"><div class="show-name">'+esc(x.name)+'</div><div style="display:flex;align-items:center;gap:6px;margin-top:4px">'+statusBadge(x.status||'attend')+(x.who!=='all'?whoChips(x.who):'')+'</div></div><div class="show-time">'+esc(x.time)+'</div>';
       o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;margin-left:8px" onclick="openScreen({type:\'showedit\',edit:\''+x.id+'\',day:\''+x.day+'\'})">'+IC.pencil+'</button></div>';
     }
     o+='<button class="add-link" onclick="openScreen({type:\'showedit\',day:\''+date+'\'})">'+IC.plus+' Add show</button>';
@@ -1094,11 +1095,12 @@ function scrAddDining(){
   for(var m=0;m<meals.length;m++)body+='<option'+((edit&&edit.meal===meals[m])||(!edit&&meals[m]==='Dinner')?' selected':'')+'>'+meals[m]+'</option>';
   body+='</select></div>';
   body+='<div class="field"><label class="field-label">Time</label><input class="field-input" id="dd-time" placeholder="6:45 PM" value="'+(edit?esc(edit.time):'')+'"></div></div>';
-  body+='<div class="field"><label class="field-label">Status</label><div class="seg">';
+  body+='<div class="field"><label class="field-label">Status <span class="opt">(Reserved & Planned show on the Day Plan)</span></label><div class="seg">';
   body+='<button class="seg-btn'+(st==='want'?' on':'')+'" onclick="pickStatus(\'dd\',\'want\')">Want to Try</button>';
+  body+='<button class="seg-btn'+(st==='planned'?' on':'')+'" onclick="pickStatus(\'dd\',\'planned\')">Planned</button>';
   body+='<button class="seg-btn'+(st==='reserved'?' on book':'')+'" onclick="pickStatus(\'dd\',\'reserved\')">Reserved</button></div></div>';
   if(st==='reserved') body+='<div class="field"><label class="field-label">Confirmation #</label><input class="field-input" id="dd-conf" placeholder="DR-118455" value="'+(edit&&edit.conf?esc(edit.conf):'')+'"></div>';
-  body+='<div class="field"><label class="field-label">Location</label><div class="seg"><button class="seg-btn'+(loc==='in'?' on':'')+'" onclick="pickLoc(\'in\')">In-Park</button><button class="seg-btn'+(loc==='off'?' on':'')+'" onclick="pickLoc(\'off\')">Off-Site</button></div></div>';
+  body+='<div class="field"><label class="field-label">Location</label><div class="seg"><button class="seg-btn'+(loc==='in'?' on':'')+'" onclick="pickLoc(\'in\')">In-Park</button><button class="seg-btn'+(loc==='off'?' on':'')+'" onclick="pickLoc(\'off\')">Non-Park</button></div></div>';
   body+=whoSelectField(pre);
   body+='<div class="field"><label class="field-label">Appears on day</label><select class="field-select" id="dd-day">'+dayOptions((edit&&edit.day)||S.screen.day||'2026-07-15')+'</select></div>';
   if(edit) body+='<button class="btn-danger-link" onclick="delDining(\''+edit.id+'\')">Delete this reservation</button>';
@@ -1146,17 +1148,23 @@ function saveLLBook(){
 }
 function scrAddLL(){
   var edit=S.screen.edit?LLS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
-  if(S._formInit!=='ll'){S._formTier=edit?edit.tier:'sp';S._formInit='ll';}
-  var tier=S._formTier,pre=edit?edit.who:'all';
+  if(S._formInit!=='ll'){S._formTier=edit?edit.tier:'sp';S._formStatus.ll=edit?edit.status:'planning';S._formInit='ll';}
+  var tier=S._formTier,stt=S._formStatus.ll,pre=edit?edit.who:'all';
   var body='<div class="field"><label class="field-label">Ride</label><input class="field-input" id="ll-ride" placeholder="e.g. Peter Pan\'s Flight" value="'+(edit?esc(edit.ride):'')+'"></div>';
   body+='<div class="field"><label class="field-label">Tier</label><div class="seg">';
   body+='<button class="seg-btn'+(tier==='sp'?' on':'')+'" onclick="pickTier(\'sp\')">SP</button>';
   body+='<button class="seg-btn'+(tier==='mp1'?' on':'')+'" onclick="pickTier(\'mp1\')">T1</button>';
   body+='<button class="seg-btn'+(tier==='mp2'?' on':'')+'" onclick="pickTier(\'mp2\')">T2</button></div></div>';
+  body+='<div class="field"><label class="field-label">Status <span class="opt">(only Booked shows on the Day Plan)</span></label><div class="seg">';
+  body+='<button class="seg-btn'+(stt==='planning'?' on':'')+'" onclick="pickStatus(\'ll\',\'planning\')">Planned</button>';
+  body+='<button class="seg-btn'+(stt==='booked'?' on book':'')+'" onclick="pickStatus(\'ll\',\'booked\')">Booked</button></div></div>';
   body+='<div class="field"><label class="field-label">Planned window</label><input class="field-input" id="ll-window" placeholder="~3:00–4:00 PM" value="'+(edit?esc(edit.window):'')+'"></div>';
+  if(stt==='booked'){
+    body+='<div class="field"><label class="field-label">Confirmed return time</label><input class="field-input" id="ll-btime" placeholder="1:25 PM" value="'+(edit&&edit.bookedTime?esc(edit.bookedTime):'')+'"></div>';
+    body+='<div class="field"><label class="field-label">Confirmation #</label><input class="field-input" id="ll-conf" placeholder="MP-44190" value="'+(edit&&edit.conf?esc(edit.conf):'')+'"></div>';
+  }
   body+=whoSelectField(pre);
   body+='<div class="field"><label class="field-label">Day</label><select class="field-select" id="ll-day">'+dayOptions((edit&&edit.day)||S.screen.day)+'</select></div>';
-  if(edit&&edit.status==='planning') body+='<button class="btn-secondary" onclick="closeScreen();openScreen({type:\'llbook\',id:\''+edit.id+'\'})">Mark as booked instead</button>';
   if(edit) body+='<button class="btn-danger-link" onclick="delLL(\''+edit.id+'\')">Delete this ride</button>';
   return screenShell(edit?'Edit Ride':'Add Ride',body,'Save','saveLL()');
 }
@@ -1166,9 +1174,14 @@ function saveLL(){
   var ride=val('ll-ride');
   if(!ride){toast('Add a ride name');return;}
   var dy=val('ll-day')||S.screen.day;
-  var rec=edit||{id:'ll'+Date.now(),trip:S.tripId,status:'planning',bookedTime:'',conf:'',bookDate:''};
+  var rec=edit||{id:'ll'+Date.now(),trip:S.tripId,bookedTime:'',conf:'',bookDate:''};
   rec.day=dy;rec.park=dayPrimaryPark(dy);rec.ride=ride;
   rec.tier=S._formTier||'sp';rec.window=val('ll-window')||'~TBD';rec.who=whoVal();
+  rec.status=S._formStatus.ll||'planning';
+  if(rec.status==='booked'){
+    rec.bookedTime=val('ll-btime')||(rec.window?rec.window.replace(/[~]/g,'').split('–')[0].trim():'');
+    rec.conf=val('ll-conf')||rec.conf||'MP-'+Math.floor(10000+Math.random()*89999);
+  }
   if(!rec.bookDate)rec.bookDate=monOf(dy)+' '+(+dy.slice(8))+' @ 7:00 AM';
   if(!edit)LLS.push(rec);
   save('dtp_lls',LLS);S._who=null;toast('Ride saved');closeScreen();render();
@@ -1399,7 +1412,15 @@ function scrSection(){
       body+=dayHd(TD[i2].date);for(var j2=0;j2<fl.length;j2++)body+='<div class="ov-card'+(isPlanningStatus(fl[j2].status)?' planning':'')+'">'+flightJourney(fl[j2],dayByDate(TD[i2].date))+'</div>';}
     body+='<button class="btn-primary" onclick="openScreen({type:\'addflight\',day:\''+((TD[0]||{date:''}).date)+'\'})">Add flight</button>';
   }else if(sec==='ll'){
-    body=ovLL();body+='<button class="btn-primary" onclick="openScreen({type:\'addll\',day:\''+dft+'\'})">Add ride</button>';
+    var anyLL=false;
+    for(var il=0;il<TD.length;il++){var lld=llFor(TD[il].date);if(!lld.length)continue;anyLL=true;
+      body+=dayHd(TD[il].date);
+      for(var lj=0;lj<lld.length;lj++){var l=lld[lj];
+        body+='<div class="ov-card'+(isPlanningStatus(l.status)?' planning':'')+'"><div class="din-row"><div style="flex:1;min-width:0"><div class="din-name">'+esc(l.ride)+' <span class="ll-tag '+tagCls(l.tier)+'">'+tagShort(l.tier)+'</span></div><div class="din-time">'+(l.status==='booked'?('Booked '+esc(l.bookedTime||'')):('Window '+esc(l.window)))+'</div>'+(l.who!=='all'?whoChips(l.who):'')+'</div>'+statusBadge(l.status)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'addll\',edit:\''+l.id+'\',day:\''+l.day+'\'})">'+IC.pencil+'</button></div></div>';
+      }
+    }
+    if(!anyLL) body+='<div class="body-empty">No Lightning Lanes yet.</div>';
+    body+='<button class="btn-primary" onclick="openScreen({type:\'addll\',day:\''+dft+'\'})">Add ride</button>';
   }else if(sec==='resort'){
     var rsl=RESORTS.filter(function(r){return r.trip===S.tripId;});
     for(var ir=0;ir<rsl.length;ir++){var rr=rsl[ir];
@@ -1667,9 +1688,13 @@ function delRebook(id){
 /* ── Night show ────────────────────────────────────────────── */
 function scrShowEdit(){
   var edit=S.screen.edit?SHOWS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
-  var pre=edit?edit.who:'all';
+  if(S._formInit!=='sh'){S._formStatus.sh=edit?(edit.status||'attend'):'attend';S._formInit='sh';}
+  var st=S._formStatus.sh,pre=edit?edit.who:'all';
   var body='<div class="field"><label class="field-label">Show name</label><input class="field-input" id="sh-name" placeholder="e.g. Happily Ever After" value="'+(edit?esc(edit.name):'')+'"></div>';
   body+='<div class="field"><label class="field-label">Time</label><input class="field-input" id="sh-time" placeholder="9:00 PM" value="'+(edit?esc(edit.time):'')+'"></div>';
+  body+='<div class="field"><label class="field-label">Status <span class="opt">(only Attend shows on the Day Plan)</span></label><div class="seg">';
+  body+='<button class="seg-btn'+(st==='scheduled'?' on':'')+'" onclick="pickStatus(\'sh\',\'scheduled\')">Scheduled</button>';
+  body+='<button class="seg-btn'+(st==='attend'?' on book':'')+'" onclick="pickStatus(\'sh\',\'attend\')">Attend</button></div></div>';
   body+=whoSelectField(pre);
   body+='<div class="field"><label class="field-label">Day</label><select class="field-select" id="sh-day">'+dayOptions((edit&&edit.day)||S.screen.day)+'</select></div>';
   if(edit) body+='<button class="btn-danger-link" onclick="delShow(\''+edit.id+'\')">Delete this show</button>';
@@ -1679,7 +1704,7 @@ function saveShow(){
   var edit=S.screen.edit?SHOWS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
   var nm=val('sh-name');if(!nm){toast('Add a show name');return;}
   var rec=edit||{id:'s'+Date.now(),trip:S.tripId};
-  rec.name=nm;rec.time=val('sh-time')||'TBD';rec.day=val('sh-day')||S.screen.day;rec.who=whoVal();
+  rec.name=nm;rec.time=val('sh-time')||'TBD';rec.day=val('sh-day')||S.screen.day;rec.status=S._formStatus.sh||'attend';rec.who=whoVal();
   if(!edit)SHOWS.push(rec);
   save('dtp_shows',SHOWS);S._who=null;toast('Show saved');closeScreen();render();
 }
@@ -1696,8 +1721,10 @@ function scrResortEdit(){
   var body='<div class="field"><label class="field-label">Resort name</label><input class="field-input" id="rs-name" placeholder="Disney\'s Pop Century Resort" value="'+(edit?esc(edit.name):'')+'"></div>';
   body+='<div class="field"><label class="field-label">Room type</label><input class="field-input" id="rs-room" placeholder="Standard Room · Pool View" value="'+(edit?esc(edit.room):'')+'"></div>';
   var _td=tripDays();var _d0=(_td[0]||{date:''}).date,_dN=(_td[_td.length-1]||{date:''}).date;
-  body+='<div class="field-row"><div class="field"><label class="field-label">Check-in</label><select class="field-select" id="rs-in">'+dayOptions(edit?edit.checkin:_d0)+'</select></div>';
-  body+='<div class="field"><label class="field-label">Check-out</label><select class="field-select" id="rs-out">'+dayOptions(edit?edit.checkout:_dN)+'</select></div></div>';
+  body+='<div class="field-row"><div class="field"><label class="field-label">Check-in day</label><select class="field-select" id="rs-in">'+dayOptions(edit?edit.checkin:_d0)+'</select></div>';
+  body+='<div class="field"><label class="field-label">Check-in time</label><input class="field-input" id="rs-intime" placeholder="4:00 PM" value="'+(edit&&edit.inTime?esc(edit.inTime):'')+'"></div></div>';
+  body+='<div class="field-row"><div class="field"><label class="field-label">Check-out day</label><select class="field-select" id="rs-out">'+dayOptions(edit?edit.checkout:_dN)+'</select></div>';
+  body+='<div class="field"><label class="field-label">Check-out time</label><input class="field-input" id="rs-outtime" placeholder="11:00 AM" value="'+(edit&&edit.outTime?esc(edit.outTime):'')+'"></div></div>';
   body+='<div class="field"><label class="field-label">Confirmation #</label><input class="field-input" id="rs-conf" placeholder="A10293847" value="'+(edit&&edit.conf?esc(edit.conf):'')+'"></div>';
   body+='<div class="field"><label class="field-label">Status</label><div class="seg">';
   body+='<button class="seg-btn'+(st==='planning'?' on':'')+'" onclick="pickStatus(\'rs\',\'planning\')">Planning</button>';
@@ -1711,6 +1738,7 @@ function saveResort(){
   var nm=val('rs-name');if(!nm){toast('Add a resort name');return;}
   var rec=edit||{id:'r'+Date.now(),trip:S.tripId};
   rec.name=nm;rec.room=val('rs-room')||'Room';rec.checkin=val('rs-in');rec.checkout=val('rs-out');
+  rec.inTime=val('rs-intime');rec.outTime=val('rs-outtime');
   rec.conf=val('rs-conf')||'';rec.status=S._formStatus.rs||'planning';rec.who=whoVal();
   if(!edit)RESORTS.push(rec);
   save('dtp_resorts',RESORTS);S._who=null;toast('Resort saved');closeScreen();render();

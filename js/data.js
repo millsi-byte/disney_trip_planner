@@ -159,10 +159,10 @@ var PARKHOURS = [
 /* ── Resort stays (split stay) ────────────────────────────── */
 var RESORTS = [
   {id:"r1", name:"Disney's Pop Century Resort", room:"Standard Room · Pool View",
-   checkin:"2026-07-14", checkout:"2026-07-16", conf:"A10293847",
+   checkin:"2026-07-14", checkout:"2026-07-16", inTime:"4:00 PM", outTime:"11:00 AM", conf:"A10293847",
    status:"booked", who:"all"},
   {id:"r2", name:"Disney's BoardWalk Villas", room:"1-Bedroom Villa",
-   checkin:"2026-07-16", checkout:"2026-07-19", conf:"619078381899",
+   checkin:"2026-07-16", checkout:"2026-07-19", inTime:"4:00 PM", outTime:"11:00 AM", conf:"619078381899",
    status:"booked", who:"all"}
 ];
 
@@ -284,9 +284,9 @@ var DINING = [
   {id:"d6", day:"2026-07-17", meal:"Lunch",     name:"The Hollywood Brown Derby", time:"1:00 PM",
    loc:"in", park:"hs", status:"reserved", conf:"DR-118570", who:"all"},
   {id:"d7", day:"2026-07-17", meal:"Dinner",    name:"Le Cellier Steakhouse", time:"7:30 PM",
-   loc:"in", park:"ep", status:"want", conf:"", who:"all"},
+   loc:"in", park:"ep", status:"planned", conf:"", who:"all"},
   {id:"d8", day:"2026-07-18", meal:"Lunch",     name:"Tiffins", time:"12:00 PM",
-   loc:"in", park:"ak", status:"want", conf:"", who:"all"},
+   loc:"in", park:"ak", status:"planned", conf:"", who:"all"},
   {id:"d9", day:"2026-07-18", meal:"Drinks",    name:"Nomad Lounge", time:"Afternoon",
    loc:"in", park:"ak", status:"reserved", conf:"walk-up", who:["scott","hayley","nancy"]},
   {id:"d10",day:"2026-07-19", meal:"Breakfast", name:"Trattoria al Forno", time:"8:00 AM",
@@ -295,11 +295,11 @@ var DINING = [
 
 /* ── Night shows ──────────────────────────────────────────── */
 var SHOWS = [
-  {id:"s1", day:"2026-07-15", name:"Luminous The Symphony of Us", time:"9:00 PM", who:"all"},
-  {id:"s2", day:"2026-07-16", name:"Happily Ever After", time:"9:20 PM", who:"all"},
+  {id:"s1", day:"2026-07-15", name:"Luminous The Symphony of Us", time:"9:00 PM", status:"attend", who:"all"},
+  {id:"s2", day:"2026-07-16", name:"Happily Ever After", time:"9:20 PM", status:"attend", who:"all"},
   {id:"s3", day:"2026-07-16", name:"Disney Starlight Parade", time:"8:30 & 10:30 PM",
-   who:["nancy","cian","corey"]},
-  {id:"s4", day:"2026-07-17", name:"Luminous The Symphony of Us", time:"9:00 PM", who:"all"}
+   status:"scheduled", who:["nancy","cian","corey"]},
+  {id:"s4", day:"2026-07-17", name:"Luminous The Symphony of Us", time:"9:00 PM", status:"attend", who:"all"}
 ];
 
 /* ── Packing — per person ─────────────────────────────────── */
