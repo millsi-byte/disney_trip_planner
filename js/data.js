@@ -50,12 +50,8 @@ var DAYS = [
     blurb:"Dinner at Disney Springs, early night",
     strategy:"Land at MCO around noon, grab the Owners Locker delivery at the room, then keep day one loose — dinner at Disney Springs and an early night before the parks start.\n\nDon't forget to activate the Annual Passes at any park entrance or Guest Relations before the first park day. Magic Bands are already linked.\n\nOwners Locker is scheduled for room delivery on arrival day — text the front desk if it hasn't shown by 4 PM.",
     itin:[
-      {t:"5:45 AM",  x:"Depart BOS — Southwest"},
-      {t:"11:50 AM", x:"Arrive MCO"},
-      {t:"Afternoon",x:"Check in",checkin:"r1"},
-      {t:"Afternoon",x:"Activate Annual Passes · Owners Locker delivered to room"},
-      {t:"7:30 PM",  x:"Dinner — Homecomin' (Disney Springs)"},
-      {t:"Evening",  x:"Stroll Disney Springs, early night"}
+      {t:"Afternoon", x:"Activate Annual Passes · Owners Locker delivered to room"},
+      {t:"Evening",   x:"Stroll Disney Springs, early night"}
     ]
   },
   { date:"2026-07-15", d:"15", dl:"Wed", trip:"jul26",
@@ -67,14 +63,9 @@ var DAYS = [
     itin:[
       {t:"8:20 AM",  x:"Walk to EPCOT main entrance"},
       {t:"8:30 AM",  x:"Rope drop — Test Track standby"},
-      {t:"9:30 AM",  x:"Guardians of the Galaxy (Single Pass) → rebook Frozen"},
-      {t:"10:15 AM", x:"Soarin' (MP T1)"},
       {t:"11:00 AM", x:"Living with the Land · The Seas (walk-on)"},
-      {t:"12:30 PM", x:"Lunch — Garden Grill"},
       {t:"2:00 PM",  x:"Resort — pool / rest through storms"},
-      {t:"5:30 PM",  x:"Return — World Showcase"},
-      {t:"6:45 PM",  x:"Dinner — Space 220 (if reserved)"},
-      {t:"9:00 PM",  x:"Luminous — The Symphony of Us"}
+      {t:"5:30 PM",  x:"Return — World Showcase"}
     ]
   },
   { date:"2026-07-16", d:"16", dl:"Thu", trip:"jul26",
@@ -87,14 +78,11 @@ var DAYS = [
       {t:"7:45 AM",  x:"At the tap stiles", crit:"Critical"},
       {t:"8:30 AM",  x:"Early Entry → Tiana's Bayou Adventure (walk-on)"},
       {t:"9:00 AM",  x:"Big Thunder Mountain (MP T2)"},
-      {t:"9:30 AM",  x:"Space Mountain (MP T1)"},
-      {t:"10:00 AM", x:"TRON Lightcycle Run (Single Pass)"},
-      {t:"10:30 AM", x:"Jungle Cruise (MP T2) → rebook Buzz"},
-      {t:"11:15 AM", x:"Pirates of the Caribbean → rebook night re-ride"},
-      {t:"12:00 PM", x:"Haunted Mansion (MP T1) → rebook night re-ride"},
-      {t:"12:45 PM", x:"It's a Small World · Lunch — Liberty Tree Tavern"},
+      {t:"10:30 AM", x:"Jungle Cruise (MP T2)"},
+      {t:"11:15 AM", x:"Pirates of the Caribbean"},
+      {t:"12:45 PM", x:"It's a Small World"},
       {t:"2:00 PM",  x:"Resort — swim / wait out storms"},
-      {t:"Evening",  x:"Monorail Crawl → fireworks + 2 nighttime re-rides"}
+      {t:"Evening",  x:"Monorail Crawl"}
     ]
   },
   { date:"2026-07-17", d:"17", dl:"Fri", trip:"jul26",
@@ -105,15 +93,12 @@ var DAYS = [
     strategy:"No official park reservation today — this is a hopper day. Morning at Hollywood Studios for the headliners, then hop to EPCOT in the evening through the International Gateway since the BoardWalk is a short walk away.\n\nRise of the Resistance is the Single Pass. Get Slinky and the Multi Pass rides done before the midday heat, break at the BoardWalk pool, then walk in the back gate of EPCOT around 5 for World Showcase, a Le Cellier dinner, and Luminous.\n\nThe International Gateway entrance puts you right at the UK/France end — perfect for an evening that's mostly eating and drinking around the lagoon.",
     itin:[
       {t:"8:00 AM",  x:"Tap in for Early Entry — Slinky Dog Dash standby"},
-      {t:"9:15 AM",  x:"Rise of the Resistance (Single Pass) → rebook Tower"},
+      {t:"9:15 AM",  x:"Rise of the Resistance (Single Pass)"},
       {t:"10:00 AM", x:"Mickey & Minnie's Runaway Railway (MP T1)"},
       {t:"10:45 AM", x:"Tower of Terror (MP T2)"},
-      {t:"11:30 AM", x:"Toy Story Mania (MP T2) → rebook re-ride"},
-      {t:"1:00 PM",  x:"Lunch — Hollywood Brown Derby"},
+      {t:"11:30 AM", x:"Toy Story Mania (MP T2)"},
       {t:"2:30 PM",  x:"BoardWalk pool break"},
-      {t:"5:00 PM",  x:"Walk to EPCOT via International Gateway", crit:"Hop"},
-      {t:"7:30 PM",  x:"Dinner — Le Cellier (if reserved)"},
-      {t:"9:00 PM",  x:"Luminous → stroll home to BoardWalk"}
+      {t:"5:00 PM",  x:"Walk to EPCOT via International Gateway", crit:"Hop"}
     ]
   },
   { date:"2026-07-18", d:"18", dl:"Sat", trip:"jul26",
@@ -126,10 +111,8 @@ var DAYS = [
       {t:"6:45 AM",  x:"Tap in for Early Entry"},
       {t:"7:00 AM",  x:"Flight of Passage (Single Pass)"},
       {t:"7:45 AM",  x:"Na'vi River Journey (MP T2)"},
-      {t:"8:30 AM",  x:"Kilimanjaro Safaris (MP T1) → rebook Everest"},
       {t:"9:30 AM",  x:"Expedition Everest"},
       {t:"10:30 AM", x:"Festival of the Lion King"},
-      {t:"12:00 PM", x:"Lunch — Tiffins / Nomad Lounge"},
       {t:"2:00 PM",  x:"Kali River Rapids · Maharajah Jungle Trek"},
       {t:"4:00 PM",  x:"Resort — break"},
       {t:"7:00 PM",  x:"Pandora after dark"}
@@ -142,13 +125,9 @@ var DAYS = [
     blurb:"Morning Magic Kingdom · afternoon & evening departures",
     strategy:"Two flights home today. Scott, Hayley and Corey are on the afternoon Delta out of MCO; Nancy and Cian have a later JetBlue and can squeeze in more park time.\n\nMorning is a relaxed last hurrah at Magic Kingdom — no Lightning Lanes booked, just favorites and a Main Street breakfast. Bags go to Bell Services at check-out so nobody is dragging luggage around.\n\nNancy & Cian's flight is still showing as planning — confirm the JetBlue booking before the trip so it's locked in.",
     itin:[
-      {t:"8:00 AM",  x:"Breakfast — Trattoria al Forno (BoardWalk)"},
       {t:"9:00 AM",  x:"Magic Kingdom — last favorites"},
-      {t:"11:00 AM", x:"Check out · bags to Bell Services", checkin:"r2out"},
       {t:"1:30 PM",  x:"Scott, Hayley & Corey → MCO"},
-      {t:"4:30 PM",  x:"Depart MCO — Delta DL 1422", crit:"Flight"},
-      {t:"5:00 PM",  x:"Nancy & Cian → MCO"},
-      {t:"8:10 PM",  x:"Depart MCO — JetBlue B6 1186", crit:"Flight"}
+      {t:"5:00 PM",  x:"Nancy & Cian → MCO"}
     ]
   }
 ];
@@ -278,22 +257,16 @@ var LLS = [
    conf:"", bookDate:"Jul 11 @ 7:00 AM", who:"all"}
 ];
 
-/* Rolling re-book notes keyed by date */
-var ROLLING = {
-  "2026-07-16":[
-    "After Jungle Cruise → book Buzz Lightyear",
-    "After Pirates → nighttime re-ride #1",
-    "After Haunted Mansion → nighttime re-ride #2"
-  ],
-  "2026-07-17":[
-    "After Runaway Railway → book Slinky Dog Dash",
-    "After Toy Story Mania → evening re-ride"
-  ],
-  "2026-07-18":[
-    "After Kilimanjaro Safaris → book Expedition Everest",
-    "After Everest → Kali River Rapids"
-  ]
-};
+/* Rolling re-books — first-class items (sequence-based, no fixed time) */
+var REBOOKS = [
+  {id:"rb1", trip:"jul26", day:"2026-07-16", text:"After Jungle Cruise → book Buzz Lightyear", who:"all"},
+  {id:"rb2", trip:"jul26", day:"2026-07-16", text:"After Pirates → nighttime re-ride #1", who:"all"},
+  {id:"rb3", trip:"jul26", day:"2026-07-16", text:"After Haunted Mansion → nighttime re-ride #2", who:"all"},
+  {id:"rb4", trip:"jul26", day:"2026-07-17", text:"After Runaway Railway → book Slinky Dog Dash", who:"all"},
+  {id:"rb5", trip:"jul26", day:"2026-07-17", text:"After Toy Story Mania → evening re-ride", who:"all"},
+  {id:"rb6", trip:"jul26", day:"2026-07-18", text:"After Kilimanjaro Safaris → book Expedition Everest", who:"all"},
+  {id:"rb7", trip:"jul26", day:"2026-07-18", text:"After Everest → Kali River Rapids", who:"all"}
+];
 
 /* ── Dining ───────────────────────────────────────────────── */
 /* loc: in | off · status: reserved | want                    */
