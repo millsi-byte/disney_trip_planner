@@ -1440,6 +1440,7 @@ function scrDayEdit(){
   body+='<div class="field"><label class="field-label">Short blurb <span class="opt">(small line under the headline)</span></label><input class="field-input" id="dy-blurb" placeholder="e.g. EPCOT all day" value="'+esc(d.blurb||'')+'"></div>';
   body+='<div class="field"><label class="field-label">Custom tags <span class="opt">(comma-separated · most pills are auto from your items)</span></label><input class="field-input" id="dy-tags" placeholder="e.g. Activate APs" value="'+esc((d.tags||[]).join(', '))+'"></div>';
   body+='<div class="field"><label class="field-label">Alert / heads-up <span class="opt">(optional)</span></label><textarea class="field-input" id="dy-alert" rows="3" placeholder="e.g. Storms likely 2–4 PM">'+esc(d.alert||'')+'</textarea></div>';
+  body+='<div class="field"><label class="field-label">Strategy & notes <span class="opt">(first sentence shows as “The plan” on the Day Plan)</span></label><textarea class="field-input" id="dy-strat" rows="6" placeholder="The plan for the day… (blank lines start a new paragraph)">'+esc(d.strategy||'')+'</textarea></div>';
   return screenShell('Edit Day',body,'Save','saveDay()');
 }
 function saveDay(){
@@ -1448,6 +1449,7 @@ function saveDay(){
   d.blurb=val('dy-blurb');
   d.tags=val('dy-tags').split(',').map(function(s){return s.trim();}).filter(function(s){return s;});
   d.alert=val('dy-alert')||null;
+  d.strategy=val('dy-strat');
   save('dtp_days',DAYS);toast('Day updated');closeScreen();render();
 }
 
