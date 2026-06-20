@@ -1,5 +1,5 @@
 /* Disney Trip Planner — service worker (offline app shell) */
-var CACHE = 'dtp-v2';
+var CACHE = 'dtp-v3';
 var ASSETS = [
   './',
   './index.html',

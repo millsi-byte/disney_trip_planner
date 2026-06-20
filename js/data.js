@@ -27,13 +27,17 @@ var ALL_IDS = FAMILY.map(function(p){return p.id;});
 /* ── Trips (for the switcher) ─────────────────────────────── */
 var TRIPS = [
   {id:"jul26",   name:"July 2026",       sub:"Walt Disney World",  status:"active",
-   start:"2026-07-14", end:"2026-07-19", dates:"Jul 14 – 19, 2026", color:"#6B4FA0"},
+   start:"2026-07-14", end:"2026-07-19", dates:"Jul 14 – 19, 2026", color:"#6B4FA0",
+   members:["scott","hayley","nancy","corey","cian"]},
   {id:"thanks26",name:"Thanksgiving 2026",sub:"Walt Disney World", status:"planning",
-   start:"2026-11-24", end:"2026-11-29", dates:"Nov 24 – 29, 2026", color:"#C24530"},
+   start:"2026-11-24", end:"2026-11-29", dates:"Nov 24 – 29, 2026", color:"#C24530",
+   members:["scott","hayley","cian"]},
   {id:"feb27",   name:"Presidents Week 2027", sub:"Walt Disney World", status:"planning",
-   start:"2027-02-13", end:"2027-02-20", dates:"Feb 13 – 20, 2027", color:"#0077A8"},
+   start:"2027-02-13", end:"2027-02-20", dates:"Feb 13 – 20, 2027", color:"#0077A8",
+   members:["scott","hayley","nancy","corey","cian"]},
   {id:"spring25",name:"Spring Break 2025",sub:"Walt Disney World", status:"archived",
-   start:"2025-04-12", end:"2025-04-18", dates:"Apr 12 – 18, 2025", color:"#3B7549"}
+   start:"2025-04-12", end:"2025-04-18", dates:"Apr 12 – 18, 2025", color:"#3B7549",
+   members:["scott","hayley","nancy","corey","cian"]}
 ];
 
 /* ── Days of the active trip ──────────────────────────────── */

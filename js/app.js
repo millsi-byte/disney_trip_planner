@@ -61,7 +61,8 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
-var DATA_VERSION='3';
+var DATA_VERSION='4';
+var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
     Object.keys(localStorage).forEach(function(k){if(k.indexOf('dtp_')===0)localStorage.removeItem(k);});
@@ -92,8 +93,10 @@ function persist(){
 
 /* ── Helpers ───────────────────────────────────────────────── */
 function person(id){for(var i=0;i<FAMILY.length;i++)if(FAMILY[i].id===id)return FAMILY[i];return null;}
-function whoArr(who){return who==="all"?ALL_IDS.slice():who;}
 function trip(){for(var i=0;i<TRIPS.length;i++)if(TRIPS[i].id===S.tripId)return TRIPS[i];return TRIPS[0];}
+/* personas assigned to the current trip (drives filters + who-select) */
+function tripMembers(){var t=trip();return (t&&t.members&&t.members.length)?t.members.filter(function(id){return !!person(id);}):ALL_IDS.slice();}
+function whoArr(who){return who==="all"?tripMembers():who;}
 function day(){return DAYS[S.dayIdx];}
 function fmtDay(ds){var d=DAYS_BY_DATE[ds];return d?("Jul "+d.d+" · "+d.dl):ds;}
 var DAYS_BY_DATE={}; for(var _i=0;_i<DAYS.length;_i++)DAYS_BY_DATE[DAYS[_i].date]=DAYS[_i];
@@ -179,12 +182,12 @@ function toggleFilter(id){
 /* sheets */
 function openSheet(def){S.sheet=def;renderOverlay();requestAnimationFrame(function(){var b=document.getElementById('sheet-host').firstChild;if(b)b.classList.add('in');});}
 function closeSheet(){var host=document.getElementById('sheet-host');var b=host&&host.firstChild;if(b){b.classList.remove('in');setTimeout(function(){S.sheet=null;renderOverlay();},240);}else{S.sheet=null;renderOverlay();}}
-function switchTrip(id){S.tripId=id;S.dayIdx=1;S.tab="home";S.open=defOpen();closeSheet();toast("Switched to "+trip().name);render();}
+function switchTrip(id){S.tripId=id;S.dayIdx=1;S.tab="home";S.open=defOpen();S.filter.clear();closeSheet();toast("Switched to "+trip().name);render();}
 
 /* screens (slide-in) */
 function openScreen(def){
   S.screen=def;S._who=null;S._formStatus={};S._delpk=null;S._deltd=null;
-  S._formLoc=null;S._formTier=null;S._formInit=null;
+  S._formLoc=null;S._formTier=null;S._formInit=null;S._members=null;S._formColor=null;
   if(def.type==='addflight'){S.formLegs=def.edit?((FLIGHTS.filter(function(f){return f.id===def.edit;})[0]||{legs:[0]}).legs.length):1;}
   else{S.formLegs=1;}
   renderOverlay();requestAnimationFrame(function(){var s=document.getElementById('screen-host').firstChild;if(s)s.classList.add('in');});
@@ -195,7 +198,7 @@ function closeScreen(){var host=document.getElementById('screen-host');var s=hos
 function setPersona(id){S.persona=id;save('dtp_persona',id);toast("You are "+person(id).name);render();closeScreen();}
 
 /* packing / todo */
-function pkPersons(){if(S.filter.size===0)return ALL_IDS.slice();return ALL_IDS.filter(function(id){return S.filter.has(id);});}
+function pkPersons(){var mem=tripMembers();if(S.filter.size===0)return mem.slice();return mem.filter(function(id){return S.filter.has(id);});}
 function refreshLists(){
   var b=document.getElementById('lists-body');
   if(b&&S.screen&&S.screen.type==='lists'){b.innerHTML=listScreenBody(S.screen.which);}
@@ -252,9 +255,10 @@ function renderFilter(){
   var h='<div class="pfilter-wrap"><div class="pfilter">';
   h+='<span class="pfilter-lbl">Filter by:</span>';
   h+='<div class="ppill all'+(S.filter.size===0?' on':'')+'" onclick="toggleFilter(\'all\')">All</div>';
-  for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i],on=S.filter.has(p.id);
+  var mem=tripMembers();
+  for(var i=0;i<mem.length;i++){var p=person(mem[i]);if(!p)continue;var on=S.filter.has(p.id);
     h+='<div class="ppill'+(on?' on':'')+'" onclick="toggleFilter(\''+p.id+'\')">'
-      +'<span class="pdot" style="background:'+p.color+'">'+p.name[0]+'</span>'+esc(p.name)+'</div>';
+      +'<span class="pdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+'</div>';
   }
   return h+'</div></div>';
 }
@@ -695,12 +699,12 @@ function renderLists(which){
   var o='';
   if(which==='packing'){
     var totDone=0,tot=0;
-    persons.forEach(function(pid){PACKING[pid].forEach(function(c){c.items.forEach(function(it){tot++;if(it.done)totDone++;});});});
+    persons.forEach(function(pid){(PACKING[pid]||[]).forEach(function(c){c.items.forEach(function(it){tot++;if(it.done)totDone++;});});});
     o+=listSticky('packing',totDone,tot);
     persons.forEach(function(pid){o+=packingPerson(pid);});
   }else{
     var td=0,tt=0;
-    persons.forEach(function(pid){TODO[pid].forEach(function(t){if(!t.na){tt++;if(t.done)td++;}});});
+    persons.forEach(function(pid){(TODO[pid]||[]).forEach(function(t){if(!t.na){tt++;if(t.done)td++;}});});
     o+=listSticky('todo',td,tt);
     persons.forEach(function(pid){o+=todoPerson(pid);});
   }
@@ -721,7 +725,7 @@ function pbHead(pid,done,total){var p=person(pid);
   return '<div class="person-block-hd"><span class="pbdot" style="background:'+p.color+'">'+p.name[0]+'</span><span class="pbname">'+esc(p.name)+(pid===S.persona?' (you)':'')+'</span><span class="pbcount">'+done+'/'+total+'</span></div>';
 }
 function packingPerson(pid){
-  var cats=PACKING[pid],done=0,tot=0;
+  var cats=PACKING[pid]||(PACKING[pid]=[]),done=0,tot=0;
   cats.forEach(function(c){c.items.forEach(function(it){tot++;if(it.done)done++;});});
   var o=pbHead(pid,done,tot);
   for(var c=0;c<cats.length;c++){var cat=cats[c],cd=cat.items.filter(function(x){return x.done;}).length;
@@ -744,7 +748,7 @@ function packingPerson(pid){
   return o;
 }
 function todoPerson(pid){
-  var list=TODO[pid],done=list.filter(function(t){return t.done;}).length,tot=list.filter(function(t){return !t.na;}).length;
+  var list=TODO[pid]||(TODO[pid]=[]),done=list.filter(function(t){return t.done;}).length,tot=list.filter(function(t){return !t.na;}).length;
   var o=pbHead(pid,done,tot)+'<div class="card">';
   for(var j=0;j<list.length;j++){var t=list[j],pend=S._deltd==='td_'+pid+'_'+j;
     o+='<div class="pk-row">';
@@ -794,11 +798,12 @@ function renderSheet(){
     if(!list.length)continue;
     h+='<div class="sheet-seclabel">'+groups[g][1]+'</div>';
     for(var i=0;i<list.length;i++){var t=list[i],on=t.id===S.tripId;
-      var sm=TRIP_SUMMARY[t.id];
+      var mc=(t.members?t.members.length:0);
       h+='<div class="trip-row'+(on?' on':'')+'" onclick="switchTrip(\''+t.id+'\')">';
       h+='<div class="trip-bar" style="background:'+t.color+'"></div>';
       h+='<div class="trip-main"><div class="trip-name'+(t.status==='archived'?' archived':'')+'">'+esc(t.name)+'</div>';
-      h+='<div class="trip-sub">'+esc(t.dates)+' · '+esc((sm&&sm.resort)||t.sub)+'</div></div>';
+      h+='<div class="trip-sub">'+esc(t.dates)+' · '+mc+' '+(mc===1?'person':'people')+'</div></div>';
+      h+='<button class="hdr-icon" style="width:34px;height:34px;background:#F3F1EC;color:#6B7280;flex-shrink:0" onclick="event.stopPropagation();closeSheet();openScreen({type:\'tripedit\',tripId:\''+t.id+'\'})">'+IC.pencil+'</button>';
       h+='<span class="trip-status ts-'+t.status+'">'+(on?'Current':t.status)+'</span></div>';
     }
   }
@@ -840,10 +845,11 @@ function screenShell(title,bodyHtml,saveLabel,saveAction,cancelLabel){
 
 /* WhoSelect (form) — uses transient set S._who */
 function whoSelectField(preselected){
-  if(!S._who){S._who=new Set(preselected==='all'||!preselected?ALL_IDS:preselected);}
-  var h='<div class="field"><label class="field-label">Who is this for? <span class="opt">(defaults to everyone)</span></label><div class="whoselect">';
-  for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i],on=S._who.has(p.id);
-    h+='<div class="who-opt'+(on?' on':'')+'" onclick="toggleWho(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+p.name[0]+'</span>'+esc(p.name)+'<span class="wcheck">'+IC.checkw.replace('currentColor','#15803D')+'</span></div>';
+  var mem=tripMembers();
+  if(!S._who){S._who=new Set(preselected==='all'||!preselected?mem:preselected);}
+  var h='<div class="field"><label class="field-label">Who is this for? <span class="opt">(defaults to everyone on the trip)</span></label><div class="whoselect">';
+  for(var i=0;i<mem.length;i++){var p=person(mem[i]);if(!p)continue;var on=S._who.has(p.id);
+    h+='<div class="who-opt'+(on?' on':'')+'" onclick="toggleWho(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+'<span class="wcheck">'+IC.checkw.replace('currentColor','#15803D')+'</span></div>';
   }
   return h+'</div></div>';
 }
@@ -887,7 +893,7 @@ function scrAddFlight(){
 }
 function addLeg(){S.formLegs=(S.formLegs||1)+1;renderScreen_inplace2();}
 function removeLeg(){S.formLegs=Math.max(1,(S.formLegs||1)-1);renderScreen_inplace2();}
-function renderScreen_inplace2(){var host=document.getElementById('screen-host');host.innerHTML=renderScreen();var s=host.firstChild;if(s)s.classList.add('in');}
+function renderScreen_inplace2(){if(!S.screen){render();return;}var host=document.getElementById('screen-host');host.innerHTML=renderScreen();var s=host.firstChild;if(s)s.classList.add('in');}
 S._formStatus={};
 function pickStatus(form,val){S._formStatus[form]=val;renderScreen_inplace2();}
 function saveFlight(){
@@ -1049,11 +1055,11 @@ function reviewItem(kind,type,val,extra){
 /* New Trip */
 function scrNewTrip(){
   var body='';
-  body+='<div class="field"><label class="field-label">Trip name</label><input class="field-input" placeholder="e.g. Thanksgiving 2026"></div>';
-  body+='<div class="field-row"><div class="field"><label class="field-label">Start date</label><input class="field-input" placeholder="Nov 24, 2026"></div>';
-  body+='<div class="field"><label class="field-label">End date</label><input class="field-input" placeholder="Nov 29, 2026"></div></div>';
+  body+='<div class="field"><label class="field-label">Trip name</label><input class="field-input" id="nt-name" placeholder="e.g. Thanksgiving 2026"></div>';
+  body+='<div class="field"><label class="field-label">Dates</label><input class="field-input" id="nt-dates" placeholder="Nov 24 – 29, 2026"></div>';
+  body+=memberSelectField(ALL_IDS);
   body+='<div class="hub-section-label" style="margin-left:0">Start from your template?</div>';
-  body+=tmplCard('mine','My template','Last updated Oct 2025 · each person\'s packing & to-do pre-loaded',true);
+  body+=tmplCard('mine','My template','Each person\'s packing & to-do pre-loaded',true);
   body+=tmplCard('blank','Blank trip','Start completely fresh',false);
   body+='<button class="btn-primary" onclick="createTrip()">Create trip</button>';
   body+='<button class="btn-secondary" onclick="closeScreen();openScreen({type:\'import\'})">Import details from a file instead</button>';
@@ -1066,7 +1072,18 @@ function tmplCard(id,title,sub,people){
   if(people){h+='<div class="tmpl-people">';for(var i=0;i<FAMILY.length;i++)h+='<span class="wdot" style="width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;background:'+FAMILY[i].color+'">'+FAMILY[i].name[0]+'</span>';h+='</div>';}
   return h+'</div></div>';
 }
-function createTrip(){toast('Trip created from '+(S.newTmpl==='mine'?'your template':'blank')+'');closeScreen();}
+function createTrip(){
+  var nm=val('nt-name')||'New Trip';
+  var dt=val('nt-dates')||'Dates TBD';
+  var mem=S._members?ALL_IDS.filter(function(id){return S._members.has(id);}):ALL_IDS.slice();
+  if(!mem.length)mem=ALL_IDS.slice();
+  var col=PALETTE[TRIPS.length%PALETTE.length][0];
+  var id='t'+Date.now();
+  TRIPS.push({id:id,name:nm,sub:'Walt Disney World',status:'planning',start:'',end:'',dates:dt,color:col,members:mem});
+  save('dtp_trips',TRIPS);S._members=null;
+  toast('Trip created from '+(S.newTmpl==='mine'?'your template':'blank'));
+  closeScreen();render();
+}
 
 /* Settings */
 function scrSettings(){
@@ -1080,34 +1097,91 @@ function scrSettings(){
 
 /* Persona switch (from the header) */
 function scrPersona(){
-  var body='<div class="hub-section-label" style="margin-left:0">Who are you?</div>';
+  var mem=tripMembers();
+  var body='<div class="hub-section-label" style="margin-left:0">Who are you on '+esc(trip().name)+'?</div>';
   body+='<div class="whoselect" style="margin-bottom:16px">';
-  for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i],on=S.persona===p.id;
+  for(var i=0;i<mem.length;i++){var p=person(mem[i]);if(!p)continue;var on=S.persona===p.id;
     body+='<div class="who-opt'+(on?' on':'')+'" onclick="setPersona(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+(p.admin?' · Admin':'')+(on?'<span class="wcheck" style="display:flex">'+IC.checkw.replace('currentColor','#15803D')+'</span>':'')+'</div>';
   }
   body+='</div>';
-  body+='<div class="body-empty" style="text-align:left;padding:0 2px">Personalises your packing list, to-dos, and what the family thread highlights. Stored on this device only.</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px">Personalises your packing list, to-dos, and what the family thread highlights. Stored on this device only.</div>';
+  body+='<button class="hub-row" onclick="openScreen({type:\'personas\'})"><div class="hub-icon" style="background:#1C3A5E">'+IC.home+'</div>'
+    +'<div class="hub-main"><div class="hub-title">Manage people</div><div class="hub-sub">Add, rename, recolor or remove personas</div></div><div class="chev">'+IC.chev+'</div></button>';
   return screenShell('Switch Persona',body,null,null,'Done');
 }
 
-/* Manage personas (rename — they don't have to be family) */
+/* Manage personas — global add / rename / recolor / delete */
+function colorOptions(sel){
+  var h='';
+  for(var i=0;i<PALETTE.length;i++)h+='<option value="'+PALETTE[i][0]+'"'+(PALETTE[i][0]===sel?' selected':'')+'>'+PALETTE[i][1]+'</option>';
+  return h;
+}
 function scrPersonas(){
-  var body='<div class="hub-section-label" style="margin-left:0">People on this trip</div>';
+  var body='<div class="hub-section-label" style="margin-left:0">All personas</div>';
   for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i];
-    body+='<div class="field-row" style="align-items:center;gap:10px;margin-bottom:10px">';
-    body+='<span class="pdot" style="width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;background:'+p.color+';flex-shrink:0">'+esc(p.name[0])+'</span>';
-    body+='<input class="field-input" id="pn-'+p.id+'" value="'+esc(p.name)+'" style="flex:1">';
-    body+=p.admin?'<span class="st-badge st-booked" style="flex-shrink:0">Admin</span>':'';
+    body+='<div class="field-group" style="margin-bottom:10px">';
+    body+='<div class="field-row" style="align-items:flex-end;gap:8px">';
+    body+='<span class="pdot" style="width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;background:'+p.color+';flex-shrink:0;margin-bottom:7px">'+esc(p.name[0])+'</span>';
+    body+='<div class="field" style="flex:2;margin:0"><label class="field-label">Name</label><input class="field-input" id="pn-'+p.id+'" value="'+esc(p.name)+'"></div>';
+    body+='<div class="field" style="flex:1;margin:0"><label class="field-label">Color</label><select class="field-select" id="pc-'+p.id+'">'+colorOptions(p.color)+'</select></div>';
     body+='</div>';
+    body+='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">';
+    body+=p.admin?'<span class="st-badge st-booked">Admin</span>':'<span></span>';
+    body+='<button style="color:#B91C1C;font-size:14px;font-weight:600;background:none;border:none;cursor:pointer;padding:4px 2px" onclick="delPersona(\''+p.id+'\')">Remove</button>';
+    body+='</div></div>';
   }
-  body+='<div class="body-empty" style="text-align:left;padding:2px 2px 0">Rename anyone — personas don\'t have to be the family on the trip. Names update everywhere: filters, assignments and chat.</div>';
-  return screenShell('Persona',body,'Save','savePersonas()');
+  body+='<button class="sheet-new" style="margin:6px 0 0;width:100%" onclick="addPersona()">'+IC.plus+' Add person</button>';
+  body+='<div class="body-empty" style="text-align:left;padding:10px 2px 0">Personas are global — assign them to any trip from the trip editor (tap the trip name in the header). Names and colors update everywhere: filters, assignments and chat.</div>';
+  return screenShell('Manage People',body,'Save','savePersonas()');
 }
-function savePersonas(){
-  for(var i=0;i<FAMILY.length;i++){var e=document.getElementById('pn-'+FAMILY[i].id);
-    if(e&&e.value.trim())FAMILY[i].name=e.value.trim();}
-  save('dtp_family',FAMILY);toast('Personas updated');closeScreen();render();
+function capturePersonas(){
+  for(var i=0;i<FAMILY.length;i++){
+    var n=document.getElementById('pn-'+FAMILY[i].id),c=document.getElementById('pc-'+FAMILY[i].id);
+    if(n&&n.value&&n.value.trim())FAMILY[i].name=n.value.trim();
+    if(c&&c.value)FAMILY[i].color=c.value;
+  }
 }
+function savePersonas(){capturePersonas();save('dtp_family',FAMILY);toast('People updated');closeScreen();render();}
+function addPersona(){
+  capturePersonas();
+  var used={};FAMILY.forEach(function(p){used[p.color]=1;});
+  var col=PALETTE[FAMILY.length%PALETTE.length][0];
+  for(var i=0;i<PALETTE.length;i++)if(!used[PALETTE[i][0]]){col=PALETTE[i][0];break;}
+  var id='p'+Date.now();
+  FAMILY.push({id:id,name:'New Person',color:col});
+  ALL_IDS=FAMILY.map(function(p){return p.id;});
+  PACKING[id]=[];TODO[id]=[];
+  save('dtp_family',FAMILY);save('dtp_packing',PACKING);save('dtp_todo',TODO);
+  renderScreen_inplace2();
+}
+function delPersona(id){
+  if(FAMILY.length<=1){toast('Keep at least one person');return;}
+  var p=person(id);
+  if(!confirm('Remove '+(p?p.name:'this person')+'? They\'ll be taken off all trips and items.'))return;
+  capturePersonas();
+  FAMILY=FAMILY.filter(function(x){return x.id!==id;});
+  ALL_IDS=FAMILY.map(function(x){return x.id;});
+  delete PACKING[id];delete TODO[id];
+  for(var i=0;i<TRIPS.length;i++)if(TRIPS[i].members)TRIPS[i].members=TRIPS[i].members.filter(function(m){return m!==id;});
+  [DINING,LLS,FLIGHTS,RESORTS,SHOWS].forEach(function(coll){
+    coll.forEach(function(it){if(Array.isArray(it.who)){it.who=it.who.filter(function(m){return m!==id;});if(!it.who.length)it.who='all';}});
+  });
+  if(S.persona===id){S.persona=FAMILY[0].id;save('dtp_persona',S.persona);}
+  S.filter.delete(id);
+  persist();save('dtp_packing',PACKING);save('dtp_todo',TODO);
+  renderScreen_inplace2();
+}
+
+/* Trip member picker (assign global personas to a trip) */
+function memberSelectField(pre){
+  if(!S._members){S._members=new Set(pre&&pre.length?pre:ALL_IDS);}
+  var h='<div class="field"><label class="field-label">People on this trip <span class="opt">(drives filters & assignments)</span></label><div class="whoselect">';
+  for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i],on=S._members.has(p.id);
+    h+='<div class="who-opt'+(on?' on':'')+'" onclick="toggleMember(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+'<span class="wcheck">'+IC.checkw.replace('currentColor','#15803D')+'</span></div>';
+  }
+  return h+'</div></div>';
+}
+function toggleMember(id){if(!S._members)S._members=new Set();if(S._members.has(id))S._members.delete(id);else S._members.add(id);renderScreen_inplace2();}
 
 /* Templates */
 function scrTemplates(){
@@ -1177,8 +1251,9 @@ function scrGeneric(){return screenShell('Coming soon','<div class="body-empty">
 /* ── shared form helpers ───────────────────────────────────── */
 function val(id){var e=document.getElementById(id);return e?e.value.trim():'';}
 function whoVal(){
-  if(!S._who||S._who.size===0||S._who.size>=FAMILY.length)return 'all';
-  return ALL_IDS.filter(function(id){return S._who.has(id);});
+  var mem=tripMembers();
+  if(!S._who||S._who.size===0||S._who.size>=mem.length)return 'all';
+  return mem.filter(function(id){return S._who.has(id);});
 }
 function pickLoc(v){S._formLoc=v;renderScreen_inplace2();}
 function parkOptions(sel,noneLabel){
@@ -1300,18 +1375,42 @@ function delResort(id){
 }
 
 /* ── Trip name & dates ─────────────────────────────────────── */
+function tripById(id){for(var i=0;i<TRIPS.length;i++)if(TRIPS[i].id===id)return TRIPS[i];return null;}
 function scrTripEdit(){
-  var t=trip();
+  var t=tripById(S.screen.tripId||S.tripId);if(!t)return scrGeneric();
+  if(S._formInit!=='trip'){S._formStatus.tr=t.status;S._formColor=t.color;S._formInit='trip';}
   var body='<div class="field"><label class="field-label">Trip name</label><input class="field-input" id="tr-name" value="'+esc(t.name)+'"></div>';
+  body+='<div class="field"><label class="field-label">Destination <span class="opt">(optional)</span></label><input class="field-input" id="tr-sub" value="'+esc(t.sub||'')+'"></div>';
   body+='<div class="field"><label class="field-label">Dates <span class="opt">(as shown in the header)</span></label><input class="field-input" id="tr-dates" value="'+esc(t.dates)+'"></div>';
-  body+='<div class="body-empty" style="text-align:left;padding:2px 2px 0">This edits the trip\'s name and the date label. The day-by-day agenda is built from the trip\'s individual days.</div>';
+  body+='<div class="field"><label class="field-label">Status</label><div class="seg">';
+  body+='<button class="seg-btn'+(S._formStatus.tr==='active'?' on book':'')+'" onclick="pickStatus(\'tr\',\'active\')">Active</button>';
+  body+='<button class="seg-btn'+(S._formStatus.tr==='planning'?' on':'')+'" onclick="pickStatus(\'tr\',\'planning\')">Planning</button>';
+  body+='<button class="seg-btn'+(S._formStatus.tr==='archived'?' on':'')+'" onclick="pickStatus(\'tr\',\'archived\')">Archived</button></div></div>';
+  body+='<div class="field"><label class="field-label">Color</label><select class="field-select" id="tr-color">'+colorOptions(S._formColor)+'</select></div>';
+  body+=memberSelectField(t.members);
+  body+='<button class="btn-danger-link" onclick="delTrip(\''+t.id+'\')">Delete this trip</button>';
   return screenShell('Edit Trip',body,'Save','saveTrip()');
 }
 function saveTrip(){
-  var t=trip();
+  var t=tripById(S.screen.tripId||S.tripId);if(!t){closeScreen();return;}
   var nm=val('tr-name');if(nm)t.name=nm;
+  t.sub=val('tr-sub');
   var dt=val('tr-dates');if(dt)t.dates=dt;
-  save('dtp_trips',TRIPS);toast('Trip updated');closeScreen();render();
+  t.status=S._formStatus.tr||t.status;
+  var c=val('tr-color');if(c)t.color=c;
+  t.members=S._members?ALL_IDS.filter(function(id){return S._members.has(id);}):t.members;
+  if(!t.members||!t.members.length)t.members=ALL_IDS.slice();
+  if(t.status==='active')for(var j=0;j<TRIPS.length;j++)if(TRIPS[j].id!==t.id&&TRIPS[j].status==='active')TRIPS[j].status='planning';
+  if(t.id===S.tripId)S.filter.clear();
+  save('dtp_trips',TRIPS);S._members=null;toast('Trip updated');closeScreen();render();
+}
+function delTrip(id){
+  if(TRIPS.length<=1){toast('Keep at least one trip');return;}
+  var t=tripById(id);
+  if(!confirm('Delete '+(t?t.name:'this trip')+'? This can\'t be undone.'))return;
+  TRIPS=TRIPS.filter(function(x){return x.id!==id;});
+  if(S.tripId===id){S.tripId=TRIPS[0].id;S.dayIdx=1;S.open=defOpen();S.filter.clear();}
+  save('dtp_trips',TRIPS);S._members=null;toast('Trip deleted');closeScreen();render();
 }
 
 /* ============================================================
