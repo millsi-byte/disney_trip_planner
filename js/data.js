@@ -412,40 +412,70 @@ var PACKING = {
   ]
 };
 
-/* ── To Do — per person ───────────────────────────────────── */
-var TODO = {
+/* ── To Do — per-trip, assignable items ───────────────────────
+   Flat list (like Dining / Lightning Lanes). Each item has a creator
+   (`by`) and an optional `who` array of people it's assigned to.
+   An item shows on a person's list if they created it OR it's assigned
+   to them. Lists are otherwise private (global admin sees all).        */
+var TODO = [
+  {id:"td-s1", trip:"jul26", n:"Book hotel", when:"11 months", done:true, by:"scott", who:[]},
+  {id:"td-s2", trip:"jul26", n:"Book flights", when:"", done:true, by:"scott", who:[]},
+  {id:"td-s3", trip:"jul26", n:"Park tickets / renew APs", when:"", done:true, by:"scott", who:[]},
+  {id:"td-s4", trip:"jul26", n:"Park reservations", when:"60 days", done:true, by:"scott", who:[]},
+  {id:"td-s5", trip:"jul26", n:"Dining reservations", when:"180 days", done:true, by:"scott", who:[]},
+  {id:"td-s6", trip:"jul26", n:"Set 7 AM Lightning Lane alarms", when:"7 days", done:false, by:"scott", who:[]},
+  {id:"td-s7", trip:"jul26", n:"Resort online check-in", when:"", done:true, by:"scott", who:[]},
+  {id:"td-s8", trip:"jul26", n:"Airline check-in", when:"Day before", done:false, by:"scott", who:[]},
+  {id:"td-s9", trip:"jul26", n:"Order groceries to room", when:"3 days", done:false, by:"scott", who:[]},
+  {id:"td-s10",trip:"jul26", n:"Confirm Owners Locker delivery", when:"3 days", done:false, by:"scott", who:[]},
+
+  {id:"td-h1", trip:"jul26", n:"Make Space 220 reservation", when:"60 days", done:false, by:"hayley", who:[]},
+  {id:"td-h2", trip:"jul26", n:"Book Bibbidi Bobbidi for Cian", when:"60 days", done:false, by:"hayley", who:[]},
+  {id:"td-h3", trip:"jul26", n:"Refill prescriptions", when:"14 days", done:false, by:"hayley", who:[]},
+  {id:"td-h4", trip:"jul26", n:"Buy travel snacks", when:"3 days", done:false, by:"hayley", who:["corey"]},
+  {id:"td-h5", trip:"jul26", n:"Charge all power banks", when:"Day before", done:false, by:"hayley", who:[]},
+
+  {id:"td-n1", trip:"jul26", n:"Pick up compression socks", when:"14 days", done:false, by:"nancy", who:[]},
+  {id:"td-n2", trip:"jul26", n:"Arrange mail hold", when:"7 days", done:false, by:"nancy", who:[]},
+  {id:"td-n3", trip:"jul26", n:"Pack daily medications", when:"3 days", done:false, by:"nancy", who:[]},
+
+  {id:"td-c1", trip:"jul26", n:"Download offline shows / games", when:"Day before", done:false, by:"corey", who:[]},
+  {id:"td-c2", trip:"jul26", n:"Decide must-do rides list", when:"7 days", done:false, by:"corey", who:[]},
+
+  {id:"td-k1", trip:"jul26", n:"Pick stuffed animal for the trip", when:"7 days", done:true, by:"cian", who:[]},
+  {id:"td-k2", trip:"jul26", n:"Make a ride wish list with Dad", when:"7 days", done:false, by:"cian", who:["scott"]}
+];
+
+/* ── To Do — per-person GLOBAL template ───────────────────────
+   Trip-independent master list each person keeps on their account page.
+   New trips can seed each person's list from their template.            */
+var TODO_TMPL = {
   scott:[
-    {n:"Book hotel",when:"11 months",done:true,na:false},
-    {n:"Book flights",when:"",done:true,na:false},
-    {n:"Park tickets / renew APs",when:"",done:true,na:false},
-    {n:"Park reservations",when:"60 days",done:true,na:false},
-    {n:"Dining reservations",when:"180 days",done:true,na:false},
-    {n:"Set 7 AM Lightning Lane alarms",when:"7 days",done:false,na:false},
-    {n:"Resort online check-in",when:"",done:true,na:false},
-    {n:"Airline check-in",when:"Day before",done:false,na:false},
-    {n:"Order groceries to room",when:"3 days",done:false,na:false},
-    {n:"Confirm Owners Locker delivery",when:"3 days",done:false,na:false}
+    {n:"Book hotel",when:"11 months"},
+    {n:"Book flights",when:""},
+    {n:"Park tickets / renew APs",when:""},
+    {n:"Park reservations",when:"60 days"},
+    {n:"Dining reservations",when:"180 days"},
+    {n:"Set 7 AM Lightning Lane alarms",when:"7 days"},
+    {n:"Resort online check-in",when:""},
+    {n:"Airline check-in",when:"Day before"}
   ],
   hayley:[
-    {n:"Make Space 220 reservation",when:"60 days",done:false,na:false},
-    {n:"Book Bibbidi Bobbidi for Cian",when:"60 days",done:false,na:true},
-    {n:"Refill prescriptions",when:"14 days",done:false,na:false},
-    {n:"Buy travel snacks",when:"3 days",done:false,na:false},
-    {n:"Charge all power banks",when:"Day before",done:false,na:false}
+    {n:"Refill prescriptions",when:"14 days"},
+    {n:"Buy travel snacks",when:"3 days"},
+    {n:"Charge all power banks",when:"Day before"}
   ],
   nancy:[
-    {n:"Renew passport-style photo IDs",when:"30 days",done:true,na:true},
-    {n:"Pick up compression socks",when:"14 days",done:false,na:false},
-    {n:"Arrange mail hold",when:"7 days",done:false,na:false},
-    {n:"Pack daily medications",when:"3 days",done:false,na:false}
+    {n:"Pick up compression socks",when:"14 days"},
+    {n:"Arrange mail hold",when:"7 days"},
+    {n:"Pack daily medications",when:"3 days"}
   ],
   corey:[
-    {n:"Download offline shows / games",when:"Day before",done:false,na:false},
-    {n:"Decide must-do rides list",when:"7 days",done:false,na:false}
+    {n:"Download offline shows / games",when:"Day before"},
+    {n:"Decide must-do rides list",when:"7 days"}
   ],
   cian:[
-    {n:"Pick stuffed animal for the trip",when:"7 days",done:true,na:false},
-    {n:"Make a ride wish list with Dad",when:"7 days",done:false,na:false}
+    {n:"Make a ride wish list with Dad",when:"7 days"}
   ]
 };
 

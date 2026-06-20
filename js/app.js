@@ -62,8 +62,8 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
-var DATA_VERSION='10';
-var BUILD='45';   /* bumped each deploy — shown in Settings to spot stale caches */
+var DATA_VERSION='11';
+var BUILD='46';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -74,6 +74,7 @@ try{
 
 /* keep the seed lists so new trips can start from a template */
 var PACKING_SEED=PACKING, TODO_SEED=TODO;
+TODO_TMPL = load('dtp_todo_tmpl', TODO_TMPL);   /* per-person global to-do templates */
 
 FAMILY  = load('dtp_family', FAMILY);
 ALL_IDS = FAMILY.map(function(p){return p.id;});
@@ -99,11 +100,14 @@ for(var _c=0;_c<CHAT.length;_c++)if(!CHAT[_c].trip)CHAT[_c].trip='jul26';
 function listKey(base){return 'dtp_'+base+'_'+S.tripId;}
 function loadLists(){
   PACKING=load(listKey('packing'),null)||(S.tripId==='jul26'?PACKING_SEED:{});
-  TODO=load(listKey('todo'),null)||(S.tripId==='jul26'?TODO_SEED:{});
+  TODO=load(listKey('todo'),null)||(S.tripId==='jul26'?JSON.parse(JSON.stringify(TODO_SEED)):[]);
+  if(!Array.isArray(TODO))TODO=[];   /* guard against old per-person shape */
   ensureLists();
 }
-function ensureLists(){tripMembers().forEach(function(id){if(!PACKING[id])PACKING[id]=[];if(!TODO[id])TODO[id]=[];});}
+function ensureLists(){tripMembers().forEach(function(id){if(!PACKING[id])PACKING[id]=[];});}
 function saveLists(){save(listKey('packing'),PACKING);save(listKey('todo'),TODO);}
+function saveTODO(){save(listKey('todo'),TODO);}
+function saveTmpl(){save('dtp_todo_tmpl',TODO_TMPL);}
 
 /* generate day skeletons for any trip that has none, from its start/end */
 function genDays(tid){
@@ -340,7 +344,9 @@ function forceUpdate(){
 function toggleFilter(id){
   if(id==="all"){S.filter.clear();}
   else{if(S.filter.has(id))S.filter.delete(id);else S.filter.add(id);}
-  if(S.screen&&S.screen.type==='lists')refreshLists(); else render();
+  if(S.screen&&(S.screen.type==='lists'||S.screen.type==='packlist'))refreshLists();
+  else if(S.screen&&S.screen.type==='todolist')refreshTodo();
+  else render();
 }
 
 /* sheets */
@@ -352,7 +358,7 @@ function switchTrip(id){saveLists();S.tripId=id;loadLists();S.dayIdx=0;S.tab="ho
 
 /* screens (slide-in) */
 function openScreen(def){
-  S.screen=def;S._who=null;S._formStatus={};S._delpk=null;S._deltd=null;
+  S.screen=def;S._who=null;S._formStatus={};S._delpk=null;S._deltd=null;S.tdForm=null;
   S._formLoc=null;S._formTier=null;S._formInit=null;S._members=null;S._formColor=null;
   if(def.type==='addflight'){S.formLegs=def.edit?((FLIGHTS.filter(function(f){return f.id===def.edit;})[0]||{legs:[0]}).legs.length):1;}
   else{S.formLegs=1;}
@@ -437,11 +443,10 @@ function logoutPersona(){
 function pkPersons(){var mem=tripMembers();if(S.filter.size===0)return mem.slice();return mem.filter(function(id){return S.filter.has(id);});}
 function refreshLists(){
   var b=document.getElementById('lists-body');
-  if(b&&S.screen&&S.screen.type==='lists'){b.innerHTML=listScreenBody(S.screen.which);}
+  if(b&&S.screen&&(S.screen.type==='lists'||S.screen.type==='packlist')){b.innerHTML=listScreenBody(S.screen.which||'packing');}
   else render();
 }
 function savePK(){saveLists();}
-function saveTD(){saveLists();}
 function pkChk(pid,c,i){PACKING[pid][c].items[i].done=!PACKING[pid][c].items[i].done;savePK();refreshLists();}
 function pkInc(pid,c,i){PACKING[pid][c].items[i].qty++;savePK();refreshLists();}
 function pkDec(pid,c,i){var it=PACKING[pid][c].items[i];if(it.qty>0)it.qty--;savePK();refreshLists();}
@@ -450,12 +455,63 @@ var ADD={};
 function pkAdd(pid,c){ADD.pk=pid+'_'+c;refreshLists();setTimeout(function(){var e=document.getElementById('pk-inp');if(e)e.focus();},40);}
 function pkOk(pid,c){var e=document.getElementById('pk-inp');if(!e||!e.value.trim())return;var it={n:e.value.trim(),qty:1,l:false,done:false};if(pid!==S.persona)it.by=S.persona;PACKING[pid][c].items.push(it);ADD.pk=null;savePK();refreshLists();}
 function pkCancel(){ADD.pk=null;refreshLists();}
-function tdChk(pid,i){var t=TODO[pid][i];if(!t.na){t.done=!t.done;saveTD();refreshLists();}}
-function tdNa(pid,i){var t=TODO[pid][i];t.na=!t.na;if(t.na)t.done=false;saveTD();refreshLists();}
-function tdDel(pid,i){var k='td_'+pid+'_'+i;if(S._deltd===k){TODO[pid].splice(i,1);S._deltd=null;saveTD();}else{S._deltd=k;}refreshLists();}
-function tdAdd(pid){ADD.td=pid;refreshLists();setTimeout(function(){var e=document.getElementById('td-inp');if(e)e.focus();},40);}
-function tdOk(pid){var e=document.getElementById('td-inp');if(!e||!e.value.trim())return;TODO[pid].push({n:e.value.trim(),when:'',done:false,na:false});ADD.td=null;saveTD();refreshLists();}
-function tdCancel(){ADD.td=null;refreshLists();}
+/* ── To Do — assignable per-trip items ─────────────────────────
+   Visibility: you see an item if you created it (`by`) or it's assigned
+   to you (`who`). Creator + global admin may edit/delete; creator,
+   assignee or admin may toggle done; an assignee may unassign themselves. */
+function tdById(id){for(var i=0;i<TODO.length;i++)if(TODO[i].id===id)return TODO[i];return null;}
+function tdMine(pid){pid=pid||S.persona;return TODO.filter(function(t){return t.trip===S.tripId&&t.by===pid;});}
+function tdAssignedTo(pid){pid=pid||S.persona;return TODO.filter(function(t){return t.trip===S.tripId&&t.by!==pid&&t.who&&t.who.indexOf(pid)>=0;});}
+function tdVisibleCount(pid){pid=pid||S.persona;if(isAdmin())return TODO.filter(function(t){return t.trip===S.tripId;}).length;
+  return TODO.filter(function(t){return t.trip===S.tripId&&(t.by===pid||(t.who&&t.who.indexOf(pid)>=0));}).length;}
+function tdCanEdit(t){return !!t&&(t.by===S.persona||isAdmin());}
+function tdCanCheck(t){return !!t&&(t.by===S.persona||isAdmin()||(t.who&&t.who.indexOf(S.persona)>=0));}
+/* per-trip per-person "has started a list" flag (so we can offer template / blank) */
+function tdStartKey(){return 'dtp_todostart_'+S.tripId;}
+function tdStartedSet(){return load(tdStartKey(),[]);}
+function tdHasStarted(pid){pid=pid||S.persona;
+  if(tdMine(pid).length||tdAssignedTo(pid).length)return true;
+  return tdStartedSet().indexOf(pid)>=0;}
+function tdMarkStarted(pid){pid=pid||S.persona;var s=tdStartedSet();if(s.indexOf(pid)<0){s.push(pid);save(tdStartKey(),s);}}
+
+function refreshTodo(){var b=document.getElementById('todo-body');if(b&&S.screen&&S.screen.type==='todolist')b.innerHTML=todoBody();else render();}
+
+function tdToggle(id){var t=tdById(id);if(!t)return;if(!tdCanCheck(t)){toast('Only the creator, an assignee or an admin can check this');return;}t.done=!t.done;saveTODO();refreshTodo();}
+function tdAddOpen(){S.tdForm={id:null};S._who=new Set();refreshTodo();}
+function tdEdit(id){var t=tdById(id);if(!t)return;if(!tdCanEdit(t)){toast('Only the creator or an admin can edit this');return;}S.tdForm={id:id};S._who=new Set(t.who||[]);refreshTodo();}
+function tdCancelForm(){S.tdForm=null;S._who=null;refreshTodo();}
+function tdSave(){
+  var nm=val('td-name');if(!nm){toast('Add a task');return;}
+  var f=S.tdForm;if(!f)return;
+  var edit=f.id?tdById(f.id):null;
+  if(edit&&!tdCanEdit(edit)){toast('Only the creator or an admin can edit this');S.tdForm=null;refreshTodo();return;}
+  var creator=edit?edit.by:S.persona;
+  var who=S._who?tripMembers().filter(function(id){return id!==creator&&S._who.has(id);}):[];
+  var rec=edit||{id:'td'+Date.now(),trip:S.tripId,by:S.persona,done:false};
+  rec.n=nm;rec.when=val('td-when');rec.who=who;
+  if(!edit){TODO.push(rec);tdMarkStarted(S.persona);}
+  saveTODO();S.tdForm=null;S._who=null;toast('Saved');refreshTodo();
+}
+function tdRemove(id){
+  var t=tdById(id);if(!t)return;
+  if(!tdCanEdit(t)){toast('Only the creator or an admin can delete this');return;}
+  var k='tdrm_'+id;
+  if(S._deltd===k){for(var i=0;i<TODO.length;i++)if(TODO[i].id===id){TODO.splice(i,1);break;}S._deltd=null;saveTODO();}
+  else{S._deltd=k;}
+  refreshTodo();
+}
+function tdUnassignMe(id){var t=tdById(id);if(!t)return;t.who=(t.who||[]).filter(function(p){return p!==S.persona;});saveTODO();toast('Removed you from this');refreshTodo();}
+function tdStartFromTemplate(){
+  var tmpl=TODO_TMPL[S.persona]||[];
+  for(var i=0;i<tmpl.length;i++)TODO.push({id:'td'+Date.now()+'_'+i,trip:S.tripId,by:S.persona,done:false,n:tmpl[i].n,when:tmpl[i].when||'',who:[]});
+  tdMarkStarted(S.persona);saveTODO();toast(tmpl.length?'Loaded your template':'Your template is empty');refreshTodo();
+}
+function tdStartEmpty(){tdMarkStarted(S.persona);refreshTodo();}
+function tdSaveAsTemplate(){
+  var mine=tdMine(S.persona);
+  TODO_TMPL[S.persona]=mine.map(function(t){return {n:t.n,when:t.when||''};});
+  saveTmpl();toast('Saved as your global template');
+}
 
 /* ============================================================
    HEADER + STRIP + FILTER
@@ -863,9 +919,10 @@ function renderPlanHub(){
   ];
   o+='<div class="hub-section-label">Trip components</div>';
   for(var i=0;i<rows.length;i++) o+=hubRow(rows[i]);
-  o+='<div class="hub-section-label">Per-person lists</div>';
-  o+=hubRow(['Packing',IC.suitcase,'#92400E',nMem+' lists','packing']);
-  o+=hubRow(['To Do',IC.checks,'#166534',nMem+' lists','todo']);
+  o+='<div class="hub-section-label">Trip Lists</div>';
+  var tn=esc(trip().name);
+  o+=hubRow([tn+' To Do List',IC.checks,'#166534',tdVisibleCount()+' items','todo']);
+  o+=hubRow([tn+' Packing List',IC.suitcase,'#92400E',nMem+' lists','packing']);
   o+='<div class="hub-section-label">Get started fast</div>';
   o+='<button class="hub-row" onclick="openScreen({type:\'import\'})"><div class="hub-icon" style="background:#1E40AF">'+IC.sparkles+'</div>'
     +'<div class="hub-main"><div class="hub-title">AI Import</div><div class="hub-sub">Pull details from emails, PDFs & spreadsheets</div></div><div class="chev">'+IC.chev+'</div></button>';
@@ -888,7 +945,8 @@ function hubRow(r){
     +'<span class="hub-count">'+r[3].split(' ')[0]+'</span><div class="chev" style="margin-left:8px">'+IC.chev+'</div></button>';
 }
 function openSection(section){
-  if(section==='packing'||section==='todo'){openScreen({type:'lists',which:section});return;}
+  if(section==='todo'){openScreen({type:'todolist'});return;}
+  if(section==='packing'){openScreen({type:'packlist'});return;}
   if(section==='templates'){openScreen({type:'templates'});return;}
   if(section==='personas'){if(!adminGate())return;openScreen({type:'personas'});return;}
   openScreen({type:'section',section:section});
@@ -1006,29 +1064,20 @@ function sendChat(){var e=document.getElementById('chat-inp');if(!e||!e.value.tr
 }
 
 /* ============================================================
-   PACKING / TO DO  (per-person, person-filter aware)
+   PACKING  (per-person, person-filter aware)
    ============================================================ */
 function renderLists(which){
   var persons=pkPersons();
   var o='';
-  if(which==='packing'){
-    var totDone=0,tot=0;
-    persons.forEach(function(pid){(PACKING[pid]||[]).forEach(function(c){c.items.forEach(function(it){tot++;if(it.done)totDone++;});});});
-    o+=listSticky('packing',totDone,tot);
-    persons.forEach(function(pid){o+=packingPerson(pid);});
-  }else{
-    var td=0,tt=0;
-    persons.forEach(function(pid){(TODO[pid]||[]).forEach(function(t){if(!t.na){tt++;if(t.done)td++;}});});
-    o+=listSticky('todo',td,tt);
-    persons.forEach(function(pid){o+=todoPerson(pid);});
-  }
+  var totDone=0,tot=0;
+  persons.forEach(function(pid){(PACKING[pid]||[]).forEach(function(c){c.items.forEach(function(it){tot++;if(it.done)totDone++;});});});
+  o+=listSticky('packing',totDone,tot);
+  persons.forEach(function(pid){o+=packingPerson(pid);});
   return o;
 }
 function listSticky(which,done,total){
   var pct=total?Math.round(done/total*100):0;
   var o='<div class="plan-sticky">';
-  o+='<div class="seg"><button class="seg-btn'+(which==='packing'?' on':'')+'" onclick="openScreen({type:\'lists\',which:\'packing\'})">Packing</button>';
-  o+='<button class="seg-btn'+(which==='todo'?' on':'')+'" onclick="openScreen({type:\'lists\',which:\'todo\'})">To Do</button></div>';
   o+='<div class="prog-label">'+done+' of '+total+(which==='packing'?' packed':' done')+'</div>';
   o+='<div class="prog-outer"><div class="prog-inner" style="width:'+pct+'%"></div></div>';
   o+='<div class="prog-actions"><button class="prog-btn blu" onclick="toast(\'Saved to your master template\')">Save as Template</button>';
@@ -1061,23 +1110,116 @@ function packingPerson(pid){
   }
   return o;
 }
-function todoPerson(pid){
-  var list=TODO[pid]||(TODO[pid]=[]),done=list.filter(function(t){return t.done;}).length,tot=list.filter(function(t){return !t.na;}).length;
-  var o=pbHead(pid,done,tot)+'<div class="card">';
-  for(var j=0;j<list.length;j++){var t=list[j],pend=S._deltd==='td_'+pid+'_'+j;
-    o+='<div class="pk-row">';
-    o+='<div class="chkbox'+(t.done||t.na?' on':'')+'" onclick="tdChk(\''+pid+'\','+j+')" style="cursor:'+(t.na?'default':'pointer')+';'+(t.na?'background:#E5E7EB;border-color:#E5E7EB':'')+'">'+(t.done?IC.checkw:t.na?'<span style="color:#9CA3AF;font-weight:700">–</span>':'')+'</div>';
-    o+='<div class="pk-name'+(t.done?' done':'')+'" onclick="tdChk(\''+pid+'\','+j+')" style="cursor:'+(t.na?'default':'pointer')+';opacity:'+(t.na?'.45':'1')+'">'+esc(t.n)+'</div>';
-    if(t.when) o+='<div class="td-when">'+esc(t.when)+'</div>';
-    o+='<button class="na-btn'+(t.na?' active':'')+'" onclick="tdNa(\''+pid+'\','+j+')">N/A</button>';
-    o+=pend?'<button class="del-confirm-btn" onclick="tdDel(\''+pid+'\','+j+')">Remove?</button>':'<button class="del-btn" onclick="tdDel(\''+pid+'\','+j+')">&times;</button>';
+/* ============================================================
+   TO DO  (per-trip, assignable, privacy-aware)
+   ============================================================ */
+function scrTodo(){
+  return screenShell(esc(trip().name)+' · To Do','<div id="todo-body">'+todoBody()+'</div>',null,null,'Done');
+}
+function todoBody(){
+  if(isAdmin())return todoAdminBody();
+  var me=S.persona;
+  var mine=tdMine(me), assigned=tdAssignedTo(me);
+  var all=mine.concat(assigned);
+  var o=todoSticky(all);
+  if(!tdHasStarted(me))o+=todoStarter();
+  /* My to-dos */
+  o+='<div class="hub-section-label" style="margin-left:0">My to-dos</div>';
+  o+='<div class="card" style="padding:6px 0 0">';
+  if(S.tdForm&&S.tdForm.id===null)o+=todoEditor(null);
+  if(!mine.length&&!(S.tdForm&&S.tdForm.id===null))o+='<div class="body-empty" style="text-align:left;padding:6px 12px">Nothing here yet.</div>';
+  for(var i=0;i<mine.length;i++)o+=todoRowOrEditor(mine[i]);
+  if(!S.tdForm)o+='<button class="add-link" onclick="tdAddOpen()">'+IC.plus+' Add task</button>';
+  o+='</div>';
+  /* Assigned to me by others */
+  if(assigned.length){
+    o+='<div class="hub-section-label" style="margin-left:0">Assigned to me</div>';
+    o+='<div class="card" style="padding:6px 0 0">';
+    for(var j=0;j<assigned.length;j++)o+=todoRowOrEditor(assigned[j]);
     o+='</div>';
   }
-  if(ADD.td===pid){
-    o+='<div class="add-row"><input id="td-inp" class="add-inp" placeholder="Task name…" onkeydown="if(event.key===\'Enter\')tdOk(\''+pid+'\');if(event.key===\'Escape\')tdCancel()">';
-    o+='<button class="add-ok" onclick="tdOk(\''+pid+'\')">Add</button><button class="add-cancel" onclick="tdCancel()">&times;</button></div>';
-  }else o+='<button class="add-link" onclick="tdAdd(\''+pid+'\')">'+IC.plus+' Add task</button>';
-  return o+'</div>';
+  return o;
+}
+function todoAdminBody(){
+  var persons=pkPersons();
+  var o='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">Admin view — everyone’s to-do lists across this trip.</div>';
+  o+=renderFilter();
+  if(S.tdForm&&S.tdForm.id===null){o+='<div class="card" style="padding:6px 0 0">'+todoEditor(null)+'</div>';}
+  for(var p=0;p<persons.length;p++){var pid=persons[p];
+    var items=tdMine(pid);
+    var done=items.filter(function(t){return t.done;}).length;
+    o+=pbHead(pid,done,items.length);
+    o+='<div class="card" style="padding:6px 0 0">';
+    if(!items.length)o+='<div class="body-empty" style="text-align:left;padding:6px 12px">No items.</div>';
+    for(var i=0;i<items.length;i++)o+=todoRowOrEditor(items[i]);
+    if(pid===S.persona&&!S.tdForm)o+='<button class="add-link" onclick="tdAddOpen()">'+IC.plus+' Add task</button>';
+    o+='</div>';
+  }
+  return o;
+}
+function todoSticky(items){
+  var total=items.length,done=items.filter(function(t){return t.done;}).length;
+  var pct=total?Math.round(done/total*100):0;
+  var o='<div class="plan-sticky">';
+  o+='<div class="prog-label">'+done+' of '+total+' done</div>';
+  o+='<div class="prog-outer"><div class="prog-inner" style="width:'+pct+'%"></div></div>';
+  o+='<div class="prog-actions"><button class="prog-btn blu" onclick="tdSaveAsTemplate()">Save as my template</button></div></div>';
+  return o;
+}
+function todoStarter(){
+  var n=(TODO_TMPL[S.persona]&&TODO_TMPL[S.persona].length)||0;
+  var o='<div class="card" style="padding:14px;margin-bottom:12px">';
+  o+='<div class="tmpl-title" style="margin-bottom:4px">Start your '+esc(trip().name)+' to-do list</div>';
+  o+='<div class="tmpl-sub" style="margin-bottom:10px">Begin from your global template'+(n?' ('+n+' item'+(n===1?'':'s')+')':'')+' or start with a blank list.</div>';
+  o+='<div style="display:flex;gap:8px">';
+  if(n)o+='<button class="btn-primary" style="margin:0;flex:1" onclick="tdStartFromTemplate()">Use my template</button>';
+  o+='<button class="btn-secondary" style="margin:0;flex:1" onclick="tdStartEmpty()">Start empty</button>';
+  o+='</div></div>';
+  return o;
+}
+function todoRowOrEditor(t){
+  if(S.tdForm&&S.tdForm.id===t.id)return todoEditor(t);
+  return todoRow(t);
+}
+function todoRow(t){
+  var me=S.persona;
+  var canEdit=tdCanEdit(t), amAssignee=t.who&&t.who.indexOf(me)>=0;
+  var pend=S._deltd==='tdrm_'+t.id;
+  var sub=[];
+  if(t.who&&t.who.length)sub.push('Assigned to '+t.who.map(function(p){var pp=person(p);return pp?esc(pp.name):'';}).filter(Boolean).join(', '));
+  if(!isAdmin()&&t.by!==me){var c=person(t.by);sub.push('From '+(c?esc(c.name):'someone'));}
+  var o='<div class="pk-row">';
+  o+='<div class="chkbox'+(t.done?' on':'')+'" onclick="tdToggle(\''+t.id+'\')">'+(t.done?IC.checkw:'')+'</div>';
+  o+='<div class="pk-name'+(t.done?' done':'')+'" onclick="tdToggle(\''+t.id+'\')">'+esc(t.n)+(sub.length?'<div class="pk-by">'+sub.join(' · ')+'</div>':'')+'</div>';
+  if(t.when)o+='<div class="td-when">'+esc(t.when)+'</div>';
+  if(canEdit){
+    o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0" onclick="tdEdit(\''+t.id+'\')">'+IC.pencil+'</button>';
+    o+=pend?'<button class="del-confirm-btn" onclick="tdRemove(\''+t.id+'\')">Remove?</button>':'<button class="del-btn" onclick="tdRemove(\''+t.id+'\')">&times;</button>';
+  }else if(amAssignee){
+    o+='<button class="na-btn" onclick="tdUnassignMe(\''+t.id+'\')">Remove me</button>';
+  }
+  o+='</div>';
+  return o;
+}
+function todoEditor(item){
+  var creator=item?item.by:S.persona;
+  var o='<div class="add-row" style="flex-direction:column;align-items:stretch;gap:10px;padding:12px">';
+  o+='<div class="field" style="margin:0"><label class="field-label">Task</label><input class="field-input" id="td-name" placeholder="e.g. Refill prescriptions" value="'+(item?esc(item.n):'')+'"></div>';
+  o+='<div class="field" style="margin:0"><label class="field-label">When <span class="opt">(optional)</span></label><input class="field-input" id="td-when" placeholder="e.g. 14 days" value="'+(item&&item.when?esc(item.when):'')+'"></div>';
+  o+=todoAssignField(creator);
+  o+='<div style="display:flex;gap:8px"><button class="btn-primary" style="margin:0;flex:1" onclick="tdSave()">Save</button><button class="btn-secondary" style="margin:0;flex:1" onclick="tdCancelForm()">Cancel</button></div>';
+  o+='</div>';
+  return o;
+}
+function todoAssignField(creator){
+  var mem=tripMembers().filter(function(id){return id!==creator;});
+  var h='<div class="field" style="margin:0"><label class="field-label">Assign to <span class="opt">(optional — also shows on their list)</span></label>';
+  if(!mem.length){h+='<div class="body-empty" style="text-align:left;padding:2px 0">No one else on this trip to assign to.</div>';return h+'</div>';}
+  h+='<div class="whoselect">';
+  for(var i=0;i<mem.length;i++){var p=person(mem[i]);if(!p)continue;var on=S._who&&S._who.has(p.id);
+    h+='<div class="who-opt'+(on?' on':'')+'" onclick="toggleWho(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+'<span class="wcheck">'+IC.checkw.replace('currentColor','#15803D')+'</span></div>';
+  }
+  return h+'</div></div>';
 }
 
 /* ============================================================
@@ -1155,6 +1297,9 @@ function renderScreen(){
   if(t==='resortedit')return scrResortEdit();
   if(t==='tripedit')  return scrTripEdit();
   if(t==='lists')     return scrLists();
+  if(t==='packlist')  return scrPackList();
+  if(t==='todolist')  return scrTodo();
+  if(t==='todotmpl')  return scrTodoTmpl();
   if(t==='section')   return scrSection();
   return scrGeneric();
 }
@@ -1451,8 +1596,11 @@ function createTrip(){
   var dates=(start&&end)?(monOf(start)+' '+(+start.slice(8))+' – '+monOf(end)+' '+(+end.slice(8))+', '+start.slice(0,4)):'Dates TBD';
   TRIPS.push({id:id,name:nm,sub:'Walt Disney World',status:'planning',start:start||'',end:end||'',dates:dates,color:col,members:mem,by:S.persona});
   genDays(id);
-  var np={},nt={};
-  mem.forEach(function(pid){np[pid]=(S.newTmpl==='mine'&&PACKING_SEED[pid])?JSON.parse(JSON.stringify(PACKING_SEED[pid])):[];nt[pid]=(S.newTmpl==='mine'&&TODO_SEED[pid])?JSON.parse(JSON.stringify(TODO_SEED[pid])):[];});
+  var np={},nt=[];
+  mem.forEach(function(pid){
+    np[pid]=(S.newTmpl==='mine'&&PACKING_SEED[pid])?JSON.parse(JSON.stringify(PACKING_SEED[pid])):[];
+    if(S.newTmpl==='mine'&&TODO_TMPL[pid])TODO_TMPL[pid].forEach(function(t,i){nt.push({id:'td'+Date.now()+'_'+pid+'_'+i,trip:id,by:pid,done:false,n:t.n,when:t.when||'',who:[]});});
+  });
   save('dtp_packing_'+id,np);save('dtp_todo_'+id,nt);
   save('dtp_trips',TRIPS);save('dtp_days',DAYS);S._members=null;
   toast('Trip created'+(S.newTmpl==='mine'?' from your template':''));
@@ -1490,6 +1638,9 @@ function scrPersona(){
     var body='<div class="hub-section-label" style="margin-left:0">Your account</div>';
     body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px">You\'re signed in as <strong>'+esc(me?me.name:'')+'</strong>'+(isAdmin()?' · Admin':'')+'. To use the app as someone else, log out and choose a persona.</div>';
     body+='<button class="btn-secondary green" onclick="openScreen({type:\'newtrip\'})">Plan a new trip</button>';
+    body+='<div class="hub-section-label" style="margin-left:0">Your lists</div>';
+    body+='<button class="btn-secondary" onclick="openScreen({type:\'todotmpl\'})">Global To Do List Template</button>';
+    body+='<div class="hub-section-label" style="margin-left:0">Security</div>';
     body+='<button class="btn-secondary" onclick="setMyPin()">Change my PIN</button>';
     body+='<button class="btn-secondary" onclick="logoutPersona()">Log out</button>';
     body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px">'+(isAdmin()?'Manage people and templates in <strong>Plan → Settings</strong>.':'Forgot your PIN? An admin can reset it in <strong>Settings → People</strong>.')+'</div>';
@@ -1581,7 +1732,7 @@ function addPersona(){
   var id='p'+Date.now();
   FAMILY.push({id:id,name:'New Person',color:col});
   ALL_IDS=FAMILY.map(function(p){return p.id;});
-  PACKING[id]=[];TODO[id]=[];
+  PACKING[id]=[];
   save('dtp_family',FAMILY);saveLists();
   renderScreen_inplace2();
 }
@@ -1593,7 +1744,10 @@ function delPersona(id){
   capturePersonas();
   FAMILY=FAMILY.filter(function(x){return x.id!==id;});
   ALL_IDS=FAMILY.map(function(x){return x.id;});
-  delete PACKING[id];delete TODO[id];
+  delete PACKING[id];delete TODO_TMPL[id];saveTmpl();
+  /* drop this person's to-do items and strip them from any assignments */
+  TODO=TODO.filter(function(t){return t.by!==id;});
+  TODO.forEach(function(t){if(t.who)t.who=t.who.filter(function(m){return m!==id;});});
   for(var i=0;i<TRIPS.length;i++)if(TRIPS[i].members)TRIPS[i].members=TRIPS[i].members.filter(function(m){return m!==id;});
   [DINING,LLS,FLIGHTS,RESORTS,SHOWS].forEach(function(coll){
     coll.forEach(function(it){if(Array.isArray(it.who)){it.who=it.who.filter(function(m){return m!==id;});if(!it.who.length)it.who='all';}});
@@ -1623,7 +1777,7 @@ function scrTemplates(){
   body+='<div class="hub-section-label" style="margin-left:0">Per-person masters</div>';
   for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i];
     var pk=PACKING[p.id]?PACKING[p.id].reduce(function(n,c){return n+c.items.length;},0):0;
-    var td=TODO[p.id]?TODO[p.id].length:0;
+    var td=TODO_TMPL[p.id]?TODO_TMPL[p.id].length:0;
     body+='<div class="hub-row" style="cursor:default"><div class="hub-icon" style="background:'+p.color+'">'+esc(p.name[0])+'</div>';
     body+='<div class="hub-main"><div class="hub-title">'+esc(p.name)+'</div><div class="hub-sub">'+pk+' packing · '+td+' to-do items</div></div></div>';
   }
@@ -1632,10 +1786,49 @@ function scrTemplates(){
   return screenShell('Templates',body,null,null,'Done');
 }
 
-/* Per-person lists as a full screen (from Plan hub / Settings) */
+/* Per-person packing lists as a full screen (from Plan hub / Settings) */
 function listScreenBody(which){return renderFilter()+renderLists(which);}
 function scrLists(){
-  return screenShell(S.screen.which==='packing'?'Packing':'To Do', '<div id="lists-body">'+listScreenBody(S.screen.which)+'</div>', null, null, 'Done');
+  return screenShell('Packing', '<div id="lists-body">'+listScreenBody('packing')+'</div>', null, null, 'Done');
+}
+function scrPackList(){
+  return screenShell(esc(trip().name)+' · Packing', '<div id="lists-body">'+listScreenBody('packing')+'</div>', null, null, 'Done');
+}
+
+/* Global per-person To Do template — edited from the account page */
+function scrTodoTmpl(){
+  var me=person(S.persona);
+  var list=TODO_TMPL[S.persona]||(TODO_TMPL[S.persona]=[]);
+  var body='<div class="body-empty" style="text-align:left;padding:0 2px 14px;font-size:16px;color:var(--ink)">Your reusable to-do master, '+esc(me?me.name:'')+'. It’s not tied to any trip — when you start a trip’s to-do list you can load these in.</div>';
+  body+='<div class="hub-section-label" style="margin-left:0">Template items</div>';
+  body+='<div class="card" style="padding:6px 0 0">';
+  if(!list.length)body+='<div class="body-empty" style="text-align:left;padding:6px 12px">No items yet — add a few below.</div>';
+  for(var i=0;i<list.length;i++){
+    body+='<div class="pk-row">';
+    body+='<input class="field-input" id="tt-n-'+i+'" style="flex:2;min-width:0" value="'+esc(list[i].n)+'" placeholder="Task">';
+    body+='<input class="field-input" id="tt-w-'+i+'" style="flex:1;min-width:0;max-width:120px" value="'+esc(list[i].when||'')+'" placeholder="When">';
+    body+='<button class="del-btn" onclick="ttDel('+i+')">&times;</button>';
+    body+='</div>';
+  }
+  body+='<button class="add-link" onclick="ttAdd()">'+IC.plus+' Add template item</button>';
+  body+='</div>';
+  return screenShell('Global To Do Template',body,'Save','ttSave()');
+}
+function ttCapture(){
+  var list=TODO_TMPL[S.persona]||[];
+  for(var i=0;i<list.length;i++){
+    var n=document.getElementById('tt-n-'+i),w=document.getElementById('tt-w-'+i);
+    if(n)list[i].n=n.value.trim();
+    if(w)list[i].when=w.value.trim();
+  }
+  TODO_TMPL[S.persona]=list;
+}
+function ttAdd(){ttCapture();(TODO_TMPL[S.persona]||(TODO_TMPL[S.persona]=[])).push({n:'',when:''});renderScreen_inplace2();}
+function ttDel(i){ttCapture();TODO_TMPL[S.persona].splice(i,1);renderScreen_inplace2();}
+function ttSave(){
+  ttCapture();
+  TODO_TMPL[S.persona]=(TODO_TMPL[S.persona]||[]).filter(function(t){return t.n;});
+  saveTmpl();toast('Template saved');closeScreen();render();
 }
 
 /* Generic section screen (Plan hub destinations) */
