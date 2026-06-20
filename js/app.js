@@ -63,7 +63,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='10';
-var BUILD='37';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='38';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -328,8 +328,8 @@ function closeScreen(){var host=document.getElementById('screen-host');var s=hos
 /* persona */
 function setPersona(id){
   var p=person(id);if(!p){closeScreen();return;}
-  /* verify access to a PIN-protected persona */
-  if(p.pin&&id!==S.persona){var e=prompt('Enter '+p.name+'\'s PIN:');if(e==null)return;if(String(e).trim()!==String(p.pin)){toast('Incorrect PIN');return;}}
+  /* logging in always verifies the PIN — even back into the persona you just logged out of */
+  if(p.pin){var e=prompt('Enter '+p.name+'\'s PIN:');if(e==null)return;if(String(e).trim()!==String(p.pin)){toast('Incorrect PIN');return;}}
   /* first login for this person (no PIN yet): force them to create one */
   if(!p.pin){
     var np=prompt('Welcome, '+p.name+'! Create a PIN so only you can log in as you.');
