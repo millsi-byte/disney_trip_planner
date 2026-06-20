@@ -62,7 +62,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='10';
-var BUILD='18';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='19';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -532,7 +532,7 @@ function dayPlanItems(d){
     if(lg.depDate===date) out.push({t:lg.depTime,x:'Depart '+lg.depApt+' — '+lg.airline+(lg.num?' '+lg.num:''),type:'flight',who:f.who});
     if(lg.arrDate===date) out.push({t:lg.arrTime,x:'Arrive '+lg.arrApt+(lg.arrCity&&lg.arrCity!==lg.arrApt?' ('+lg.arrCity+')':''),type:'flight',who:f.who});
   });});
-  diningFor(date).forEach(function(dn){if(dn.status==='reserved'||dn.status==='planned')out.push({t:dn.time,x:dn.meal+' — '+dn.name,type:'dining',who:dn.who});});
+  diningFor(date).forEach(function(dn){if(dn.status==='reserved'||dn.status==='planned')out.push({t:dn.time,x:dn.meal+' — '+dn.name,type:'dining',who:dn.who,dstatus:dn.status,soft:dn.status==='planned'});});
   showsFor(date).forEach(function(s){if((s.status||'attend')==='attend')out.push({t:s.time,x:s.name,type:'show',who:s.who});});
   llFor(date).forEach(function(l){var bk=l.status==='booked';out.push({t:bk?(l.bookedTime||l.window):l.window,x:l.ride+' ('+tagShort(l.tier)+')',type:'ll',who:l.who,ref:l.id,soft:!bk});});
   (d.itin||[]).forEach(function(it,idx){out.push({t:it.t,x:it.x,type:'manual',who:it.who||'all',crit:it.crit,idx:idx});});
@@ -571,6 +571,7 @@ function dayPlanCard(d,pk){
       var tags=[];
       var chip=planChip(e.type);if(chip)tags.push(chip);
       if(e.soft) tags.push('<span class="t-tag" style="background:transparent;color:#92724A;border:1.5px dashed #C9A45E">Planned</span>');
+      if(e.type==='dining'&&e.dstatus==='reserved') tags.push('<span class="t-tag" style="background:#DCFCE7;color:#15803D">Reserved</span>');
       if(e.crit) tags.push('<span class="t-tag t-tag-crit">'+esc(e.crit)+'</span>');
       if(tags.length) o+='<div class="t-tags">'+tags.join('')+'</div>';
       o+='</div>';
