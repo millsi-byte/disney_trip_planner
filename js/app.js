@@ -63,7 +63,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='10';
-var BUILD='40';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='41';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -240,23 +240,53 @@ function isFlightRow(it){return (it.crit&&it.crit.toLowerCase().indexOf('flight'
 /* "Admin" is a persona role. Being signed in as an admin persona grants all
    admin rights; switching into an admin persona is itself PIN-protected, so the
    admin's login PIN is effectively the admin PIN — the two are one and the same. */
-function isAdmin(){var p=person(S.persona);return !!(p&&p.admin);}
-/* gate for deleting protected bookings (LL / resort / park reservation) — admins only */
-function pinOK(){
-  if(!isAdmin()){toast('Only an admin can delete this — switch to an admin persona first');return false;}
-  return confirm('Delete this booking? This can\'t be undone.');
+function isAdmin(){var p=person(S.persona);return !!(p&&p.admin);}            /* global admin (any trip) */
+function isTripOwner(t){t=t||trip();return !!(t&&t.by&&t.by===S.persona);}    /* owner of this trip */
+/* may edit/delete an item: its creator, the trip owner, or a global admin */
+function canManage(it){
+  if(isAdmin()||isTripOwner()) return true;
+  return !!(it&&it.by&&it.by===S.persona);
 }
-/* creator-based delete: your own items delete freely; anything else needs an admin */
+/* delete/edit guard with a toast on refusal (everyday items) */
 function ownOK(it){
-  if(!it||!it.by||it.by===S.persona) return true;
-  if(isAdmin()) return true;
-  var who=person(it.by)?person(it.by).name:'someone else';
-  toast('Only '+who+' or an admin can delete this'); return false;
+  if(canManage(it)) return true;
+  var who=(it&&it.by&&person(it.by))?person(it.by).name:'its creator';
+  toast('Only '+who+', the trip owner or an admin can change this'); return false;
+}
+/* critical/irreversible deletes: caution + the acting person's own PIN */
+function confirmCritical(label,cb){
+  if(!confirm('⚠️ Delete this '+label+'?\n\nThis can’t be undone. Make sure you really mean to.')) return;
+  var me=person(S.persona);
+  if(me&&me.pin){
+    askPin({title:'Confirm with your PIN',sub:'Enter your PIN to delete this '+label+'.'},function(e){
+      if(e==null)return;
+      if(String(e).trim()!==String(me.pin)){toast('Incorrect PIN');return;}
+      cb();
+    });
+  } else cb();
 }
 /* gate for admin-only areas (Settings, managing people) */
 function adminGate(){
   if(isAdmin()) return true;
   toast('Admin only — switch to an admin persona first'); return false;
+}
+/* the item a (single) edit screen is pointed at, or null for a new item */
+function screenItem(){
+  if(!S.screen)return null;
+  var t=S.screen.type;
+  if(t==='stopedit'){var d=dayByDate(S.screen.day);return (d&&d.itin&&S.screen.idx!=null)?d.itin[S.screen.idx]:null;}
+  var id=S.screen.edit;if(!id)return null;
+  var M={adddining:DINING,llbook:LLS,addll:LLS,addflight:FLIGHTS,resortedit:RESORTS,showedit:SHOWS,predit:PARKRES,visedit:VISITS,hoursedit:PARKHOURS,rbedit:REBOOKS};
+  var coll=M[t];if(!coll)return null;
+  for(var i=0;i<coll.length;i++)if(coll[i].id===id)return coll[i];
+  return null;
+}
+/* remove just yourself from an item's people (the self-removal exception) */
+function removeMe(){
+  var it=screenItem();if(!it){closeScreen();return;}
+  if(it.who==='all') it.who=tripMembers().filter(function(m){return m!==S.persona;});
+  else if(Array.isArray(it.who)) it.who=it.who.filter(function(m){return m!==S.persona;});
+  persist();toast('Removed you from this');closeScreen();render();
 }
 
 /* queries — all scoped to the current trip */
@@ -1099,6 +1129,9 @@ function renderSheet(){
 /* slide-in screen router */
 function renderScreen(){
   var t=S.screen.type;
+  /* editing an existing item you don't own → limited view (with self-removal) */
+  var EDIT={adddining:1,llbook:1,addll:1,addflight:1,resortedit:1,showedit:1,predit:1,visedit:1,hoursedit:1,rbedit:1,stopedit:1};
+  if(EDIT[t]){var _it=screenItem();if(_it&&!canManage(_it))return scrLimitedItem(_it);}
   if(t==='addflight') return scrAddFlight();
   if(t==='adddining') return scrAddDining();
   if(t==='llbook')    return scrLLBook();
@@ -1122,9 +1155,24 @@ function renderScreen(){
   if(t==='section')   return scrSection();
   return scrGeneric();
 }
+function scrLimitedItem(it){
+  var by=(it.by&&person(it.by))?person(it.by).name:'someone';
+  var assigned=Array.isArray(it.who)?(it.who.indexOf(S.persona)>=0):(it.who==='all');
+  var nm=it.name||it.ride||it.show||it.resort||it.x||(it.park&&PARKS[it.park]?PARKS[it.park].name:'')||'This item';
+  var body='<div class="hub-section-label" style="margin-left:0">'+esc(typeof nm==='string'?nm:'Item')+'</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 14px">Added by <strong>'+esc(by)+'</strong>. Only they, the trip owner, or an admin can edit or delete it.</div>';
+  if(assigned){
+    body+='<button class="btn-secondary" onclick="removeMe()">Remove me from this</button>';
+    body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px">Takes you off this item — it stays for everyone else.</div>';
+  }else{
+    body+='<div class="body-empty" style="text-align:left;padding:0 2px">You’re not assigned to this, so there’s nothing here for you to change.</div>';
+  }
+  return screenShell('View',body,null,null,'Done');
+}
 function screenShell(title,bodyHtml,saveLabel,saveAction,cancelLabel,footerHtml){
   var h='<div class="screen"><div class="screen-hd">';
-  h+='<button class="sh-btn" onclick="closeScreen()">'+(cancelLabel||'Cancel')+'</button>';
+  /* cancelLabel===false → no dismiss button (e.g. the forced choose-persona screen) */
+  h+=(cancelLabel===false)?'<div style="min-width:60px"></div>':('<button class="sh-btn" onclick="closeScreen()">'+(cancelLabel||'Cancel')+'</button>');
   h+='<div class="sh-title">'+esc(title)+'</div>';
   h+=saveAction?('<button class="sh-btn right save" onclick="'+saveAction+'">'+(saveLabel||'Save')+'</button>'):'<div style="min-width:60px"></div>';
   h+='</div><div class="screen-body">'+bodyHtml+'</div>';
@@ -1322,9 +1370,11 @@ function saveLL(){
   save('dtp_lls',LLS);S._who=null;toast('Ride saved');closeScreen();render();
 }
 function delLL(id){
-  if(!pinOK())return;
-  for(var i=0;i<LLS.length;i++)if(LLS[i].id===id){LLS.splice(i,1);break;}
-  save('dtp_lls',LLS);toast('Ride removed');closeScreen();render();
+  var it=LLS.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;
+  confirmCritical('Lightning Lane',function(){
+    for(var i=0;i<LLS.length;i++)if(LLS[i].id===id){LLS.splice(i,1);break;}
+    save('dtp_lls',LLS);toast('Ride removed');closeScreen();render();
+  });
 }
 
 /* AI Import */
@@ -1451,7 +1501,7 @@ function scrPersona(){
   body+='<div class="hub-section-label" style="margin-left:0">Device</div>';
   body+='<button class="btn-secondary" onclick="forceUpdate()">Force app update</button>';
   body+='<button class="btn-secondary" onclick="if(confirm(\'Reset all saved data on this device? This wipes everything and starts fresh.\')){localStorage.clear();location.reload();}">Reset local data</button>';
-  return screenShell('Choose Persona',body,null,null,'');
+  return screenShell('Choose Persona',body,null,null,false);
 }
 
 /* Manage personas — global add / rename / recolor / delete */
@@ -1746,9 +1796,11 @@ function savePR(){
   save('dtp_parkres',PARKRES);S._who=null;toast('Park reservation saved');closeScreen();render();
 }
 function delPR(id){
-  if(!pinOK())return;
-  for(var i=0;i<PARKRES.length;i++)if(PARKRES[i].id===id){PARKRES.splice(i,1);break;}
-  save('dtp_parkres',PARKRES);toast('Reservation removed');closeScreen();render();
+  var it=PARKRES.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;
+  confirmCritical('park reservation',function(){
+    for(var i=0;i<PARKRES.length;i++)if(PARKRES[i].id===id){PARKRES.splice(i,1);break;}
+    save('dtp_parkres',PARKRES);toast('Reservation removed');closeScreen();render();
+  });
 }
 
 /* ── Park visit (first-class item: park + day + people) ─────── */
@@ -1908,6 +1960,7 @@ function saveShow(){
   save('dtp_shows',SHOWS);S._who=null;toast('Show saved');closeScreen();render();
 }
 function delShow(id){
+  var it=SHOWS.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;
   for(var i=0;i<SHOWS.length;i++)if(SHOWS[i].id===id){SHOWS.splice(i,1);break;}
   save('dtp_shows',SHOWS);toast('Show removed');closeScreen();render();
 }
@@ -1943,9 +1996,11 @@ function saveResort(){
   save('dtp_resorts',RESORTS);S._who=null;toast('Resort saved');closeScreen();render();
 }
 function delResort(id){
-  if(!pinOK())return;
-  for(var i=0;i<RESORTS.length;i++)if(RESORTS[i].id===id){RESORTS.splice(i,1);break;}
-  save('dtp_resorts',RESORTS);toast('Stay removed');closeScreen();render();
+  var it=RESORTS.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;
+  confirmCritical('resort booking',function(){
+    for(var i=0;i<RESORTS.length;i++)if(RESORTS[i].id===id){RESORTS.splice(i,1);break;}
+    save('dtp_resorts',RESORTS);toast('Stay removed');closeScreen();render();
+  });
 }
 
 /* ── Trip name & dates ─────────────────────────────────────── */
@@ -1992,9 +2047,11 @@ function saveTrip(){
 }
 function delTrip(id){
   if(TRIPS.length<=1){toast('Keep at least one trip');return;}
-  if(!isAdmin()){toast('Only an admin can delete a trip');return;}
   var t=tripById(id);
-  if(!confirm('Delete '+(t?t.name:'this trip')+'? Its days and items are removed too. This can\'t be undone.'))return;
+  if(!canEditTrip(t)){toast('Only the trip owner or an admin can delete a trip');return;}
+  confirmCritical('trip (and everything in it)',function(){doDelTrip(id);});
+}
+function doDelTrip(id){
   TRIPS=TRIPS.filter(function(x){return x.id!==id;});
   // remove this trip's days and items
   function drop(coll){for(var i=coll.length-1;i>=0;i--)if(coll[i].trip===id)coll.splice(i,1);}
