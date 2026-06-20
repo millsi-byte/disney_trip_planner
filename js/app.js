@@ -62,7 +62,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='10';
-var BUILD='21';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='22';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1052,7 +1052,7 @@ function toggleWho(id){if(S._who.has(id))S._who.delete(id);else S._who.add(id);
   var host=document.getElementById('screen-host');var s=host&&host.firstChild;var inClass=s&&s.classList.contains('in');
   renderScreen_inplace();
 }
-function renderScreen_inplace(){var host=document.getElementById('screen-host');host.innerHTML=renderScreen();var s=host.firstChild;if(s)s.classList.add('in');}
+function renderScreen_inplace(){renderScreen_inplace2();}
 
 function dayOptions(sel){var h='',TD=tripDays();for(var i=0;i<TD.length;i++){var d=TD[i];h+='<option value="'+d.date+'"'+(d.date===sel?' selected':'')+'>'+monOf(d.date)+' '+d.d+' · '+d.dl+'</option>';}return h;}
 
@@ -1088,7 +1088,15 @@ function scrAddFlight(){
 }
 function addLeg(){S.formLegs=(S.formLegs||1)+1;renderScreen_inplace2();}
 function removeLeg(){S.formLegs=Math.max(1,(S.formLegs||1)-1);renderScreen_inplace2();}
-function renderScreen_inplace2(){if(!S.screen){render();return;}var host=document.getElementById('screen-host');host.innerHTML=renderScreen();var s=host.firstChild;if(s)s.classList.add('in');}
+function renderScreen_inplace2(){
+  if(!S.screen){render();return;}
+  var host=document.getElementById('screen-host');
+  var snap={};
+  if(host.querySelectorAll){var olds=host.querySelectorAll('input,select,textarea');for(var i=0;i<olds.length;i++){if(olds[i].id)snap[olds[i].id]=olds[i].value;}}
+  host.innerHTML=renderScreen();
+  if(host.querySelectorAll){var news=host.querySelectorAll('input,select,textarea');for(var j=0;j<news.length;j++){if(news[j].id&&(news[j].id in snap))news[j].value=snap[news[j].id];}}
+  var s=host.firstChild;if(s)s.classList.add('in');
+}
 S._formStatus={};
 function pickStatus(form,val){S._formStatus[form]=val;renderScreen_inplace2();}
 function saveFlight(){

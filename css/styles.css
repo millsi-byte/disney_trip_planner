@@ -38,8 +38,8 @@ button{font-family:inherit}
 /* ── Day strip ───────────────────────────────────────────── */
 .strip-wrap{background:var(--ink);padding:0 12px 12px;overflow-x:auto;scrollbar-width:none;position:sticky;top:0;z-index:90}
 .strip-wrap::-webkit-scrollbar{display:none}
-.strip{display:flex;gap:6px}
-.dpill{display:flex;flex-direction:column;align-items:center;padding:8px 10px 7px;border-radius:10px;cursor:pointer;border:2px solid transparent;background:rgba(255,255,255,.08);min-width:54px;transition:all .15s;gap:2px}
+.strip{display:flex;gap:6px;flex-wrap:nowrap;width:max-content}
+.dpill{display:flex;flex-direction:column;align-items:center;padding:8px 10px 7px;border-radius:10px;cursor:pointer;border:2px solid transparent;background:rgba(255,255,255,.08);min-width:54px;flex-shrink:0;transition:all .15s;gap:2px}
 .dpill.on{border-color:rgba(255,255,255,.55);background:rgba(255,255,255,.18)}
 .p-day{font-size:11px;color:rgba(255,255,255,.65);text-transform:uppercase;letter-spacing:.08em;font-weight:700}
 .p-date{font-size:19px;font-weight:700;color:#fff;line-height:1.1}
