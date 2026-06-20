@@ -257,15 +257,20 @@ var LLS = [
    conf:"", bookDate:"Jul 11 @ 7:00 AM", who:"all"}
 ];
 
-/* Rolling re-books — first-class items (sequence-based, no fixed time) */
+/* Rolling re-books — first-class items tied to a multi-pass LL.        */
+/* `after` = the LL id this re-book follows; `text` = what to book next.*/
+/* In the Day Plan it appears as the next line after that LL.          */
 var REBOOKS = [
-  {id:"rb1", trip:"jul26", day:"2026-07-16", text:"After Jungle Cruise → book Buzz Lightyear", who:"all"},
-  {id:"rb2", trip:"jul26", day:"2026-07-16", text:"After Pirates → nighttime re-ride #1", who:"all"},
-  {id:"rb3", trip:"jul26", day:"2026-07-16", text:"After Haunted Mansion → nighttime re-ride #2", who:"all"},
-  {id:"rb4", trip:"jul26", day:"2026-07-17", text:"After Runaway Railway → book Slinky Dog Dash", who:"all"},
-  {id:"rb5", trip:"jul26", day:"2026-07-17", text:"After Toy Story Mania → evening re-ride", who:"all"},
-  {id:"rb6", trip:"jul26", day:"2026-07-18", text:"After Kilimanjaro Safaris → book Expedition Everest", who:"all"},
-  {id:"rb7", trip:"jul26", day:"2026-07-18", text:"After Everest → Kali River Rapids", who:"all"}
+  // jul16 — after booked Space Mountain (ll5, mp1) → next tap
+  {id:"rb2", trip:"jul26", day:"2026-07-16", after:"ll5", text:"Book Big Thunder Mountain", who:"all"},
+  // jul16 — planning anchors (appear in the plan once their LL is booked)
+  {id:"rb1", trip:"jul26", day:"2026-07-16", after:"ll7", text:"Book Buzz Lightyear", who:"all"},
+  {id:"rb3", trip:"jul26", day:"2026-07-16", after:"ll8", text:"Nighttime re-ride", who:"all"},
+  // jul17
+  {id:"rb4", trip:"jul26", day:"2026-07-17", after:"ll10", text:"Book Slinky Dog Dash", who:"all"},
+  {id:"rb5", trip:"jul26", day:"2026-07-17", after:"ll12", text:"Evening re-ride", who:"all"},
+  // jul18
+  {id:"rb6", trip:"jul26", day:"2026-07-18", after:"ll14", text:"Book Expedition Everest", who:"all"}
 ];
 
 /* ── Dining ───────────────────────────────────────────────── */

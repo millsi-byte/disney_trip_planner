@@ -52,7 +52,11 @@ var S = {
   newTmpl:"mine",
   formLegs:1
 };
-function defOpen(){return {resort:true,flight:true,itin:true,ll:true,strat:true,din:true,shows:true};}
+function defOpen(){
+  var d=(typeof day==='function')?day():null,rEvent=false;
+  if(d){for(var i=0;i<RESORTS.length;i++){var r=RESORTS[i];if(r.trip===S.tripId&&(r.checkin===d.date||r.checkout===d.date)){rEvent=true;break;}}}
+  return {resort:rEvent,flight:true,itin:true,ll:true,strat:true,din:true,shows:true};
+}
 S.open = defOpen();
 
 /* persistence */
@@ -61,8 +65,8 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
-var DATA_VERSION='9';
-var BUILD='16';   /* bumped each deploy — shown in Settings to spot stale caches */
+var DATA_VERSION='10';
+var BUILD='17';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -437,31 +441,25 @@ function renderAgenda(){
   o+=dayConditions(d);
   o+='<button class="add-link" style="margin:2px 0 6px" onclick="openScreen({type:\'dayedit\',day:\''+d.date+'\'})">'+IC.pencil+' Edit day details</button>';
 
-  /* Resort card(s) */
+  /* Order: Strategy · Flights · Resort · Dining · Night Shows · Lightning Lanes · Day Plan */
+  if(d.strategy) o+=stratCard(d,pk);
+
+  var flts=flightsFor(d.date).filter(function(f){return visible(f.who);});
+  if(flts.length) o+=flightCard(flts,d);
+
   var stays=resortsFor(d.date).filter(function(r){return visible(r.who);});
   for(var s=0;s<stays.length;s++) o+=resortCard(stays[s],d.date);
 
-  /* Flights */
-  var flts=flightsFor(d.date).filter(function(f){return visible(f.who);});
-  o+=flightCard(flts,d);
-
-  /* Day Plan */
-  o+=dayPlanCard(d,pk);
-
-  /* Lightning Lanes */
-  var lls=llFor(d.date).filter(function(l){return visible(l.who);});
-  if(lls.length) o+=llCard(lls,d,pk);
-
-  /* Strategy */
-  if(d.strategy) o+=stratCard(d,pk);
-
-  /* Dining */
   var din=diningFor(d.date).filter(function(x){return visible(x.who);});
   o+=diningCard(din,pk,d.date);
 
-  /* Shows */
   var sh=showsFor(d.date).filter(function(x){return visible(x.who);});
   o+=showsCard(sh,pk,d.date);
+
+  var lls=llFor(d.date).filter(function(l){return visible(l.who);});
+  if(lls.length) o+=llCard(lls,d,pk);
+
+  o+=dayPlanCard(d,pk);
 
   return o;
 }
@@ -539,14 +537,23 @@ function dayPlanItems(d){
   });});
   diningFor(date).forEach(function(dn){if(dn.status==='reserved'||dn.status==='planned')out.push({t:dn.time,x:dn.meal+' — '+dn.name,type:'dining',who:dn.who});});
   showsFor(date).forEach(function(s){if((s.status||'attend')==='attend')out.push({t:s.time,x:s.name,type:'show',who:s.who});});
-  llFor(date).forEach(function(l){if(l.status==='booked')out.push({t:l.bookedTime||l.window,x:l.ride+' ('+tagShort(l.tier)+')',type:'ll',who:l.who});});
+  llFor(date).forEach(function(l){if(l.status==='booked')out.push({t:l.bookedTime||l.window,x:l.ride+' ('+tagShort(l.tier)+')',type:'ll',who:l.who,ref:l.id});});
   (d.itin||[]).forEach(function(it,idx){out.push({t:it.t,x:it.x,type:'manual',who:it.who||'all',crit:it.crit,idx:idx});});
   out=out.filter(function(e){return visible(e.who);});
   out.sort(function(a,b){return mins(a.t)-mins(b.t);});
-  return out;
+  // weave each rolling re-book in right after the booked LL it follows
+  var woven=[];
+  out.forEach(function(e){
+    woven.push(e);
+    if(e.type==='ll'&&e.ref){
+      rebooksFor(date).forEach(function(rb){if(rb.after===e.ref&&visible(rb.who))woven.push({t:e.t,x:rebookText(rb),type:'rebook',who:rb.who});});
+    }
+  });
+  return woven;
 }
+function rebookText(rb){var a=rb.after?(LLS.filter(function(l){return l.id===rb.after;})[0]):null;return (a?'After '+a.ride+' → ':'')+rb.text;}
 function planChip(t){
-  var map={flight:['Flight','#1B2B4A'],dining:['Dining','#7C2D12'],show:['Show','#4C1D95'],ll:['Lightning Lane','#92400E'],resort:['Resort','#1C3A5E']};
+  var map={flight:['Flight','#1B2B4A'],dining:['Dining','#7C2D12'],show:['Show','#4C1D95'],ll:['Lightning Lane','#92400E'],resort:['Resort','#1C3A5E'],rebook:['Re-book','#B45309']};
   var m=map[t];return m?'<span class="t-tag" style="background:'+m[1]+';color:#fff">'+m[0]+'</span>':'';
 }
 function dayPlanCard(d,pk){
@@ -615,7 +622,7 @@ function llCard(lls,d,pk){
     }
     o+='<div class="roll-hd">Rolling Re-books</div>';
     for(var r=0;r<roll.length;r++){var rb=roll[r];
-      o+='<div class="roll-row"><span class="roll-arr">'+IC.arr+'</span><span style="flex:1">'+esc(rb.text)+(rb.who!=='all'?' '+whoStack(rb.who):'')+'</span>'
+      o+='<div class="roll-row"><span class="roll-arr">'+IC.arr+'</span><span style="flex:1">'+esc(rebookText(rb))+(rb.who!=='all'?' '+whoStack(rb.who):'')+'</span>'
         +'<button class="hdr-icon" style="width:26px;height:26px;background:#F3F1EC;color:#6B7280;flex-shrink:0" onclick="openScreen({type:\'rbedit\',edit:\''+rb.id+'\',day:\''+d.date+'\'})">'+IC.pencil+'</button></div>';
     }
     if(!roll.length) o+='<div class="body-empty" style="text-align:left;padding:2px 2px 4px">No rolling re-books yet.</div>';
@@ -1665,18 +1672,25 @@ function delStop(){
 /* ── Rolling re-book (sequence-based LL item) ──────────────── */
 function scrRebookEdit(){
   var edit=S.screen.edit?REBOOKS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
-  var body='<div class="field"><label class="field-label">Re-book note</label><input class="field-input" id="rb-text" placeholder="e.g. After Jungle Cruise → book Buzz Lightyear" value="'+(edit?esc(edit.text):'')+'"></div>';
-  body+='<div class="field"><label class="field-label">Day</label><select class="field-select" id="rb-day">'+dayOptions((edit&&edit.day)||S.screen.day)+'</select></div>';
+  var dy=(edit&&edit.day)||S.screen.day;
+  var mps=llFor(dy).filter(function(l){return l.tier==='mp1'||l.tier==='mp2';});
+  var afterSel=edit?edit.after:(mps[0]?mps[0].id:'');
+  var body='<div class="field"><label class="field-label">After which Multi Pass</label><select class="field-select" id="rb-after">';
+  body+='<option value=""'+(!afterSel?' selected':'')+'>— none —</option>';
+  for(var i=0;i<mps.length;i++)body+='<option value="'+mps[i].id+'"'+(mps[i].id===afterSel?' selected':'')+'>'+esc(mps[i].ride)+' ('+tagShort(mps[i].tier)+(mps[i].status==='booked'?' · Booked':'')+')</option>';
+  body+='</select></div>';
+  body+='<div class="field"><label class="field-label">Then book / do</label><input class="field-input" id="rb-text" placeholder="e.g. Big Thunder Mountain" value="'+(edit?esc(edit.text):'')+'"></div>';
+  body+='<div class="field"><label class="field-label">Day</label><select class="field-select" id="rb-day">'+dayOptions(dy)+'</select></div>';
   body+=whoSelectField(edit?edit.who:'all');
-  body+='<div class="body-empty" style="text-align:left;padding:2px 2px 0">Rolling re-books happen in sequence (after one ride you book the next), so they live in the Lightning Lanes card rather than at a fixed time.</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:2px 2px 0">A rolling re-book follows a Multi Pass ride: it shows as the next line in the Day Plan right after that ride — but only once that ride is Booked.</div>';
   if(edit) body+='<button class="btn-danger-link" onclick="delRebook(\''+edit.id+'\')">Delete this re-book</button>';
   return screenShell(edit?'Edit Re-book':'Add Re-book',body,'Save','saveRebook()');
 }
 function saveRebook(){
   var edit=S.screen.edit?REBOOKS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
-  var tx=val('rb-text');if(!tx){toast('Add a note');return;}
+  var tx=val('rb-text');if(!tx){toast('Add what to book next');return;}
   var rec=edit||{id:'rb'+Date.now(),trip:S.tripId};
-  rec.text=tx;rec.day=val('rb-day')||S.screen.day;rec.who=whoVal();
+  rec.text=tx;rec.after=val('rb-after');rec.day=val('rb-day')||S.screen.day;rec.who=whoVal();
   if(!edit)REBOOKS.push(rec);
   save('dtp_rebooks',REBOOKS);S._who=null;toast('Re-book saved');closeScreen();render();
 }
@@ -1811,4 +1825,5 @@ function render(){
 }
 materializeAllDays();
 loadLists();
+S.open=defOpen();
 render();
