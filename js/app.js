@@ -1117,7 +1117,6 @@ function scrTodo(){
   return screenShell(esc(trip().name)+' · To Do','<div id="todo-body">'+todoBody()+'</div>',null,null,'Done');
 }
 function todoBody(){
-  if(isAdmin())return todoAdminBody();
   var me=S.persona;
   var mine=tdMine(me), assigned=tdAssignedTo(me);
   var all=mine.concat(assigned);
@@ -1138,22 +1137,21 @@ function todoBody(){
     for(var j=0;j<assigned.length;j++)o+=todoRowOrEditor(assigned[j]);
     o+='</div>';
   }
-  return o;
-}
-function todoAdminBody(){
-  var persons=pkPersons();
-  var o='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">Admin view — everyone’s to-do lists across this trip.</div>';
-  o+=renderFilter();
-  if(S.tdForm&&S.tdForm.id===null){o+='<div class="card" style="padding:6px 0 0">'+todoEditor(null)+'</div>';}
-  for(var p=0;p<persons.length;p++){var pid=persons[p];
-    var items=tdMine(pid);
-    var done=items.filter(function(t){return t.done;}).length;
-    o+=pbHead(pid,done,items.length);
-    o+='<div class="card" style="padding:6px 0 0">';
-    if(!items.length)o+='<div class="body-empty" style="text-align:left;padding:6px 12px">No items.</div>';
-    for(var i=0;i<items.length;i++)o+=todoRowOrEditor(items[i]);
-    if(pid===S.persona&&!S.tdForm)o+='<button class="add-link" onclick="tdAddOpen()">'+IC.plus+' Add task</button>';
-    o+='</div>';
+  /* Global admin: everyone else's lists, for oversight */
+  if(isAdmin()){
+    var others=tripMembers().filter(function(id){return id!==me;});
+    if(others.length){
+      o+='<div class="hub-section-label" style="margin-left:0">Everyone else <span class="opt">· admin</span></div>';
+      for(var p=0;p<others.length;p++){var pid=others[p];
+        var items=tdMine(pid);
+        var done=items.filter(function(t){return t.done;}).length;
+        o+=pbHead(pid,done,items.length);
+        o+='<div class="card" style="padding:6px 0 0">';
+        if(!items.length)o+='<div class="body-empty" style="text-align:left;padding:6px 12px">No items.</div>';
+        for(var k=0;k<items.length;k++)o+=todoRowOrEditor(items[k]);
+        o+='</div>';
+      }
+    }
   }
   return o;
 }
