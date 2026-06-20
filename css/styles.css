@@ -179,6 +179,7 @@ button{font-family:inherit}
 .plan-summary{padding:10px 14px;border-bottom:1px solid var(--border);font-size:15px;color:var(--muted);line-height:1.5}
 .plan-summary strong{color:var(--ink);font-weight:700}
 .t-row{display:flex;gap:12px;padding:10px 14px;border-bottom:1px solid var(--border);align-items:flex-start}
+.t-row.t-soft .t-text{color:var(--muted)}
 .t-row:last-child{border-bottom:none}
 .t-row.nextup{border-left:3px solid var(--gold);padding-left:11px;background:#FFFBEB}
 .t-time{font-size:15px;font-weight:700;color:var(--muted);min-width:72px;flex-shrink:0;padding-top:2px;white-space:nowrap;letter-spacing:.02em}

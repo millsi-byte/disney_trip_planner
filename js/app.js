@@ -52,11 +52,7 @@ var S = {
   newTmpl:"mine",
   formLegs:1
 };
-function defOpen(){
-  var d=(typeof day==='function')?day():null,rEvent=false;
-  if(d){for(var i=0;i<RESORTS.length;i++){var r=RESORTS[i];if(r.trip===S.tripId&&(r.checkin===d.date||r.checkout===d.date)){rEvent=true;break;}}}
-  return {resort:rEvent,flight:true,itin:true,ll:true,strat:true,din:true,shows:true};
-}
+function defOpen(){return {flight:true,itin:true,ll:true,strat:false,din:true,shows:true};}
 S.open = defOpen();
 
 /* persistence */
@@ -66,7 +62,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='10';
-var BUILD='17';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='18';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -447,7 +443,7 @@ function renderAgenda(){
   var flts=flightsFor(d.date).filter(function(f){return visible(f.who);});
   if(flts.length) o+=flightCard(flts,d);
 
-  var stays=resortsFor(d.date).filter(function(r){return visible(r.who);});
+  var stays=resortsFor(d.date).filter(function(r){return visible(r.who)&&(r.checkin===d.date||r.checkout===d.date);});
   for(var s=0;s<stays.length;s++) o+=resortCard(stays[s],d.date);
 
   var din=diningFor(d.date).filter(function(x){return visible(x.who);});
@@ -466,6 +462,7 @@ function renderAgenda(){
 
 function resortCard(r,date){
   var key='resort_'+r.id;
+  if(!(key in S.open)) S.open[key]=true;
   var flag = date===r.checkin?'<span class="resort-flag flag-in">'+IC.check+' Check-in today</span>'
            : date===r.checkout?'<span class="resort-flag flag-out">'+IC.warn+' Check-out today</span>':'';
   var o='<div class="card'+(isPlanningStatus(r.status)?' planning':'')+'">';
@@ -537,7 +534,7 @@ function dayPlanItems(d){
   });});
   diningFor(date).forEach(function(dn){if(dn.status==='reserved'||dn.status==='planned')out.push({t:dn.time,x:dn.meal+' — '+dn.name,type:'dining',who:dn.who});});
   showsFor(date).forEach(function(s){if((s.status||'attend')==='attend')out.push({t:s.time,x:s.name,type:'show',who:s.who});});
-  llFor(date).forEach(function(l){if(l.status==='booked')out.push({t:l.bookedTime||l.window,x:l.ride+' ('+tagShort(l.tier)+')',type:'ll',who:l.who,ref:l.id});});
+  llFor(date).forEach(function(l){var bk=l.status==='booked';out.push({t:bk?(l.bookedTime||l.window):l.window,x:l.ride+' ('+tagShort(l.tier)+')',type:'ll',who:l.who,ref:l.id,soft:!bk});});
   (d.itin||[]).forEach(function(it,idx){out.push({t:it.t,x:it.x,type:'manual',who:it.who||'all',crit:it.crit,idx:idx});});
   out=out.filter(function(e){return visible(e.who);});
   out.sort(function(a,b){return mins(a.t)-mins(b.t);});
@@ -546,7 +543,7 @@ function dayPlanItems(d){
   out.forEach(function(e){
     woven.push(e);
     if(e.type==='ll'&&e.ref){
-      rebooksFor(date).forEach(function(rb){if(rb.after===e.ref&&visible(rb.who))woven.push({t:e.t,x:rebookText(rb),type:'rebook',who:rb.who});});
+      rebooksFor(date).forEach(function(rb){if(rb.after===e.ref&&visible(rb.who))woven.push({t:e.t,x:rebookText(rb),type:'rebook',who:rb.who,soft:e.soft});});
     }
   });
   return woven;
@@ -567,12 +564,13 @@ function dayPlanCard(d,pk){
     if(summary) o+='<div class="plan-summary"><strong>The plan:</strong> '+esc(summary)+'</div>';
     for(var j=0;j<items.length;j++){
       var e=items[j];
-      o+='<div class="t-row">';
+      o+='<div class="t-row'+(e.soft?' t-soft':'')+'">';
       o+='<div class="t-time">'+esc(e.t)+'</div>';
       o+='<div style="flex:1"><div class="t-text">'+pillify(esc(e.x))+'</div>';
       if(e.who&&e.who!=='all') o+=whoStack(e.who);
       var tags=[];
       var chip=planChip(e.type);if(chip)tags.push(chip);
+      if(e.soft) tags.push('<span class="t-tag" style="background:transparent;color:#92724A;border:1.5px dashed #C9A45E">Planned</span>');
       if(e.crit) tags.push('<span class="t-tag t-tag-crit">'+esc(e.crit)+'</span>');
       if(tags.length) o+='<div class="t-tags">'+tags.join('')+'</div>';
       o+='</div>';
