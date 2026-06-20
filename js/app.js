@@ -63,7 +63,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='10';
-var BUILD='39';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='40';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -165,6 +165,8 @@ function ensureVisibleTrip(){
   for(var i=0;i<vt.length;i++)if(vt[i].id===S.tripId)return;
   S.tripId=vt[0].id;
 }
+/* who may edit a trip's details: admins or the person who created it */
+function canEditTrip(t){t=t||trip();return isAdmin()||!!(t&&t.by&&t.by===S.persona);}
 /* personas assigned to the current trip (drives filters + who-select) */
 function tripMembers(){var t=trip();return (t&&t.members&&t.members.length)?t.members.filter(function(id){return !!person(id);}):ALL_IDS.slice();}
 function whoArr(who){return who==="all"?tripMembers():who;}
@@ -835,8 +837,9 @@ function renderPlanHub(){
   o+='<button class="hub-row" onclick="openScreen({type:\'import\'})"><div class="hub-icon" style="background:#1E40AF">'+IC.sparkles+'</div>'
     +'<div class="hub-main"><div class="hub-title">AI Import</div><div class="hub-sub">Pull details from emails, PDFs & spreadsheets</div></div><div class="chev">'+IC.chev+'</div></button>';
   o+='<div class="hub-section-label">Trip & settings</div>';
-  o+='<button class="hub-row" onclick="openScreen({type:\'tripedit\'})"><div class="hub-icon" style="background:#6B4FA0">'+IC.pencil+'</div>'
-    +'<div class="hub-main"><div class="hub-title">Edit trip name & dates</div><div class="hub-sub">'+esc(trip().dates)+'</div></div><div class="chev">'+IC.chev+'</div></button>';
+  if(canEditTrip())
+    o+='<button class="hub-row" onclick="openScreen({type:\'tripedit\'})"><div class="hub-icon" style="background:#6B4FA0">'+IC.pencil+'</div>'
+      +'<div class="hub-main"><div class="hub-title">Edit trip name & dates</div><div class="hub-sub">'+esc(trip().dates)+'</div></div><div class="chev">'+IC.chev+'</div></button>';
   if(isAdmin())
     o+='<button class="hub-row" onclick="openScreen({type:\'settings\'})"><div class="hub-icon" style="background:#1C3A5E">'+IC.gear+'</div>'
       +'<div class="hub-main"><div class="hub-title">Settings <span style="font-size:11px;font-weight:600;color:#92400E">· Admin</span></div><div class="hub-sub">People & templates</div></div><div class="chev">'+IC.chev+'</div></button>';
@@ -1083,7 +1086,8 @@ function renderSheet(){
       h+='<div class="trip-bar" style="background:'+t.color+'"></div>';
       h+='<div class="trip-main"><div class="trip-name'+(t.status==='archived'?' archived':'')+'">'+esc(t.name)+'</div>';
       h+='<div class="trip-sub">'+esc(t.dates)+' · '+mc+' '+(mc===1?'person':'people')+'</div></div>';
-      h+='<button class="hdr-icon" style="width:34px;height:34px;background:#F3F1EC;color:#6B7280;flex-shrink:0" onclick="event.stopPropagation();closeSheet();openScreen({type:\'tripedit\',tripId:\''+t.id+'\'})">'+IC.pencil+'</button>';
+      if(canEditTrip(t))
+        h+='<button class="hdr-icon" style="width:34px;height:34px;background:#F3F1EC;color:#6B7280;flex-shrink:0" onclick="event.stopPropagation();closeSheet();openScreen({type:\'tripedit\',tripId:\''+t.id+'\'})">'+IC.pencil+'</button>';
       h+='<span class="trip-status ts-'+t.status+'">'+(on?'Current':t.status)+'</span></div>';
     }
   }
@@ -1391,7 +1395,7 @@ function createTrip(){
   var col=PALETTE[TRIPS.length%PALETTE.length][0];
   var id='t'+Date.now();
   var dates=(start&&end)?(monOf(start)+' '+(+start.slice(8))+' – '+monOf(end)+' '+(+end.slice(8))+', '+start.slice(0,4)):'Dates TBD';
-  TRIPS.push({id:id,name:nm,sub:'Walt Disney World',status:'planning',start:start||'',end:end||'',dates:dates,color:col,members:mem});
+  TRIPS.push({id:id,name:nm,sub:'Walt Disney World',status:'planning',start:start||'',end:end||'',dates:dates,color:col,members:mem,by:S.persona});
   genDays(id);
   var np={},nt={};
   mem.forEach(function(pid){np[pid]=(S.newTmpl==='mine'&&PACKING_SEED[pid])?JSON.parse(JSON.stringify(PACKING_SEED[pid])):[];nt[pid]=(S.newTmpl==='mine'&&TODO_SEED[pid])?JSON.parse(JSON.stringify(TODO_SEED[pid])):[];});
@@ -1948,6 +1952,10 @@ function delResort(id){
 function tripById(id){for(var i=0;i<TRIPS.length;i++)if(TRIPS[i].id===id)return TRIPS[i];return null;}
 function scrTripEdit(){
   var t=tripById(S.screen.tripId||S.tripId);if(!t)return scrGeneric();
+  if(!canEditTrip(t)){
+    var who=(t.by&&person(t.by))?person(t.by).name:'an admin';
+    return screenShell('Trip','<div class="body-empty" style="text-align:left;padding:6px 2px">Only '+esc(who)+' or an admin can change this trip’s name, dates and members.</div>',null,null,'Done');
+  }
   if(S._formInit!=='trip'){S._formStatus.tr=t.status;S._formColor=t.color;S._formInit='trip';}
   var body='<div class="field"><label class="field-label">Trip name</label><input class="field-input" id="tr-name" value="'+esc(t.name)+'"></div>';
   body+='<div class="field"><label class="field-label">Destination <span class="opt">(optional)</span></label><input class="field-input" id="tr-sub" value="'+esc(t.sub||'')+'"></div>';
@@ -1964,6 +1972,7 @@ function scrTripEdit(){
 }
 function saveTrip(){
   var t=tripById(S.screen.tripId||S.tripId);if(!t){closeScreen();return;}
+  if(!canEditTrip(t)){toast('Only the trip creator or an admin can edit this trip');closeScreen();return;}
   var nm=val('tr-name');if(nm)t.name=nm;
   t.sub=val('tr-sub');
   var st=val('tr-start'),en=val('tr-end');
