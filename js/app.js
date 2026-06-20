@@ -62,7 +62,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='10';
-var BUILD='31';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='32';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1848,6 +1848,8 @@ function saveTrip(){
 function delTrip(id){
   if(TRIPS.length<=1){toast('Keep at least one trip');return;}
   var t=tripById(id);
+  var pin=load('dtp_pin','');
+  if(pin){var e=prompt('Enter the admin PIN to delete this trip:');if(e==null)return;if(String(e).trim()!==String(pin)){toast('Incorrect PIN');return;}}
   if(!confirm('Delete '+(t?t.name:'this trip')+'? Its days and items are removed too. This can\'t be undone.'))return;
   TRIPS=TRIPS.filter(function(x){return x.id!==id;});
   // remove this trip's days and items
