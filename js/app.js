@@ -62,7 +62,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='10';
-var BUILD='24';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='25';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -184,10 +184,10 @@ function esc(s){return (s==null?"":String(s)).replace(/&/g,'&amp;').replace(/</g
 /* who display — person-initial circles everywhere something is assigned */
 function whoChips(who){return whoStack(who);}
 function whoStack(who){
-  var ids=(who==="all"||!who)?tripMembers():who;
-  if(!ids||!ids.length) return '';
+  if(who==="all"||!who) return '<span class="who-all">Everyone</span>';
+  if(!who.length) return '';
   var h='<div class="who-stack">';
-  for(var i=0;i<ids.length;i++){var p=person(ids[i]);if(!p)continue;
+  for(var i=0;i<who.length;i++){var p=person(who[i]);if(!p)continue;
     h+='<span class="wdot" style="background:'+p.color+'" title="'+esc(p.name)+'">'+esc(p.name[0])+'</span>';}
   return h+'</div>';
 }
