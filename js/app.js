@@ -62,7 +62,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='10';
-var BUILD='30';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='31';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -223,6 +223,26 @@ function pillify(t){
   return t;
 }
 function isFlightRow(it){return (it.crit&&it.crit.toLowerCase().indexOf('flight')>=0)||/^(Depart|Arrive)\b/.test(it.x);}
+/* PIN gate for deleting protected bookings (LL / resort / park reservation) */
+function pinOK(){
+  var pin=load('dtp_pin','');
+  if(!pin) return confirm('Delete this booking?\n\nTip: set an admin PIN in Settings to protect Lightning Lanes, resort and park reservations from accidental deletion.');
+  var e=prompt('Enter the admin PIN to delete this booking:');
+  if(e==null) return false;
+  if(String(e).trim()===String(pin)) return true;
+  toast('Incorrect PIN'); return false;
+}
+function setPin(){
+  var cur=load('dtp_pin','');
+  if(cur){var c=prompt('Enter current PIN:');if(c==null)return;if(String(c).trim()!==String(cur)){toast('Incorrect PIN');return;}}
+  var np=prompt('Set a new admin PIN:');if(np==null)return;np=String(np).trim();if(!np){toast('PIN cannot be blank');return;}
+  save('dtp_pin',np);toast('PIN set');renderScreen_inplace2();
+}
+function clearPin(){
+  var cur=load('dtp_pin','');if(!cur)return;
+  var c=prompt('Enter current PIN to remove it:');if(c==null)return;if(String(c).trim()!==String(cur)){toast('Incorrect PIN');return;}
+  try{localStorage.removeItem('dtp_pin');}catch(e){}toast('PIN removed');renderScreen_inplace2();
+}
 
 /* queries — all scoped to the current trip */
 function flightsFor(date){return FLIGHTS.filter(function(f){return f.trip===S.tripId&&f.day===date;});}
@@ -1211,6 +1231,7 @@ function saveLL(){
   save('dtp_lls',LLS);S._who=null;toast('Ride saved');closeScreen();render();
 }
 function delLL(id){
+  if(!pinOK())return;
   for(var i=0;i<LLS.length;i++)if(LLS[i].id===id){LLS.splice(i,1);break;}
   save('dtp_lls',LLS);toast('Ride removed');closeScreen();render();
 }
@@ -1296,9 +1317,15 @@ function createTrip(){
 /* Settings */
 function scrSettings(){
   var body='<div class="hub-section-label" style="margin-left:0">About personas</div>';
-  body+='<div class="body-empty" style="text-align:left;padding:0 2px 14px">Switch who you are anytime from the <strong>I am</strong> button in the header — your choice is stored on this device, no login. The admin can edit park assignments, resort and dates; everyone can add and edit everything else.</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 14px">Switch who you are anytime from the <strong>I am</strong> button in the header — your choice is stored on this device, no login. Everyone can add and edit. Deleting a booking (Lightning Lane, resort, or park reservation) needs the admin PIN below.</div>';
   body+=hubRow(['Templates',IC.suitcase,'#92400E','Packing & to-do masters','templates']);
   body+=hubRow(['Persona',IC.home,'#1C3A5E',FAMILY.length+' people','personas']);
+  var hasPin=!!load('dtp_pin','');
+  body+='<div class="hub-section-label" style="margin-left:0">Protect bookings</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 10px">Deleting a Lightning Lane, resort booking, or park reservation requires this PIN — so they can\'t be removed by mistake. '+(hasPin?'<strong>A PIN is set.</strong>':'No PIN set yet.')+'</div>';
+  body+='<button class="btn-secondary" onclick="setPin()">'+(hasPin?'Change delete PIN':'Set delete PIN')+'</button>';
+  if(hasPin) body+='<button class="btn-secondary" onclick="clearPin()">Remove PIN</button>';
+  body+='<div class="hub-section-label" style="margin-left:0">Device</div>';
   body+='<button class="btn-secondary" onclick="if(confirm(\'Reset all saved data on this device?\')){localStorage.clear();location.reload();}">Reset local data</button>';
   body+='<button class="btn-secondary" onclick="forceUpdate()">Force app update</button>';
   body+='<div class="body-empty" style="text-align:center;padding:14px 2px 0;font-size:12px">Build '+BUILD+'</div>';
@@ -1583,6 +1610,7 @@ function savePR(){
   save('dtp_parkres',PARKRES);S._who=null;toast('Park reservation saved');closeScreen();render();
 }
 function delPR(id){
+  if(!pinOK())return;
   for(var i=0;i<PARKRES.length;i++)if(PARKRES[i].id===id){PARKRES.splice(i,1);break;}
   save('dtp_parkres',PARKRES);toast('Reservation removed');closeScreen();render();
 }
@@ -1775,6 +1803,7 @@ function saveResort(){
   save('dtp_resorts',RESORTS);S._who=null;toast('Resort saved');closeScreen();render();
 }
 function delResort(id){
+  if(!pinOK())return;
   for(var i=0;i<RESORTS.length;i++)if(RESORTS[i].id===id){RESORTS.splice(i,1);break;}
   save('dtp_resorts',RESORTS);toast('Stay removed');closeScreen();render();
 }
