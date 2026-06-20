@@ -63,7 +63,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='10';
-var BUILD='44';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='45';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -154,10 +154,11 @@ function persist(){
 /* ── Helpers ───────────────────────────────────────────────── */
 function person(id){for(var i=0;i<FAMILY.length;i++)if(FAMILY[i].id===id)return FAMILY[i];return null;}
 function trip(){for(var i=0;i<TRIPS.length;i++)if(TRIPS[i].id===S.tripId)return TRIPS[i];return visibleTrips()[0]||TRIPS[0];}
-/* trips the current persona may see: admins see all, others only their own */
+/* trips the current persona may see: admins see all; others see trips they
+   own or are a member of (owning always wins, so you never lose your own trip) */
 function visibleTrips(){
   if(isAdmin())return TRIPS.slice();
-  return TRIPS.filter(function(t){return t.members&&t.members.indexOf(S.persona)>=0;});
+  return TRIPS.filter(function(t){return (t.by&&t.by===S.persona)||(t.members&&t.members.indexOf(S.persona)>=0);});
 }
 /* keep the active trip pointed at one this persona can actually see */
 function ensureVisibleTrip(){
@@ -1444,6 +1445,7 @@ function createTrip(){
   var start=val('nt-start'),end=val('nt-end');
   var mem=S._members?ALL_IDS.filter(function(id){return S._members.has(id);}):ALL_IDS.slice();
   if(!mem.length)mem=ALL_IDS.slice();
+  if(mem.indexOf(S.persona)<0)mem.push(S.persona); /* creator is always on their own trip */
   var col=PALETTE[TRIPS.length%PALETTE.length][0];
   var id='t'+Date.now();
   var dates=(start&&end)?(monOf(start)+' '+(+start.slice(8))+' – '+monOf(end)+' '+(+end.slice(8))+', '+start.slice(0,4)):'Dates TBD';
