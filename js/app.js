@@ -62,6 +62,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='7';
+var BUILD='14';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -223,6 +224,21 @@ function toggleCard(k){S.open[k]=!S.open[k];render();}
 function setPlan(p){S.plan=p;render();}
 function setOv(v){S.ov=v;render();}
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('in');clearTimeout(window._tt);window._tt=setTimeout(function(){t.classList.remove('in');},1900);}
+/* unregister the service worker + drop caches, then reload — escapes a stale cache */
+function forceUpdate(){
+  toast('Updating…');
+  var done=function(){location.reload();};
+  try{
+    var jobs=[];
+    if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations){
+      jobs.push(navigator.serviceWorker.getRegistrations().then(function(rs){return Promise.all(rs.map(function(r){return r.unregister();}));}));
+    }
+    if(window.caches&&caches.keys){
+      jobs.push(caches.keys().then(function(ks){return Promise.all(ks.map(function(k){return caches.delete(k);}));}));
+    }
+    Promise.all(jobs).then(done,done);
+  }catch(e){done();}
+}
 
 function toggleFilter(id){
   if(id==="all"){S.filter.clear();}
@@ -1209,6 +1225,8 @@ function scrSettings(){
   body+=hubRow(['Templates',IC.suitcase,'#92400E','Packing & to-do masters','templates']);
   body+=hubRow(['Persona',IC.home,'#1C3A5E',FAMILY.length+' people','personas']);
   body+='<button class="btn-secondary" onclick="if(confirm(\'Reset all saved data on this device?\')){localStorage.clear();location.reload();}">Reset local data</button>';
+  body+='<button class="btn-secondary" onclick="forceUpdate()">Force app update</button>';
+  body+='<div class="body-empty" style="text-align:center;padding:14px 2px 0;font-size:12px">Build '+BUILD+'</div>';
   return screenShell('Settings',body,null,null,'Done');
 }
 
