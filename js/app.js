@@ -25,6 +25,7 @@ var IC = {
   suitcase:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="12" y1="11" x2="12" y2="17"/></svg>',
   checks:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
   cart:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>',
+  list:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>',
   sparkles:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z"/><path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8z"/></svg>',
   warn:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
   check:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
@@ -64,7 +65,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='49';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='50';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -964,13 +965,26 @@ function showsCard(sh,pk,date){
 }
 
 /* ============================================================
+   LISTS HUB  (own nav tab)
+   ============================================================ */
+function pkMyCount(){var n=0;(PACKING[S.persona]||[]).forEach(function(c){n+=(c.items?c.items.length:0);});return n;}
+function renderListsHub(){
+  var t=trip();
+  var o='<div class="pg-title">Lists</div><div class="pg-sub">'+esc(t.name)+' · '+esc(t.dates)+'</div>';
+  o+=hubRow(['To Do List',IC.checks,'#166534',tdVisibleCount()+' items','todo']);
+  o+=hubRow(['Packing List',IC.suitcase,'#92400E',pkMyCount()+' items','packing']);
+  o+=hubRow(['Need to Buy',IC.cart,'#B45309',needBuyCount()+' items','needbuy']);
+  o+='<div class="body-empty" style="text-align:left;padding:12px 2px 0;font-size:12px">Your To&nbsp;Do and Packing lists are private to you; the trip owner and admins can see everyone’s. <strong>Need to Buy</strong> is shared with the whole group.</div>';
+  return o;
+}
+
+/* ============================================================
    PLAN HUB
    ============================================================ */
 function renderPlanHub(){
   var o='<div class="pg-title">Plan</div><div class="pg-sub">Build out every part of '+esc(trip().name)+'.</div>';
   var tid=S.tripId;
   function cnt(coll){var n=0;for(var i=0;i<coll.length;i++)if(coll[i].trip===tid)n++;return n;}
-  var nMem=tripMembers().length;
   var rows=[
     ['Flights',IC.plane,'var(--hd-flight)',cnt(FLIGHTS)+' journeys','addflight'],
     ['Dining',IC.fork,'var(--hd-din)',cnt(DINING)+' reservations','dining'],
@@ -982,11 +996,6 @@ function renderPlanHub(){
   ];
   o+='<div class="hub-section-label">Trip components</div>';
   for(var i=0;i<rows.length;i++) o+=hubRow(rows[i]);
-  o+='<div class="hub-section-label">Trip Lists</div>';
-  var tn=esc(trip().name);
-  o+=hubRow([tn+' To Do List',IC.checks,'#166534',tdVisibleCount()+' items','todo']);
-  o+=hubRow([tn+' Packing List',IC.suitcase,'#92400E',nMem+' lists','packing']);
-  o+=hubRow([tn+' Need to Buy',IC.cart,'#B45309',needBuyCount()+' items','needbuy']);
   o+='<div class="hub-section-label">Get started fast</div>';
   o+='<button class="hub-row" onclick="openScreen({type:\'import\'})"><div class="hub-icon" style="background:#1E40AF">'+IC.sparkles+'</div>'
     +'<div class="hub-main"><div class="hub-title">AI Import</div><div class="hub-sub">Pull details from emails, PDFs & spreadsheets</div></div><div class="chev">'+IC.chev+'</div></button>';
@@ -1246,8 +1255,9 @@ function pkBuyerField(){
 /* ============================================================
    TO DO  (per-trip, assignable, privacy-aware)
    ============================================================ */
+function listContext(){return '<div class="pg-sub" style="margin:-2px 0 12px">'+esc(trip().name)+'</div>';}
 function scrTodo(){
-  return screenShell(esc(trip().name)+' · To Do','<div id="todo-body">'+todoBody()+'</div>',null,null,'Done');
+  return screenShell('To Do List',listContext()+'<div id="todo-body">'+todoBody()+'</div>',null,null,'Done');
 }
 function todoBody(){
   var me=S.persona;
@@ -1370,7 +1380,7 @@ function todoAssignField(creator){
    NAV
    ============================================================ */
 function renderNav(){
-  var tabs=[['home',IC.home,'Agenda'],['overview',IC.grid,'Overview'],['plan',IC.plan,'Plan'],['chat',IC.chat,'Chat']];
+  var tabs=[['home',IC.home,'Agenda'],['overview',IC.grid,'Overview'],['plan',IC.plan,'Plan'],['lists',IC.list,'Lists'],['chat',IC.chat,'Chat']];
   var h='';
   for(var i=0;i<tabs.length;i++){var on=S.tab===tabs[i][0];
     var badge=tabs[i][0]==='chat'?'<span class="nbadge">2</span>':'';
@@ -1944,14 +1954,14 @@ function scrLists(){
   return screenShell('Packing', '<div id="lists-body">'+listScreenBody('packing')+'</div>', null, null, 'Done');
 }
 function scrPackList(){
-  return screenShell(esc(trip().name)+' · Packing', '<div id="lists-body">'+packingBody()+'</div>', null, null, 'Done');
+  return screenShell('Packing List', listContext()+'<div id="lists-body">'+packingBody()+'</div>', null, null, 'Done');
 }
 
 /* trip-wide Need to Buy — shared shopping list, grouped by buyer */
 function scrNeedBuy(){
   var entries=[];
   tripMembers().forEach(function(owner){(PACKING[owner]||[]).forEach(function(cat,ci){(cat.items||[]).forEach(function(it,ii){if(it.needBuy)entries.push({owner:owner,ci:ci,ii:ii,it:it});});});});
-  var body='<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:16px;color:var(--ink)">Everything flagged <strong>Need to buy</strong> across '+esc(trip().name)+', grouped by who’s buying. The whole group can see this list.</div>';
+  var body=listContext()+'<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:16px;color:var(--ink)">Everything flagged <strong>Need to buy</strong>, grouped by who’s buying. The whole group can see this list.</div>';
   if(!entries.length)return screenShell('Need to Buy',body+'<div class="body-empty">Nothing to buy right now. Flag a packing item “Need to buy” and it shows up here.</div>',null,null,'Done');
   var groups={},order=[];
   entries.forEach(function(e){var buyers=(e.it.who&&e.it.who.length)?e.it.who:[e.owner];buyers.forEach(function(b){if(!groups[b]){groups[b]=[];order.push(b);}groups[b].push(e);});});
@@ -2505,6 +2515,7 @@ function render(){
   if(S.tab==='home') o=renderAgenda();
   else if(S.tab==='plan') o=renderPlanHub();
   else if(S.tab==='overview') o=renderOverview();
+  else if(S.tab==='lists') o=renderListsHub();
   else if(S.tab==='chat') o=renderChat();
   document.getElementById('app').innerHTML=o;
   if(S.tab==='chat'){document.getElementById('app').style.padding='0';}
