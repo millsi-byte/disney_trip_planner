@@ -361,7 +361,8 @@ function renderAgenda(){
   if(!d) return '<div class="body-empty" style="margin-top:30px">No days for this trip yet.<br><br>Set the trip\'s start and end dates (tap the trip name in the header → edit) and days will be generated automatically.</div>';
   var vs=visitsFor(d.date).filter(function(v){return visible(v.who);});
   var pk=vs.length?(PARKS[vs[0].park]||PARKS.trv):PARKS.trv;
-  var p2=vs.length>1?(PARKS[vs[1].park]||null):null;
+  var sec=vs.length>1?vs[1]:null;
+  var p2=sec?(PARKS[sec.park]||null):null;
   var WDF={Mon:'Monday',Tue:'Tuesday',Wed:'Wednesday',Thu:'Thursday',Fri:'Friday',Sat:'Saturday',Sun:'Sunday'};
   var o='';
 
@@ -370,7 +371,7 @@ function renderAgenda(){
   o+='<div class="hero-body" style="background:'+pk.color+'">';
   o+='<div class="h-date">'+monOf(d.date)+' '+d.d+' · '+(WDF[d.dl]||d.dl)+'</div>';
   o+='<div class="h-park">'+esc(d.visit||pk.name)+'</div>';
-  if(p2) o+='<div class="h-park2"><span class="p2dot" style="background:'+p2.color+'"></span>then '+p2.name+' · evening</div>';
+  if(p2&&!d.visit) o+='<div class="h-park2"><span class="p2dot" style="background:'+p2.color+'"></span>then '+p2.name+' · '+timingLbl(sec.timing).toLowerCase()+'</div>';
   if(d.blurb) o+='<div class="h-resort">'+esc(d.blurb)+'</div>';
   o+='<div class="h-badges">';
   for(var b=0;b<(d.badges||[]).length;b++) o+='<span class="badge">'+esc(d.badges[b])+'</span>';
