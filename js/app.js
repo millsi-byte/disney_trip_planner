@@ -62,7 +62,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='10';
-var BUILD='26';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='27';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1424,15 +1424,15 @@ function scrSection(){
     hours:['Park Hours',IC.bolt,'#0F5F73']
   };
   var m=map[sec]||['Section',IC.route,'var(--ink)'];
-  var body='',TD=tripDays(),dft=(TD[1]||TD[0]||{date:''}).date;
+  var body='',add='',TD=tripDays(),dft=(TD[1]||TD[0]||{date:''}).date;
   if(sec==='dining'){
     for(var i=0;i<TD.length;i++){var din=diningFor(TD[i].date);if(!din.length)continue;
       body+=dayHd(TD[i].date);for(var j=0;j<din.length;j++)body+='<div class="ov-card'+(isPlanningStatus(din[j].status)?' planning':'')+'">'+diningRow(din[j])+'</div>';}
-    body+='<button class="btn-primary" onclick="openScreen({type:\'adddining\',day:\''+dft+'\'})">Add dining</button>';
+    add='<button class="btn-primary" onclick="openScreen({type:\'adddining\',day:\''+dft+'\'})">Add dining</button>';
   }else if(sec==='addflight'){
     for(var i2=0;i2<TD.length;i2++){var fl=flightsFor(TD[i2].date);if(!fl.length)continue;
       body+=dayHd(TD[i2].date);for(var j2=0;j2<fl.length;j2++)body+='<div class="ov-card'+(isPlanningStatus(fl[j2].status)?' planning':'')+'">'+flightJourney(fl[j2],dayByDate(TD[i2].date))+'</div>';}
-    body+='<button class="btn-primary" onclick="openScreen({type:\'addflight\',day:\''+((TD[0]||{date:''}).date)+'\'})">Add flight</button>';
+    add='<button class="btn-primary" onclick="openScreen({type:\'addflight\',day:\''+((TD[0]||{date:''}).date)+'\'})">Add flight</button>';
   }else if(sec==='ll'){
     var anyLL=false;
     for(var il=0;il<TD.length;il++){var lld=llFor(TD[il].date);if(!lld.length)continue;anyLL=true;
@@ -1442,7 +1442,7 @@ function scrSection(){
       }
     }
     if(!anyLL) body+='<div class="body-empty">No Lightning Lanes yet.</div>';
-    body+='<button class="btn-primary" onclick="openScreen({type:\'addll\',day:\''+dft+'\'})">Add ride</button>';
+    add='<button class="btn-primary" onclick="openScreen({type:\'addll\',day:\''+dft+'\'})">Add ride</button>';
   }else if(sec==='resort'){
     var rsl=RESORTS.filter(function(r){return r.trip===S.tripId;});
     for(var ir=0;ir<rsl.length;ir++){var rr=rsl[ir];
@@ -1450,7 +1450,7 @@ function scrSection(){
         +statusBadge(rr.status)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'resortedit\',edit:\''+rr.id+'\'})">'+IC.pencil+'</button></div></div>';
     }
     if(!rsl.length) body+='<div class="body-empty">No resort stays yet.</div>';
-    body+='<button class="btn-primary" onclick="openScreen({type:\'resortedit\'})">Add resort stay</button>';
+    add='<button class="btn-primary" onclick="openScreen({type:\'resortedit\'})">Add resort stay</button>';
   }else if(sec==='parkres'){
     var anyPR=false;
     for(var ip=0;ip<TD.length;ip++){var dp=TD[ip];var prl=parkResFor(dp.date);if(!prl.length)continue;anyPR=true;
@@ -1460,7 +1460,7 @@ function scrSection(){
       }
     }
     if(!anyPR) body+='<div class="body-empty">No park reservations yet.</div>';
-    body+='<button class="btn-primary" onclick="openScreen({type:\'predit\',day:\''+dft+'\'})">Add park reservation</button>';
+    add='<button class="btn-primary" onclick="openScreen({type:\'predit\',day:\''+dft+'\'})">Add park reservation</button>';
   }else if(sec==='visits'){
     var anyV=false;
     for(var i3=0;i3<TD.length;i3++){var dvs=visitsFor(TD[i3].date);if(!dvs.length)continue;anyV=true;
@@ -1470,7 +1470,7 @@ function scrSection(){
       }
     }
     if(!anyV) body+='<div class="body-empty">No park visits yet.</div>';
-    body+='<button class="btn-primary" onclick="openScreen({type:\'visedit\',day:\''+dft+'\'})">Add park visit</button>';
+    add='<button class="btn-primary" onclick="openScreen({type:\'visedit\',day:\''+dft+'\'})">Add park visit</button>';
   }else if(sec==='hours'){
     var anyH=false;
     for(var i4=0;i4<TD.length;i4++){var dhs=parkHoursFor(TD[i4].date);if(!dhs.length)continue;anyH=true;
@@ -1480,9 +1480,9 @@ function scrSection(){
       }
     }
     if(!anyH) body+='<div class="body-empty">No park hours yet.</div>';
-    body+='<button class="btn-primary" onclick="openScreen({type:\'hoursedit\',day:\''+dft+'\'})">Add park hours</button>';
+    add='<button class="btn-primary" onclick="openScreen({type:\'hoursedit\',day:\''+dft+'\'})">Add park hours</button>';
   }
-  return screenShell(m[0],body,null,null,'Done');
+  return screenShell(m[0],add+body,null,null,'Done');
 }
 function scrGeneric(){return screenShell('Coming soon','<div class="body-empty">This section editor is part of the full build.</div>',null,null,'Done');}
 
