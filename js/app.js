@@ -63,7 +63,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='46';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='47';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -358,7 +358,7 @@ function switchTrip(id){saveLists();S.tripId=id;loadLists();S.dayIdx=0;S.tab="ho
 
 /* screens (slide-in) */
 function openScreen(def){
-  S.screen=def;S._who=null;S._formStatus={};S._delpk=null;S._deltd=null;S.tdForm=null;
+  S.screen=def;S._who=null;S._formStatus={};S._delpk=null;S._deltd=null;S.tdForm=null;S.tdScope='mine';
   S._formLoc=null;S._formTier=null;S._formInit=null;S._members=null;S._formColor=null;
   if(def.type==='addflight'){S.formLegs=def.edit?((FLIGHTS.filter(function(f){return f.id===def.edit;})[0]||{legs:[0]}).legs.length):1;}
   else{S.formLegs=1;}
@@ -1118,9 +1118,13 @@ function scrTodo(){
 }
 function todoBody(){
   var me=S.persona;
+  var o='';
+  /* admins get a lens toggle; everyone (admin included) defaults to their own list */
+  if(isAdmin())o+=todoScopeToggle();
+  if(isAdmin()&&S.tdScope==='all')return o+todoEveryoneView();
+  /* personal view — identical for every user */
   var mine=tdMine(me), assigned=tdAssignedTo(me);
-  var all=mine.concat(assigned);
-  var o=todoSticky(all);
+  o+=todoSticky(mine.concat(assigned));
   if(!tdHasStarted(me))o+=todoStarter();
   /* My to-dos */
   o+='<div class="hub-section-label" style="margin-left:0">My to-dos</div>';
@@ -1137,21 +1141,30 @@ function todoBody(){
     for(var j=0;j<assigned.length;j++)o+=todoRowOrEditor(assigned[j]);
     o+='</div>';
   }
-  /* Global admin: everyone else's lists, for oversight */
-  if(isAdmin()){
-    var others=tripMembers().filter(function(id){return id!==me;});
-    if(others.length){
-      o+='<div class="hub-section-label" style="margin-left:0">Everyone else <span class="opt">· admin</span></div>';
-      for(var p=0;p<others.length;p++){var pid=others[p];
-        var items=tdMine(pid);
-        var done=items.filter(function(t){return t.done;}).length;
-        o+=pbHead(pid,done,items.length);
-        o+='<div class="card" style="padding:6px 0 0">';
-        if(!items.length)o+='<div class="body-empty" style="text-align:left;padding:6px 12px">No items.</div>';
-        for(var k=0;k<items.length;k++)o+=todoRowOrEditor(items[k]);
-        o+='</div>';
-      }
-    }
+  return o;
+}
+/* admin lens: switch between your own list and everyone's */
+function todoScopeToggle(){
+  var all=S.tdScope==='all';
+  var o='<div class="seg" style="margin-bottom:12px">';
+  o+='<button class="seg-btn'+(all?'':' on')+'" onclick="setTdScope(\'mine\')">My list</button>';
+  o+='<button class="seg-btn'+(all?' on':'')+'" onclick="setTdScope(\'all\')">Everyone</button>';
+  o+='</div>';
+  return o;
+}
+function setTdScope(s){S.tdScope=s;S.tdForm=null;refreshTodo();}
+/* admin-only oversight: each person's list across the trip */
+function todoEveryoneView(){
+  var o='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">Everyone’s to-do lists for '+esc(trip().name)+'. As an admin you can check, edit or remove any item.</div>';
+  var mem=tripMembers();
+  for(var p=0;p<mem.length;p++){var pid=mem[p];
+    var items=tdMine(pid);
+    var done=items.filter(function(t){return t.done;}).length;
+    o+=pbHead(pid,done,items.length);
+    o+='<div class="card" style="padding:6px 0 0">';
+    if(!items.length)o+='<div class="body-empty" style="text-align:left;padding:6px 12px">No items.</div>';
+    for(var k=0;k<items.length;k++)o+=todoRowOrEditor(items[k]);
+    o+='</div>';
   }
   return o;
 }
