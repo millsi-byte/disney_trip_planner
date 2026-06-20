@@ -420,7 +420,7 @@ button{font-family:inherit}
 .tmpl-sub{font-size:14px;color:var(--muted);margin-top:2px;line-height:1.45}
 .tmpl-people{display:flex;gap:5px;margin-top:9px}
 .btn-primary{width:100%;padding:15px;background:var(--ink);color:#fff;border:none;border-radius:12px;font-size:17px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:8px;min-height:52px}
-.sec-addbar{position:sticky;top:0;z-index:6;background:var(--cream);padding-bottom:12px;margin-bottom:2px}
+.sec-addbar{position:sticky;bottom:0;z-index:6;background:var(--cream);padding:12px 0 4px;margin-top:4px;box-shadow:0 -8px 12px -8px rgba(0,0,0,.18)}
 .sec-add{display:block;width:100%;padding:14px;background:var(--gold);color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;min-height:50px;box-shadow:0 1px 4px rgba(0,0,0,.12)}
 .sec-add:active{filter:brightness(.95)}
 .btn-secondary{width:100%;padding:14px;background:var(--card);color:var(--ink);border:1px solid var(--border);border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:8px;min-height:50px}
