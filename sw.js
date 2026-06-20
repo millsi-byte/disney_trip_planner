@@ -1,5 +1,7 @@
-/* Disney Trip Planner — service worker (offline app shell) */
-var CACHE = 'dtp-v7';
+/* Disney Trip Planner — service worker
+   Network-first so new versions show up on the next load; cache is the
+   offline fallback only. */
+var CACHE = 'dtp-v8';
 var ASSETS = [
   './',
   './index.html',
@@ -25,15 +27,16 @@ self.addEventListener('activate', function(e){
 self.addEventListener('fetch', function(e){
   if(e.request.method !== 'GET') return;
   e.respondWith(
-    caches.match(e.request).then(function(hit){
-      if(hit) return hit;
-      return fetch(e.request).then(function(res){
-        if(res && res.status === 200 && res.type === 'basic'){
-          var copy = res.clone();
-          caches.open(CACHE).then(function(c){ c.put(e.request, copy); });
-        }
-        return res;
-      }).catch(function(){ return caches.match('./index.html'); });
+    fetch(e.request).then(function(res){
+      if(res && res.status === 200 && res.type === 'basic'){
+        var copy = res.clone();
+        caches.open(CACHE).then(function(c){ c.put(e.request, copy); });
+      }
+      return res;
+    }).catch(function(){
+      return caches.match(e.request).then(function(hit){
+        return hit || caches.match('./index.html');
+      });
     })
   );
 });
