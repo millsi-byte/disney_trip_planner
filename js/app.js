@@ -66,7 +66,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='54';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='55';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -314,6 +314,20 @@ function removeMe(){
   if(cat) notifyChange({trip:it.trip,cat:cat,label:notifLabel(cat,it),item:it,oldWho:oldWho,newWho:it.who,actor:S.persona,optIn:S._notify});
   toast('Removed you from this');closeScreen();render();
 }
+/* add yourself to an item you can see but aren't on (self-add / "request back in") */
+function joinMe(){
+  var it=screenItem();if(!it){closeScreen();return;}
+  var cat=CAT_OF[S.screen.type]||'';
+  if(it.who==='all'){toast('You’re already included');closeScreen();return;}
+  var oldWho=it.who;
+  var arr=Array.isArray(it.who)?it.who.slice():[];
+  if(arr.indexOf(S.persona)<0)arr.push(S.persona);
+  it.who=arr;
+  persist();
+  if(cat) notifyChange({trip:it.trip,cat:cat,label:notifLabel(cat,it),item:it,oldWho:oldWho,newWho:it.who,actor:S.persona,optIn:S._notify});
+  toast(isActionCat(cat)?'Added you — '+(person(creatorOf(it,it.trip))?person(creatorOf(it,it.trip)).name:'the organizer')+' will update the booking':'Added you to this');
+  closeScreen();render();
+}
 
 /* ============================================================
    NOTIFICATIONS
@@ -372,8 +386,11 @@ function buildNotifPlan(o){
     var canSeeCreator=!priv||onItem.indexOf(creator)>=0;
     if(creator&&creator!==actor&&canSeeCreator){
       if(added.length){
-        var names=added.map(function(x){return pname(x);}).join(', ');
-        forced.push(mk(creator,'action',who+' added '+names+' to “'+label+'” — you may need to update the booking'));
+        var addedOthers=added.filter(function(x){return x!==actor;});
+        var txt=addedOthers.length
+          ? who+' added '+addedOthers.map(function(x){return pname(x);}).join(', ')+' to “'+label+'” — you may need to update the booking'
+          : who+' joined “'+label+'” — you may need to update the booking';
+        forced.push(mk(creator,'action',txt));
       }
       if(removed.indexOf(actor)>=0){
         forced.push(mk(creator,'left',who+' left “'+label+'” — you may need to update the booking'));
@@ -1717,16 +1734,22 @@ function scrNotifs(){
   return screenShell('Notifications',body,null,null,'Done');
 }
 function scrLimitedItem(it){
-  var by=(it.by&&person(it.by))?person(it.by).name:'someone';
+  var resp=creatorOf(it,it.trip);
+  var by=(resp&&person(resp))?person(resp).name:'someone';
   var assigned=Array.isArray(it.who)?(it.who.indexOf(S.persona)>=0):(it.who==='all');
+  var cat=CAT_OF[S.screen.type]||'';
+  var act=isActionCat(cat);
   var nm=it.name||it.ride||it.show||it.resort||it.x||(it.park&&PARKS[it.park]?PARKS[it.park].name:'')||'This item';
   var body='<div class="hub-section-label" style="margin-left:0">'+esc(typeof nm==='string'?nm:'Item')+'</div>';
   body+='<div class="body-empty" style="text-align:left;padding:0 2px 14px">Added by <strong>'+esc(by)+'</strong>. Only they, the trip owner, or an admin can edit or delete it.</div>';
   if(assigned){
     body+='<button class="btn-secondary" onclick="removeMe()">Remove me from this</button>';
-    body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px">Takes you off this item — it stays for everyone else.</div>';
+    body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px">Takes you off this item — it stays for everyone else.'+(act?' Because this is a real booking, '+esc(by)+' is notified so they can update the reservation.':'')+'</div>';
+  }else if(it.who==='all'){
+    body+='<div class="body-empty" style="text-align:left;padding:0 2px">This includes everyone on the trip, so you’re already on it.</div>';
   }else{
-    body+='<div class="body-empty" style="text-align:left;padding:0 2px">You’re not assigned to this, so there’s nothing here for you to change.</div>';
+    body+='<button class="btn-secondary green" onclick="joinMe()">Add me to this</button>';
+    body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px">'+(act?'Adds you to the group and notifies <strong>'+esc(by)+'</strong> to update the actual reservation.':'Adds you in — anyone on the trip can join.')+'</div>';
   }
   return screenShell('View',body,null,null,'Done');
 }
