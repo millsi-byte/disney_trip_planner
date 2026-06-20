@@ -424,6 +424,7 @@ button{font-family:inherit}
 .sec-add{display:block;width:100%;padding:14px;background:var(--gold);color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;min-height:50px}
 .sec-add:active{filter:brightness(.95)}
 .btn-secondary{width:100%;padding:14px;background:var(--card);color:var(--ink);border:1px solid var(--border);border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:8px;min-height:50px}
+.btn-secondary.green{background:var(--ak);color:#fff;border-color:var(--ak)}
 
 /* ── Bottom nav ──────────────────────────────────────────── */
 .bnav{position:fixed;bottom:0;left:0;right:0;max-width:430px;margin:0 auto;display:flex;background:var(--cream);border-top:2px solid var(--navline);padding-bottom:env(safe-area-inset-bottom);z-index:200}

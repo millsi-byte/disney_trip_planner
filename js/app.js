@@ -63,7 +63,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='10';
-var BUILD='43';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='44';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1487,10 +1487,12 @@ function scrPersona(){
     var me=person(S.persona);
     var body='<div class="hub-section-label" style="margin-left:0">Your account</div>';
     body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px">You\'re signed in as <strong>'+esc(me?me.name:'')+'</strong>'+(isAdmin()?' · Admin':'')+'. To use the app as someone else, log out and choose a persona.</div>';
-    body+='<button class="btn-secondary" onclick="openScreen({type:\'newtrip\'})">Plan a new trip</button>';
+    body+='<button class="btn-secondary green" onclick="openScreen({type:\'newtrip\'})">Plan a new trip</button>';
     body+='<button class="btn-secondary" onclick="setMyPin()">Change my PIN</button>';
     body+='<button class="btn-secondary" onclick="logoutPersona()">Log out</button>';
     body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px">'+(isAdmin()?'Manage people and templates in <strong>Plan → Settings</strong>.':'Forgot your PIN? An admin can reset it in <strong>Settings → People</strong>.')+'</div>';
+    body+='<div class="hub-section-label" style="margin-left:0">Device</div>';
+    body+='<button class="btn-secondary" onclick="forceUpdate()">Force app update</button>';
     return screenShell('Account',body,null,null,'Done');
   }
   /* first run / after logout — choose who you are */
