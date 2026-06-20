@@ -62,7 +62,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='10';
-var BUILD='20';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='21';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -115,6 +115,25 @@ function genDays(tid){
     DAYS.push({trip:tid,date:ds,d:String(cur.getUTCDate()),dl:WD[cur.getUTCDay()],tags:[],alert:null,visit:'',blurb:'',strategy:'',itin:[]});
     cur.setUTCDate(cur.getUTCDate()+1);
   }
+}
+/* reconcile a trip's day records to its start/end range, keeping in-range
+   days (and their data), adding missing ones, dropping out-of-range ones */
+function reconcileDays(tid){
+  var t=tripById(tid);if(!t||!t.start||!t.end)return;
+  var s=t.start.split('-'),e=t.end.split('-');
+  var cur=new Date(Date.UTC(+s[0],+s[1]-1,+s[2])),end=new Date(Date.UTC(+e[0],+e[1]-1,+e[2]));
+  var WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],want={};
+  while(cur<=end){
+    var ds=cur.getUTCFullYear()+'-'+('0'+(cur.getUTCMonth()+1)).slice(-2)+'-'+('0'+cur.getUTCDate()).slice(-2);
+    want[ds]=WD[cur.getUTCDay()];cur.setUTCDate(cur.getUTCDate()+1);
+  }
+  for(var i=DAYS.length-1;i>=0;i--)if(DAYS[i].trip===tid&&!(DAYS[i].date in want))DAYS.splice(i,1);
+  var have={};
+  for(var j=0;j<DAYS.length;j++)if(DAYS[j].trip===tid)have[DAYS[j].date]=DAYS[j];
+  Object.keys(want).forEach(function(ds){
+    if(have[ds]){have[ds].d=String(+ds.slice(8));have[ds].dl=want[ds];}
+    else DAYS.push({trip:tid,date:ds,d:String(+ds.slice(8)),dl:want[ds],tags:[],alert:null,visit:'',blurb:'',strategy:'',itin:[]});
+  });
 }
 function materializeAllDays(){
   var changed=false;
@@ -1772,7 +1791,8 @@ function scrTripEdit(){
   if(S._formInit!=='trip'){S._formStatus.tr=t.status;S._formColor=t.color;S._formInit='trip';}
   var body='<div class="field"><label class="field-label">Trip name</label><input class="field-input" id="tr-name" value="'+esc(t.name)+'"></div>';
   body+='<div class="field"><label class="field-label">Destination <span class="opt">(optional)</span></label><input class="field-input" id="tr-sub" value="'+esc(t.sub||'')+'"></div>';
-  body+='<div class="field"><label class="field-label">Dates <span class="opt">(as shown in the header)</span></label><input class="field-input" id="tr-dates" value="'+esc(t.dates)+'"></div>';
+  body+='<div class="field-row"><div class="field"><label class="field-label">Start date</label><input class="field-input" type="date" id="tr-start" value="'+esc(t.start||'')+'"></div>';
+  body+='<div class="field"><label class="field-label">End date</label><input class="field-input" type="date" id="tr-end" value="'+esc(t.end||'')+'"></div></div>';
   body+='<div class="field"><label class="field-label">Status</label><div class="seg">';
   body+='<button class="seg-btn'+(S._formStatus.tr==='active'?' on book':'')+'" onclick="pickStatus(\'tr\',\'active\')">Active</button>';
   body+='<button class="seg-btn'+(S._formStatus.tr==='planning'?' on':'')+'" onclick="pickStatus(\'tr\',\'planning\')">Planning</button>';
@@ -1786,7 +1806,13 @@ function saveTrip(){
   var t=tripById(S.screen.tripId||S.tripId);if(!t){closeScreen();return;}
   var nm=val('tr-name');if(nm)t.name=nm;
   t.sub=val('tr-sub');
-  var dt=val('tr-dates');if(dt)t.dates=dt;
+  var st=val('tr-start'),en=val('tr-end');
+  if(st&&en){
+    t.start=st;t.end=en;
+    t.dates=monOf(st)+' '+(+st.slice(8))+' – '+monOf(en)+' '+(+en.slice(8))+', '+st.slice(0,4);
+    reconcileDays(t.id);save('dtp_days',DAYS);
+    if(t.id===S.tripId){S.dayIdx=0;S.open=defOpen();}
+  }
   t.status=S._formStatus.tr||t.status;
   var c=val('tr-color');if(c)t.color=c;
   t.members=S._members?ALL_IDS.filter(function(id){return S._members.has(id);}):t.members;
