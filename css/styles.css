@@ -438,3 +438,14 @@ button{font-family:inherit}
 
 .fadein{animation:fadein .25s ease}
 @keyframes fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* PIN entry modal (numeric, auto-focused) */
+.pin-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:1000;padding:24px}
+.pin-modal{background:#fff;border-radius:16px;padding:20px;width:100%;max-width:320px;box-shadow:0 12px 40px rgba(0,0,0,.25)}
+.pin-title{font-size:17px;font-weight:700;color:var(--ink);text-align:center}
+.pin-sub{font-size:13px;color:var(--muted);text-align:center;margin-top:6px;line-height:1.4}
+.pin-input{width:100%;margin-top:16px;padding:12px;font-size:22px;text-align:center;letter-spacing:.3em;border:2px solid var(--border);border-radius:10px;outline:none;background:#fff;color:var(--ink)}
+.pin-input:focus{border-color:#2563EB}
+.pin-actions{display:flex;gap:10px;margin-top:16px}
+.pin-btn{flex:1;padding:11px;border-radius:10px;border:none;font-size:15px;font-weight:600;cursor:pointer;background:#F3F4F6;color:#374151}
+.pin-btn.primary{background:#2563EB;color:#fff}

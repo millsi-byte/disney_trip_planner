@@ -63,7 +63,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='10';
-var BUILD='38';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='39';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -325,33 +325,71 @@ function openScreen(def){
 }
 function closeScreen(){var host=document.getElementById('screen-host');var s=host&&host.firstChild;if(s){s.classList.remove('in');setTimeout(function(){S.screen=null;renderOverlay();},260);}else{S.screen=null;renderOverlay();}}
 
+/* PIN entry — custom modal so we get a numeric keypad + auto-focused cursor
+   (the native prompt() can't do either). Async: calls cb(value) or cb(null). */
+function askPin(opts,cb){
+  opts=opts||{};
+  /* test hook: synchronous answer when running headless */
+  if(typeof window!=='undefined'&&typeof window.askPinSync==='function'){cb(window.askPinSync(opts));return;}
+  var host=document.getElementById('pin-host');
+  if(!host){host=document.createElement('div');host.id='pin-host';document.body.appendChild(host);}
+  window._pinDone=function(val){host.innerHTML='';window._pinDone=null;cb(val);};
+  var h='<div class="pin-backdrop" onclick="if(event.target===this)_pinDone(null)"><div class="pin-modal">';
+  h+='<div class="pin-title">'+esc(opts.title||'Enter PIN')+'</div>';
+  if(opts.sub)h+='<div class="pin-sub">'+esc(opts.sub)+'</div>';
+  h+='<input id="pin-input" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="12" autofocus '
+    +'onkeydown="if(event.key===\'Enter\')_pinSubmit()">';
+  h+='<div class="pin-actions">';
+  h+='<button class="pin-btn" onclick="_pinDone(null)">Cancel</button>';
+  h+='<button class="pin-btn primary" onclick="_pinSubmit()">'+esc(opts.confirmLabel||'OK')+'</button>';
+  h+='</div></div></div>';
+  host.innerHTML=h;
+  /* focus synchronously inside the tap gesture so mobile pops the keyboard */
+  var inp=document.getElementById('pin-input');if(inp)inp.focus();
+}
+function _pinSubmit(){var inp=document.getElementById('pin-input');var v=inp?inp.value:'';if(window._pinDone)window._pinDone(v);}
+
 /* persona */
 function setPersona(id){
   var p=person(id);if(!p){closeScreen();return;}
-  /* logging in always verifies the PIN — even back into the persona you just logged out of */
-  if(p.pin){var e=prompt('Enter '+p.name+'\'s PIN:');if(e==null)return;if(String(e).trim()!==String(p.pin)){toast('Incorrect PIN');return;}}
+  if(p.pin){
+    /* logging in always verifies the PIN — even back into the persona you just logged out of */
+    askPin({title:'Enter '+p.name+'’s PIN'},function(e){
+      if(e==null)return;
+      if(String(e).trim()!==String(p.pin)){toast('Incorrect PIN');return;}
+      finishLogin(id);
+    });
+    return;
+  }
   /* first login for this person (no PIN yet): force them to create one */
-  if(!p.pin){
-    var np=prompt('Welcome, '+p.name+'! Create a PIN so only you can log in as you.');
+  askPin({title:'Welcome, '+p.name+'!',sub:'Create a PIN so only you can log in as you.',confirmLabel:'Next'},function(np){
     if(np==null||!String(np).trim()){toast('A PIN is required to continue');return;}
     np=String(np).trim();
-    var cf=prompt('Re-enter your PIN to confirm:');
-    if(cf==null||String(cf).trim()!==np){toast('PINs didn\'t match — try again');return;}
-    p.pin=np;save('dtp_family',FAMILY);
-  }
+    askPin({title:'Confirm your PIN',sub:'Enter it once more.'},function(cf){
+      if(cf==null||String(cf).trim()!==np){toast('PINs didn’t match — try again');return;}
+      p.pin=np;save('dtp_family',FAMILY);finishLogin(id);
+    });
+  });
+}
+function finishLogin(id){
+  var p=person(id);if(!p)return;
   S.persona=id;save('dtp_persona',id);ensureVisibleTrip();toast("You are "+p.name);render();closeScreen();
 }
 /* change your OWN persona PIN (entering your current one). Admins reset others in Manage People. */
 function setMyPin(){
   var me=person(S.persona);if(!me)return;
-  var has=!!me.pin;
-  if(has){var c=prompt('Enter your current PIN:');if(c==null)return;if(String(c).trim()!==String(me.pin)){toast('Incorrect PIN');return;}}
-  var np=prompt('Set a new PIN:');
-  if(np==null||!String(np).trim()){toast('A PIN is required');return;}
-  np=String(np).trim();
-  var cf=prompt('Re-enter to confirm:');if(cf==null||String(cf).trim()!==np){toast('PINs didn\'t match');return;}
-  me.pin=np;save('dtp_family',FAMILY);
-  toast('Your PIN is updated');renderScreen_inplace2();
+  var setNew=function(){
+    askPin({title:'Set a new PIN'},function(np){
+      if(np==null||!String(np).trim()){toast('A PIN is required');return;}
+      np=String(np).trim();
+      askPin({title:'Confirm new PIN'},function(cf){
+        if(cf==null||String(cf).trim()!==np){toast('PINs didn’t match');return;}
+        me.pin=np;save('dtp_family',FAMILY);toast('Your PIN is updated');renderScreen_inplace2();
+      });
+    });
+  };
+  if(me.pin){askPin({title:'Enter your current PIN'},function(c){if(c==null)return;if(String(c).trim()!==String(me.pin)){toast('Incorrect PIN');return;}setNew();});}
+  else setNew();
 }
 /* sign out — forget who you are on this device and return to the chooser */
 function logoutPersona(){
@@ -1456,9 +1494,11 @@ function resetPersonaPin(id){
 }
 function setPersonaPin(id){
   capturePersonas();var p=person(id);if(!p)return;
-  var np=prompt('Set a PIN for '+p.name+':');if(np==null)return;np=String(np).trim();
-  if(!np){toast('PIN cannot be blank');return;}
-  p.pin=np;save('dtp_family',FAMILY);toast(p.name+'\'s PIN set');renderScreen_inplace2();
+  askPin({title:'Set a PIN for '+p.name},function(np){
+    if(np==null)return;np=String(np).trim();
+    if(!np){toast('PIN cannot be blank');return;}
+    p.pin=np;save('dtp_family',FAMILY);toast(p.name+'’s PIN set');renderScreen_inplace2();
+  });
 }
 function toggleAdmin(id){
   capturePersonas();var p=person(id);if(!p)return;
