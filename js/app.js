@@ -66,7 +66,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='57';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='58';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -457,6 +457,21 @@ function notifyDelete(cat,item){
   });
   openNotifConfirm({actor:actor,trip:tid,cat:cat,label:label,oldWho:item.who,newWho:[],deleted:true},plan);
 }
+/* trip membership changed (created or edited) — offer to tell people they were
+   added to / removed from the trip. Gated like everything else. */
+function notifyMembership(tripObj,oldMem,newMem,optIn){
+  if(!tripObj)return;
+  var actor=S.persona,who=pname(actor),oldA=oldMem||[],newA=newMem||[];
+  var added=newA.filter(function(x){return oldA.indexOf(x)<0&&x!==actor&&person(x);});
+  var removed=oldA.filter(function(x){return newA.indexOf(x)<0&&x!==actor&&person(x);});
+  if(!added.length&&!removed.length)return;
+  var active=(tripObj.status==='active');
+  if(!active&&!optIn)return;             /* planning: silent unless opted in */
+  var plan={forced:[],optional:[]};
+  added.forEach(function(id){plan.optional.push({to:id,from:actor,trip:tripObj.id,cat:'Trip',label:tripObj.name,kind:'added',text:who+' added you to the trip “'+tripObj.name+'”'});});
+  removed.forEach(function(id){plan.optional.push({to:id,from:actor,trip:tripObj.id,cat:'Trip',label:tripObj.name,kind:'removed',text:who+' removed you from the trip “'+tripObj.name+'”'});});
+  openNotifConfirm({actor:actor,trip:tripObj.id,cat:'Trip',label:tripObj.name,oldWho:oldA,newWho:newA},plan);
+}
 
 /* confirm picker — choose who to notify */
 function openNotifConfirm(o,plan){
@@ -615,6 +630,8 @@ function openScreen(def){
   S.pkForm=null;S.pkScope='mine';S._delsect=null;S._pksect=null;ADD.psect=null;
   S._formLoc=null;S._formTier=null;S._formInit=null;S._members=null;S._formColor=null;
   S._notify=notifDefault();
+  if(def.type==='newtrip')S._notify=true;                                   /* inviting people defaults to on */
+  else if(def.type==='tripedit'){var _et=tripById(def.tripId);S._notify=!!(_et&&_et.status==='active');}
   if(def.type==='addflight'){S.formLegs=def.edit?((FLIGHTS.filter(function(f){return f.id===def.edit;})[0]||{legs:[0]}).legs.length):1;}
   else{S.formLegs=1;}
   renderOverlay();requestAnimationFrame(function(){var s=document.getElementById('screen-host').firstChild;if(s)s.classList.add('in');});
@@ -2076,6 +2093,8 @@ function scrNewTrip(){
   body+='<div class="hub-section-label" style="margin-left:0">Start from your template?</div>';
   body+=tmplCard('mine','My template','Each person\'s packing & to-do pre-loaded',true);
   body+=tmplCard('blank','Blank trip','Start completely fresh',false);
+  body+='<div class="field"><label class="field-label">Notifications</label>';
+  body+='<div class="notify-row'+(S._notify?' on':'')+'" onclick="notifToggle()"><span class="notify-check">'+(S._notify?IC.checkw:'')+'</span><div><div class="notify-lbl">Tell people they’re on this trip</div><div class="notify-sub">When you create it, you’ll choose who to notify that they’ve been added.</div></div></div></div>';
   body+='<button class="btn-primary" onclick="createTrip()">Create trip</button>';
   body+='<button class="btn-secondary" onclick="closeScreen();openScreen({type:\'import\'})">Import details from a file instead</button>';
   return screenShell('New Trip',body,null,null,'Cancel');
@@ -2096,7 +2115,8 @@ function createTrip(){
   var col=PALETTE[TRIPS.length%PALETTE.length][0];
   var id='t'+Date.now();
   var dates=(start&&end)?(monOf(start)+' '+(+start.slice(8))+' – '+monOf(end)+' '+(+end.slice(8))+', '+start.slice(0,4)):'Dates TBD';
-  TRIPS.push({id:id,name:nm,sub:'Walt Disney World',status:'planning',start:start||'',end:end||'',dates:dates,color:col,members:mem,by:S.persona});
+  var tripObj={id:id,name:nm,sub:'Walt Disney World',status:'planning',start:start||'',end:end||'',dates:dates,color:col,members:mem,by:S.persona};
+  TRIPS.push(tripObj);
   genDays(id);
   var np={},nt=[];
   mem.forEach(function(pid){
@@ -2106,11 +2126,13 @@ function createTrip(){
     if(S.newTmpl==='mine'&&TODO_TMPL[pid])TODO_TMPL[pid].forEach(function(t,i){nt.push({id:'td'+Date.now()+'_'+pid+'_'+i,trip:id,by:pid,done:false,n:t.n,when:t.when||'',who:[]});});
   });
   save('dtp_packing_'+id,np);save('dtp_todo_'+id,nt);
-  save('dtp_trips',TRIPS);save('dtp_days',DAYS);S._members=null;
+  save('dtp_trips',TRIPS);save('dtp_days',DAYS);
+  var optIn=S._notify;S._members=null;
   toast('Trip created'+(S.newTmpl==='mine'?' from your template':''));
   /* land on the new trip's Plan page */
   saveLists();S.tripId=id;loadLists();S.dayIdx=0;S.open=defOpen();S.filter.clear();S.tab='plan';
   closeScreen();render();
+  notifyMembership(tripObj,[],mem,optIn);
 }
 
 /* Settings — admin only */
@@ -2807,6 +2829,8 @@ function scrTripEdit(){
   body+='<button class="seg-btn'+(S._formStatus.tr==='archived'?' on':'')+'" onclick="pickStatus(\'tr\',\'archived\')">Archived</button></div></div>';
   body+='<div class="field"><label class="field-label">Color</label><select class="field-select" id="tr-color">'+colorOptions(S._formColor)+'</select></div>';
   body+=memberSelectField(t.members);
+  body+='<div class="field"><label class="field-label">Notifications</label>';
+  body+='<div class="notify-row'+(S._notify?' on':'')+'" onclick="notifToggle()"><span class="notify-check">'+(S._notify?IC.checkw:'')+'</span><div><div class="notify-lbl">Notify members of changes</div><div class="notify-sub">'+(t.status==='active'?'You’ll choose who to tell about anyone added or removed.':'This trip is still planning — switch on to notify people you add or remove.')+'</div></div></div></div>';
   var own=(t.by&&person(t.by))?person(t.by):null;
   body+='<div class="field"><label class="field-label">Trip owner</label>';
   if(own){
@@ -2833,11 +2857,13 @@ function saveTrip(){
   }
   t.status=S._formStatus.tr||t.status;
   var c=val('tr-color');if(c)t.color=c;
+  var oldMem=(t.members||[]).slice();
   t.members=S._members?ALL_IDS.filter(function(id){return S._members.has(id);}):t.members;
   if(!t.members||!t.members.length)t.members=ALL_IDS.slice();
   if(t.status==='active')for(var j=0;j<TRIPS.length;j++)if(TRIPS[j].id!==t.id&&TRIPS[j].status==='active')TRIPS[j].status='planning';
   if(t.id===S.tripId)S.filter.clear();
-  save('dtp_trips',TRIPS);S._members=null;toast('Trip updated');closeScreen();render();
+  save('dtp_trips',TRIPS);var optIn=S._notify;var newMem=t.members.slice();S._members=null;toast('Trip updated');closeScreen();render();
+  notifyMembership(t,oldMem,newMem,optIn);
 }
 function delTrip(id){
   if(TRIPS.length<=1){toast('Keep at least one trip');return;}
