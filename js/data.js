@@ -338,7 +338,7 @@ var PK_FULL = [
   ]},
   {cat:"Misc", items:[
     {n:"Sunglasses",qty:1,l:false,done:false},{n:"Refillable Mug",qty:1,l:false,done:false},
-    {n:"Cash for Tips",qty:1,l:false,done:false},{n:"Ponchos",qty:0,l:true,done:false},
+    {n:"Cash for Tips",qty:1,l:false,done:false},{n:"Ponchos",qty:2,l:false,done:false,needBuy:true,who:["scott"]},
     {n:"Pool Bag",qty:0,l:true,done:false}
   ]}
 ];
@@ -354,7 +354,7 @@ var PACKING = {
     ]},
     {cat:"Toiletries", items:[
       {n:"Skincare Bag",qty:1,l:false,done:false,by:"scott"},{n:"Makeup Bag",qty:1,l:false,done:true},
-      {n:"Hair Straightener",qty:1,l:false,done:false},{n:"Sunblock",qty:1,l:false,done:false}
+      {n:"Hair Straightener",qty:1,l:false,done:false},{n:"Sunblock",qty:1,l:false,done:false,needBuy:true,who:["scott"]}
     ]},
     {cat:"Electronics", items:[
       {n:"Phone + Cable",qty:1,l:false,done:true},{n:"Charger Brick",qty:1,l:false,done:false},
@@ -380,7 +380,7 @@ var PACKING = {
     ]},
     {cat:"Misc", items:[
       {n:"Sun Hat",qty:1,l:false,done:false},{n:"Refillable Mug",qty:1,l:false,done:false},
-      {n:"Fan / Mister",qty:1,l:false,done:false,by:"scott"}
+      {n:"Fan / Mister",qty:1,l:false,done:false,by:"scott",needBuy:true,who:["nancy"]}
     ]}
   ],
   corey:[
@@ -407,7 +407,7 @@ var PACKING = {
     {cat:"Misc", items:[
       {n:"Autograph Book + Pen",qty:1,l:false,done:false,by:"hayley"},{n:"Stuffed Animal",qty:1,l:false,done:true},
       {n:"Tablet + Headphones",qty:1,l:false,done:false},{n:"Refillable Mug",qty:1,l:false,done:false},
-      {n:"Sunblock Stick",qty:1,l:false,done:false,by:"scott"}
+      {n:"Sunblock Stick",qty:1,l:false,done:false,by:"scott",needBuy:true,who:["scott"]}
     ]}
   ]
 };

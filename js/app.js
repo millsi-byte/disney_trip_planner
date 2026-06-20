@@ -24,6 +24,7 @@ var IC = {
   map:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>',
   suitcase:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="12" y1="11" x2="12" y2="17"/></svg>',
   checks:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
+  cart:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>',
   sparkles:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z"/><path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8z"/></svg>',
   warn:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
   check:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
@@ -63,7 +64,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='48';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='49';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -75,6 +76,18 @@ try{
 /* keep the seed lists so new trips can start from a template */
 var PACKING_SEED=PACKING, TODO_SEED=TODO;
 TODO_TMPL = load('dtp_todo_tmpl', TODO_TMPL);   /* per-person global to-do templates */
+/* per-person global packing template (sections + items, no per-trip status) */
+function stripPackTmpl(dict){
+  var o={};
+  Object.keys(dict||{}).forEach(function(k){
+    o[k]=(dict[k]||[]).map(function(c){
+      return {cat:c.cat, items:(c.items||[]).map(function(it){return {n:it.n,qty:it.qty,l:!!it.l};})};
+    });
+  });
+  return o;
+}
+var PACKING_TMPL = load('dtp_pack_tmpl', stripPackTmpl(PACKING_SEED));
+function savePackTmpl(){save('dtp_pack_tmpl',PACKING_TMPL);}
 
 FAMILY  = load('dtp_family', FAMILY);
 ALL_IDS = FAMILY.map(function(p){return p.id;});
@@ -359,6 +372,7 @@ function switchTrip(id){saveLists();S.tripId=id;loadLists();S.dayIdx=0;S.tab="ho
 /* screens (slide-in) */
 function openScreen(def){
   S.screen=def;S._who=null;S._formStatus={};S._delpk=null;S._deltd=null;S.tdForm=null;S.tdScope='mine';
+  S.pkForm=null;S.pkScope='mine';S._delsect=null;S._pksect=null;ADD.psect=null;
   S._formLoc=null;S._formTier=null;S._formInit=null;S._members=null;S._formColor=null;
   if(def.type==='addflight'){S.formLegs=def.edit?((FLIGHTS.filter(function(f){return f.id===def.edit;})[0]||{legs:[0]}).legs.length):1;}
   else{S.formLegs=1;}
@@ -443,25 +457,71 @@ function logoutPersona(){
 function pkPersons(){var mem=tripMembers();if(S.filter.size===0)return mem.slice();return mem.filter(function(id){return S.filter.has(id);});}
 function refreshLists(){
   var b=document.getElementById('lists-body');
-  if(b&&S.screen&&(S.screen.type==='lists'||S.screen.type==='packlist')){b.innerHTML=listScreenBody(S.screen.which||'packing');}
-  else render();
+  if(b&&S.screen&&S.screen.type==='packlist'){b.innerHTML=packingBody();return;}
+  if(b&&S.screen&&S.screen.type==='lists'){b.innerHTML=listScreenBody('packing');return;}
+  render();
 }
-function savePK(){saveLists();}
-function pkChk(pid,c,i){PACKING[pid][c].items[i].done=!PACKING[pid][c].items[i].done;savePK();refreshLists();}
-function pkInc(pid,c,i){PACKING[pid][c].items[i].qty++;savePK();refreshLists();}
-function pkDec(pid,c,i){var it=PACKING[pid][c].items[i];if(it.qty>0)it.qty--;savePK();refreshLists();}
-function pkDel(pid,c,i){var k='d_'+pid+'_'+c+'_'+i;if(S._delpk===k){PACKING[pid][c].items.splice(i,1);S._delpk=null;savePK();}else{S._delpk=k;}refreshLists();}
 var ADD={};
-function pkAdd(pid,c){ADD.pk=pid+'_'+c;refreshLists();setTimeout(function(){var e=document.getElementById('pk-inp');if(e)e.focus();},40);}
-function pkOk(pid,c){var e=document.getElementById('pk-inp');if(!e||!e.value.trim())return;var it={n:e.value.trim(),qty:1,l:false,done:false};if(pid!==S.persona)it.by=S.persona;PACKING[pid][c].items.push(it);ADD.pk=null;savePK();refreshLists();}
+/* who may manage a person's packing list / its sections: the owner or oversight */
+function pkCanList(pid){return pid===S.persona||listOversight();}
+/* who may change a single item: list manager, or whoever added it */
+function pkCanItem(pid,it){return pkCanList(pid)||(it&&it.by===S.persona);}
+function savePK(){saveLists();}
+function pkChk(pid,c,i){var it=PACKING[pid][c].items[i];if(!pkCanItem(pid,it)){toast('Only the owner or an admin can change this');return;}it.done=!it.done;savePK();refreshLists();}
+function pkInc(pid,c,i){var it=PACKING[pid][c].items[i];if(!pkCanItem(pid,it))return;it.qty=(it.qty||0)+1;savePK();refreshLists();}
+function pkDec(pid,c,i){var it=PACKING[pid][c].items[i];if(!pkCanItem(pid,it))return;if(it.qty>0)it.qty--;savePK();refreshLists();}
+function pkDel(pid,c,i){var it=PACKING[pid][c].items[i];if(!pkCanItem(pid,it)){toast('Only the owner or an admin can delete this');return;}var k='d_'+pid+'_'+c+'_'+i;if(S._delpk===k){PACKING[pid][c].items.splice(i,1);S._delpk=null;savePK();}else{S._delpk=k;}refreshLists();}
+function pkAdd(pid,c){if(!pkCanList(pid)){toast('Only the owner or an admin can add here');return;}ADD.pk=pid+'_'+c;refreshLists();setTimeout(function(){var e=document.getElementById('pk-inp');if(e)e.focus();},40);}
+function pkOk(pid,c){var e=document.getElementById('pk-inp');if(!e||!e.value.trim())return;var it={n:e.value.trim(),qty:1,l:false,done:false,needBuy:false,who:[]};if(pid!==S.persona)it.by=S.persona;PACKING[pid][c].items.push(it);ADD.pk=null;savePK();refreshLists();}
 function pkCancel(){ADD.pk=null;refreshLists();}
+/* sections (per person, editable) */
+function pkSectAdd(pid){if(!pkCanList(pid)){toast('Only the owner or an admin can add sections');return;}ADD.psect=pid;refreshLists();setTimeout(function(){var e=document.getElementById('psect-inp');if(e)e.focus();},40);}
+function pkSectOk(pid){var e=document.getElementById('psect-inp');if(!e||!e.value.trim())return;if(!PACKING[pid])PACKING[pid]=[];PACKING[pid].push({cat:e.value.trim(),items:[]});ADD.psect=null;savePK();refreshLists();}
+function pkSectCancel(){ADD.psect=null;refreshLists();}
+function pkSectRenameOpen(pid,c){if(!pkCanList(pid)){toast('Only the owner or an admin can rename');return;}S._pksect=pid+'|'+c;S._delsect=null;refreshLists();setTimeout(function(){var e=document.getElementById('psname-inp');if(e)e.focus();},40);}
+function pkSectRenameOk(pid,c){var e=document.getElementById('psname-inp');if(e&&e.value.trim())PACKING[pid][c].cat=e.value.trim();S._pksect=null;savePK();refreshLists();}
+function pkSectRenameCancel(){S._pksect=null;S._delsect=null;refreshLists();}
+function pkSectDel(pid,c){if(!pkCanList(pid))return;var k='ds_'+pid+'_'+c;if(S._delsect===k){PACKING[pid].splice(c,1);S._delsect=null;S._pksect=null;savePK();}else{S._delsect=k;}refreshLists();}
+/* per-item editor (storage, need-to-buy, buyer assignment) */
+function pkFormItem(){var f=S.pkForm;return f?(PACKING[f.pid]&&PACKING[f.pid][f.c]&&PACKING[f.pid][f.c].items[f.i]):null;}
+function pkItemEdit(pid,c,i){var it=PACKING[pid][c].items[i];if(!pkCanItem(pid,it)){toast('Only the owner or an admin can edit this');return;}S.pkForm={pid:pid,c:c,i:i};S._who=new Set(it.who||[]);refreshLists();}
+function pkItemCancel(){S.pkForm=null;S._who=null;refreshLists();}
+function pkFormStore(v){var it=pkFormItem();if(!it)return;it.l=v;if(v)it.qty=0;else if(!it.qty)it.qty=1;saveLists();renderScreen_inplace2();}
+function pkFormNeed(v){var it=pkFormItem();if(!it)return;it.needBuy=v;saveLists();renderScreen_inplace2();}
+function pkItemSave(){var it=pkFormItem();if(!it){pkItemCancel();return;}var nm=val('pki-name');if(nm)it.n=nm;it.who=S._who?tripMembers().filter(function(id){return S._who.has(id);}):[];saveLists();S.pkForm=null;S._who=null;toast('Saved');refreshLists();}
+/* trip-wide Need to Buy (shared) */
+function needBuyCount(){var n=0;tripMembers().forEach(function(o){(PACKING[o]||[]).forEach(function(c){(c.items||[]).forEach(function(it){if(it.needBuy)n++;});});});return n;}
+function pkGotIt(owner,ci,ii){var it=PACKING[owner]&&PACKING[owner][ci]&&PACKING[owner][ci].items[ii];if(!it)return;
+  var buyers=(it.who&&it.who.length)?it.who:[owner];
+  if(!(buyers.indexOf(S.persona)>=0||owner===S.persona||listOversight())){toast('Only the buyer, the owner or an admin can do this');return;}
+  it.needBuy=false;saveLists();toast('Marked as bought');
+  if(S.screen&&S.screen.type==='needbuy'){var h=document.getElementById('screen-host');if(h){h.innerHTML=renderScreen();var s=h.firstChild;if(s)s.classList.add('in');}}else render();
+}
+/* packing: per-trip per-person "has started" flag + template seeding */
+function pkStartKey(){return 'dtp_packstart_'+S.tripId;}
+function pkStartedSet(){return load(pkStartKey(),[]);}
+function pkHasStarted(pid){pid=pid||S.persona;
+  if(PACKING[pid]&&PACKING[pid].some(function(c){return c.items&&c.items.length;}))return true;
+  return pkStartedSet().indexOf(pid)>=0;}
+function pkMarkStarted(pid){pid=pid||S.persona;var s=pkStartedSet();if(s.indexOf(pid)<0){s.push(pid);save(pkStartKey(),s);}}
+function pkStartFromTemplate(){
+  var t=PACKING_TMPL[S.persona];
+  PACKING[S.persona]=t?t.map(function(c){return {cat:c.cat,items:(c.items||[]).map(function(it){return {n:it.n,qty:it.qty,l:!!it.l,done:false,needBuy:false,who:[]};})};}):[];
+  pkMarkStarted(S.persona);saveLists();toast(t&&t.length?'Loaded your template':'Your template is empty');refreshLists();
+}
+function pkStartEmpty(){if(!PACKING[S.persona])PACKING[S.persona]=[];pkMarkStarted(S.persona);refreshLists();}
+function pkSaveAsTemplate(){
+  PACKING_TMPL[S.persona]=(PACKING[S.persona]||[]).map(function(c){return {cat:c.cat,items:(c.items||[]).map(function(it){return {n:it.n,qty:it.qty,l:!!it.l};})};});
+  savePackTmpl();toast('Saved as your global packing template');
+}
 /* ── To Do — assignable per-trip items ─────────────────────────
    Visibility: you see an item if you created it (`by`) or it's assigned
    to you (`who`). Creator + global admin may edit/delete; creator,
    assignee or admin may toggle done; an assignee may unassign themselves. */
 /* who gets full list oversight: the global admin, or this trip's owner
    (they're organising the trip and keeping everyone on track) */
-function todoOversight(){return isAdmin()||isTripOwner();}
+function listOversight(){return isAdmin()||isTripOwner();}
+function todoOversight(){return listOversight();}
 function tdById(id){for(var i=0;i<TODO.length;i++)if(TODO[i].id===id)return TODO[i];return null;}
 function tdMine(pid){pid=pid||S.persona;return TODO.filter(function(t){return t.trip===S.tripId&&t.by===pid;});}
 function tdAssignedTo(pid){pid=pid||S.persona;return TODO.filter(function(t){return t.trip===S.tripId&&t.by!==pid&&t.who&&t.who.indexOf(pid)>=0;});}
@@ -926,6 +986,7 @@ function renderPlanHub(){
   var tn=esc(trip().name);
   o+=hubRow([tn+' To Do List',IC.checks,'#166534',tdVisibleCount()+' items','todo']);
   o+=hubRow([tn+' Packing List',IC.suitcase,'#92400E',nMem+' lists','packing']);
+  o+=hubRow([tn+' Need to Buy',IC.cart,'#B45309',needBuyCount()+' items','needbuy']);
   o+='<div class="hub-section-label">Get started fast</div>';
   o+='<button class="hub-row" onclick="openScreen({type:\'import\'})"><div class="hub-icon" style="background:#1E40AF">'+IC.sparkles+'</div>'
     +'<div class="hub-main"><div class="hub-title">AI Import</div><div class="hub-sub">Pull details from emails, PDFs & spreadsheets</div></div><div class="chev">'+IC.chev+'</div></button>';
@@ -950,6 +1011,7 @@ function hubRow(r){
 function openSection(section){
   if(section==='todo'){openScreen({type:'todolist'});return;}
   if(section==='packing'){openScreen({type:'packlist'});return;}
+  if(section==='needbuy'){openScreen({type:'needbuy'});return;}
   if(section==='templates'){openScreen({type:'templates'});return;}
   if(section==='personas'){if(!adminGate())return;openScreen({type:'personas'});return;}
   openScreen({type:'section',section:section});
@@ -1067,51 +1129,119 @@ function sendChat(){var e=document.getElementById('chat-inp');if(!e||!e.value.tr
 }
 
 /* ============================================================
-   PACKING  (per-person, person-filter aware)
+   PACKING  (per-trip, per-person sections, privacy-aware)
    ============================================================ */
-function renderLists(which){
-  var persons=pkPersons();
-  var o='';
-  var totDone=0,tot=0;
-  persons.forEach(function(pid){(PACKING[pid]||[]).forEach(function(c){c.items.forEach(function(it){tot++;if(it.done)totDone++;});});});
-  o+=listSticky('packing',totDone,tot);
-  persons.forEach(function(pid){o+=packingPerson(pid);});
+function packingBody(){
+  var me=S.persona;var o='';
+  if(listOversight())o+=packScopeToggle();
+  if(listOversight()&&S.pkScope==='all')return o+packEveryoneView();
+  o+=packSticky(me);
+  if(!pkHasStarted(me))o+=packStarter();
+  o+=packingPerson(me);
   return o;
 }
-function listSticky(which,done,total){
-  var pct=total?Math.round(done/total*100):0;
-  var o='<div class="plan-sticky">';
-  o+='<div class="prog-label">'+done+' of '+total+(which==='packing'?' packed':' done')+'</div>';
-  o+='<div class="prog-outer"><div class="prog-inner" style="width:'+pct+'%"></div></div>';
-  o+='<div class="prog-actions"><button class="prog-btn blu" onclick="toast(\'Saved to your master template\')">Save as Template</button>';
-  o+='<button class="prog-btn" onclick="toast(\'Reset from template\')">Reset</button></div></div>';
+function packStarter(){
+  var n=PACKING_TMPL[S.persona]?PACKING_TMPL[S.persona].reduce(function(a,c){return a+(c.items?c.items.length:0);},0):0;
+  var o='<div class="card" style="padding:14px;margin-bottom:12px">';
+  o+='<div class="tmpl-title" style="margin-bottom:4px">Start your '+esc(trip().name)+' packing list</div>';
+  o+='<div class="tmpl-sub" style="margin-bottom:10px">Begin from your global template'+(n?' ('+n+' item'+(n===1?'':'s')+')':'')+' or start with a blank list.</div>';
+  o+='<div style="display:flex;gap:8px">';
+  if(n)o+='<button class="btn-primary" style="margin:0;flex:1" onclick="pkStartFromTemplate()">Use my template</button>';
+  o+='<button class="btn-secondary" style="margin:0;flex:1" onclick="pkStartEmpty()">Start empty</button>';
+  o+='</div></div>';
   return o;
+}
+function packScopeToggle(){
+  var all=S.pkScope==='all';
+  return '<div class="seg" style="margin-bottom:12px"><button class="seg-btn'+(all?'':' on')+'" onclick="setPkScope(\'mine\')">My list</button>'
+    +'<button class="seg-btn'+(all?' on':'')+'" onclick="setPkScope(\'all\')">Everyone</button></div>';
+}
+function setPkScope(s){S.pkScope=s;S.pkForm=null;ADD.pk=null;ADD.psect=null;S._pksect=null;refreshLists();}
+function packEveryoneView(){
+  var o='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">Everyone’s packing lists for '+esc(trip().name)+'. As the trip owner or an admin you can edit any item.</div>';
+  tripMembers().forEach(function(pid){o+=packingPerson(pid);});
+  return o;
+}
+function packSticky(pid){
+  var done=0,tot=0;(PACKING[pid]||[]).forEach(function(c){(c.items||[]).forEach(function(it){tot++;if(it.done)done++;});});
+  var pct=tot?Math.round(done/tot*100):0;
+  return '<div class="plan-sticky"><div class="prog-label">'+done+' of '+tot+' packed</div>'
+    +'<div class="prog-outer"><div class="prog-inner" style="width:'+pct+'%"></div></div>'
+    +'<div class="prog-actions"><button class="prog-btn blu" onclick="pkSaveAsTemplate()">Save as my template</button></div></div>';
 }
 function pbHead(pid,done,total){var p=person(pid);
   return '<div class="person-block-hd"><span class="pbdot" style="background:'+p.color+'">'+p.name[0]+'</span><span class="pbname">'+esc(p.name)+(pid===S.persona?' (you)':'')+'</span><span class="pbcount">'+done+'/'+total+'</span></div>';
 }
 function packingPerson(pid){
+  var editable=pkCanList(pid);
   var cats=PACKING[pid]||(PACKING[pid]=[]),done=0,tot=0;
   cats.forEach(function(c){c.items.forEach(function(it){tot++;if(it.done)done++;});});
-  var o=pbHead(pid,done,tot);
+  var o='';
+  if(listOversight()&&S.pkScope==='all')o+=pbHead(pid,done,tot);
   for(var c=0;c<cats.length;c++){var cat=cats[c],cd=cat.items.filter(function(x){return x.done;}).length;
-    o+='<div class="card"><div class="cat-hdr"><div class="cat-name">'+esc(cat.cat)+'</div><div class="cat-count">'+cd+'/'+cat.items.length+'</div></div>';
-    for(var j=0;j<cat.items.length;j++){var it=cat.items[j],pend=S._delpk==='d_'+pid+'_'+c+'_'+j;
-      o+='<div class="pk-row">';
-      o+='<div class="chkbox'+(it.done?' on':'')+'" onclick="pkChk(\''+pid+'\','+c+','+j+')">'+(it.done?IC.checkw:'')+'</div>';
-      o+='<div class="pk-name'+(it.done?' done':'')+'" onclick="pkChk(\''+pid+'\','+c+','+j+')">'+esc(it.n)+(it.by?'<div class="pk-by">Added by '+esc(person(it.by).name)+'</div>':'')+'</div>';
-      if(it.l) o+='<span class="lkr-tag">Locker</span>';
-      else o+='<div class="qty-wrap"><button class="qty-btn" onclick="pkDec(\''+pid+'\','+c+','+j+')">&#8722;</button><span class="qty-num">'+it.qty+'</span><button class="qty-btn" onclick="pkInc(\''+pid+'\','+c+','+j+')">+</button></div>';
-      o+=pend?'<button class="del-confirm-btn" onclick="pkDel(\''+pid+'\','+c+','+j+')">Remove?</button>':'<button class="del-btn" onclick="pkDel(\''+pid+'\','+c+','+j+')">&times;</button>';
-      o+='</div>';
+    o+='<div class="card">';
+    if(S._pksect===pid+'|'+c){
+      o+='<div class="add-row" style="padding:10px 12px"><input id="psname-inp" class="add-inp" value="'+esc(cat.cat)+'" onkeydown="if(event.key===\'Enter\')pkSectRenameOk(\''+pid+'\','+c+');if(event.key===\'Escape\')pkSectRenameCancel()">';
+      o+='<button class="add-ok" onclick="pkSectRenameOk(\''+pid+'\','+c+')">Save</button><button class="add-cancel" onclick="pkSectRenameCancel()">&times;</button></div>';
+      o+=(S._delsect==='ds_'+pid+'_'+c)
+        ?'<button class="del-confirm-btn" style="margin:0 12px 10px" onclick="pkSectDel(\''+pid+'\','+c+')">Delete section &amp; its items?</button>'
+        :'<button class="add-link" style="color:#B91C1C;padding-left:12px" onclick="pkSectDel(\''+pid+'\','+c+')">Delete this section</button>';
+    }else{
+      o+='<div class="cat-hdr"><div class="cat-name">'+esc(cat.cat)+'</div><div style="display:flex;align-items:center;gap:8px"><div class="cat-count">'+cd+'/'+cat.items.length+'</div>';
+      if(editable)o+='<button class="hdr-icon" style="width:26px;height:26px;background:#F3F1EC;color:#6B7280" onclick="pkSectRenameOpen(\''+pid+'\','+c+')">'+IC.pencil+'</button>';
+      o+='</div></div>';
+    }
+    for(var j=0;j<cat.items.length;j++){
+      if(S.pkForm&&S.pkForm.pid===pid&&S.pkForm.c===c&&S.pkForm.i===j){o+=pkItemEditor(pid,c,j);continue;}
+      o+=pkItemRow(pid,c,j);
     }
     if(ADD.pk===pid+'_'+c){
       o+='<div class="add-row"><input id="pk-inp" class="add-inp" placeholder="Item name…" onkeydown="if(event.key===\'Enter\')pkOk(\''+pid+'\','+c+');if(event.key===\'Escape\')pkCancel()">';
       o+='<button class="add-ok" onclick="pkOk(\''+pid+'\','+c+')">Add</button><button class="add-cancel" onclick="pkCancel()">&times;</button></div>';
-    }else o+='<button class="add-link" onclick="pkAdd(\''+pid+'\','+c+')">'+IC.plus+' Add item</button>';
+    }else if(editable)o+='<button class="add-link" onclick="pkAdd(\''+pid+'\','+c+')">'+IC.plus+' Add item</button>';
     o+='</div>';
   }
+  if(editable){
+    if(ADD.psect===pid){
+      o+='<div class="add-row"><input id="psect-inp" class="add-inp" placeholder="New section name…" onkeydown="if(event.key===\'Enter\')pkSectOk(\''+pid+'\');if(event.key===\'Escape\')pkSectCancel()">';
+      o+='<button class="add-ok" onclick="pkSectOk(\''+pid+'\')">Add</button><button class="add-cancel" onclick="pkSectCancel()">&times;</button></div>';
+    }else o+='<button class="add-link" onclick="pkSectAdd(\''+pid+'\')">'+IC.plus+' Add section</button>';
+  }
   return o;
+}
+function pkItemRow(pid,c,j){
+  var it=PACKING[pid][c].items[j],pend=S._delpk==='d_'+pid+'_'+c+'_'+j,can=pkCanItem(pid,it);
+  var subs=[];
+  if(it.by&&it.by!==pid&&person(it.by))subs.push('Added by '+esc(person(it.by).name));
+  if(it.needBuy){var bs=(it.who&&it.who.length)?it.who.map(function(p){var pp=person(p);return pp?esc(pp.name):'';}).filter(Boolean).join(', '):(person(pid)?esc(person(pid).name):'');subs.push('Buy · '+bs);}
+  var o='<div class="pk-row">';
+  o+='<div class="chkbox'+(it.done?' on':'')+'" onclick="pkChk(\''+pid+'\','+c+','+j+')">'+(it.done?IC.checkw:'')+'</div>';
+  o+='<div class="pk-name'+(it.done?' done':'')+'" onclick="pkChk(\''+pid+'\','+c+','+j+')">'+esc(it.n)+(subs.length?'<div class="pk-by">'+subs.join(' · ')+'</div>':'')+'</div>';
+  if(it.l)o+='<span class="lkr-tag">Locker</span>';
+  else o+='<div class="qty-wrap"><button class="qty-btn" onclick="pkDec(\''+pid+'\','+c+','+j+')">&#8722;</button><span class="qty-num">'+(it.qty||0)+'</span><button class="qty-btn" onclick="pkInc(\''+pid+'\','+c+','+j+')">+</button></div>';
+  if(can)o+='<button class="hdr-icon" style="width:30px;height:30px;background:'+(it.needBuy?'#FEF3C7;color:#92400E':'#F3F1EC;color:#6B7280')+';flex-shrink:0" onclick="pkItemEdit(\''+pid+'\','+c+','+j+')">'+IC.pencil+'</button>';
+  o+=pend?'<button class="del-confirm-btn" onclick="pkDel(\''+pid+'\','+c+','+j+')">Remove?</button>':(can?'<button class="del-btn" onclick="pkDel(\''+pid+'\','+c+','+j+')">&times;</button>':'');
+  o+='</div>';
+  return o;
+}
+function pkItemEditor(pid,c,j){
+  var it=PACKING[pid][c].items[j];
+  var o='<div class="add-row" style="flex-direction:column;align-items:stretch;gap:10px;padding:12px">';
+  o+='<div class="field" style="margin:0"><label class="field-label">Item</label><input class="field-input" id="pki-name" value="'+esc(it.n)+'"></div>';
+  o+='<div class="field" style="margin:0"><label class="field-label">Storage</label><div class="seg"><button class="seg-btn'+(!it.l?' on':'')+'" onclick="pkFormStore(false)">Suitcase</button><button class="seg-btn'+(it.l?' on':'')+'" onclick="pkFormStore(true)">Owners Locker</button></div></div>';
+  o+='<div class="field" style="margin:0"><label class="field-label">Need to buy</label><div class="seg"><button class="seg-btn'+(!it.needBuy?' on':'')+'" onclick="pkFormNeed(false)">No</button><button class="seg-btn'+(it.needBuy?' on book':'')+'" onclick="pkFormNeed(true)">Need to buy</button></div></div>';
+  if(it.needBuy)o+=pkBuyerField();
+  o+='<div style="display:flex;gap:8px"><button class="btn-primary" style="margin:0;flex:1" onclick="pkItemSave()">Save</button><button class="btn-secondary" style="margin:0;flex:1" onclick="pkItemCancel()">Cancel</button></div>';
+  o+='</div>';
+  return o;
+}
+function pkBuyerField(){
+  var mem=tripMembers();
+  var h='<div class="field" style="margin:0"><label class="field-label">Who buys it <span class="opt">(defaults to who it’s for)</span></label><div class="whoselect">';
+  for(var i=0;i<mem.length;i++){var p=person(mem[i]);if(!p)continue;var on=S._who&&S._who.has(p.id);
+    h+='<div class="who-opt'+(on?' on':'')+'" onclick="toggleWho(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+'<span class="wcheck">'+IC.checkw.replace('currentColor','#15803D')+'</span></div>';
+  }
+  return h+'</div></div>';
 }
 /* ============================================================
    TO DO  (per-trip, assignable, privacy-aware)
@@ -1315,6 +1445,8 @@ function renderScreen(){
   if(t==='packlist')  return scrPackList();
   if(t==='todolist')  return scrTodo();
   if(t==='todotmpl')  return scrTodoTmpl();
+  if(t==='packtmpl')  return scrPackTmpl();
+  if(t==='needbuy')   return scrNeedBuy();
   if(t==='section')   return scrSection();
   return scrGeneric();
 }
@@ -1613,7 +1745,9 @@ function createTrip(){
   genDays(id);
   var np={},nt=[];
   mem.forEach(function(pid){
-    np[pid]=(S.newTmpl==='mine'&&PACKING_SEED[pid])?JSON.parse(JSON.stringify(PACKING_SEED[pid])):[];
+    np[pid]=(S.newTmpl==='mine'&&PACKING_TMPL[pid])
+      ? PACKING_TMPL[pid].map(function(c){return {cat:c.cat,items:(c.items||[]).map(function(it){return {n:it.n,qty:it.qty,l:!!it.l,done:false,needBuy:false,who:[]};})};})
+      : [];
     if(S.newTmpl==='mine'&&TODO_TMPL[pid])TODO_TMPL[pid].forEach(function(t,i){nt.push({id:'td'+Date.now()+'_'+pid+'_'+i,trip:id,by:pid,done:false,n:t.n,when:t.when||'',who:[]});});
   });
   save('dtp_packing_'+id,np);save('dtp_todo_'+id,nt);
@@ -1655,6 +1789,7 @@ function scrPersona(){
     body+='<button class="btn-secondary green" onclick="openScreen({type:\'newtrip\'})">Plan a new trip</button>';
     body+='<div class="hub-section-label" style="margin-left:0">Your lists</div>';
     body+='<button class="btn-secondary" onclick="openScreen({type:\'todotmpl\'})">Global To Do List Template</button>';
+    body+='<button class="btn-secondary" onclick="openScreen({type:\'packtmpl\'})">Global Packing List Template</button>';
     body+='<div class="hub-section-label" style="margin-left:0">Security</div>';
     body+='<button class="btn-secondary" onclick="setMyPin()">Change my PIN</button>';
     body+='<button class="btn-secondary" onclick="logoutPersona()">Log out</button>';
@@ -1759,10 +1894,12 @@ function delPersona(id){
   capturePersonas();
   FAMILY=FAMILY.filter(function(x){return x.id!==id;});
   ALL_IDS=FAMILY.map(function(x){return x.id;});
-  delete PACKING[id];delete TODO_TMPL[id];saveTmpl();
+  delete PACKING[id];delete TODO_TMPL[id];delete PACKING_TMPL[id];saveTmpl();savePackTmpl();
   /* drop this person's to-do items and strip them from any assignments */
   TODO=TODO.filter(function(t){return t.by!==id;});
   TODO.forEach(function(t){if(t.who)t.who=t.who.filter(function(m){return m!==id;});});
+  /* strip them from any packing buyer assignments on others' items */
+  Object.keys(PACKING).forEach(function(o){(PACKING[o]||[]).forEach(function(c){(c.items||[]).forEach(function(it){if(it.who)it.who=it.who.filter(function(m){return m!==id;});});});});
   for(var i=0;i<TRIPS.length;i++)if(TRIPS[i].members)TRIPS[i].members=TRIPS[i].members.filter(function(m){return m!==id;});
   [DINING,LLS,FLIGHTS,RESORTS,SHOWS].forEach(function(coll){
     coll.forEach(function(it){if(Array.isArray(it.who)){it.who=it.who.filter(function(m){return m!==id;});if(!it.who.length)it.who='all';}});
@@ -1791,7 +1928,7 @@ function scrTemplates(){
   var body='<div class="body-empty" style="text-align:left;padding:0 2px 14px;font-size:16px;color:var(--ink)">Your master lists. New trips can start pre-loaded with each person\'s packing and to-do items so you\'re never building from scratch.</div>';
   body+='<div class="hub-section-label" style="margin-left:0">Per-person masters</div>';
   for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i];
-    var pk=PACKING[p.id]?PACKING[p.id].reduce(function(n,c){return n+c.items.length;},0):0;
+    var pk=PACKING_TMPL[p.id]?PACKING_TMPL[p.id].reduce(function(n,c){return n+(c.items?c.items.length:0);},0):0;
     var td=TODO_TMPL[p.id]?TODO_TMPL[p.id].length:0;
     body+='<div class="hub-row" style="cursor:default"><div class="hub-icon" style="background:'+p.color+'">'+esc(p.name[0])+'</div>';
     body+='<div class="hub-main"><div class="hub-title">'+esc(p.name)+'</div><div class="hub-sub">'+pk+' packing · '+td+' to-do items</div></div></div>';
@@ -1801,13 +1938,36 @@ function scrTemplates(){
   return screenShell('Templates',body,null,null,'Done');
 }
 
-/* Per-person packing lists as a full screen (from Plan hub / Settings) */
+/* legacy packing list (kept for the old combined route, now unused) */
 function listScreenBody(which){return renderFilter()+renderLists(which);}
 function scrLists(){
   return screenShell('Packing', '<div id="lists-body">'+listScreenBody('packing')+'</div>', null, null, 'Done');
 }
 function scrPackList(){
-  return screenShell(esc(trip().name)+' · Packing', '<div id="lists-body">'+listScreenBody('packing')+'</div>', null, null, 'Done');
+  return screenShell(esc(trip().name)+' · Packing', '<div id="lists-body">'+packingBody()+'</div>', null, null, 'Done');
+}
+
+/* trip-wide Need to Buy — shared shopping list, grouped by buyer */
+function scrNeedBuy(){
+  var entries=[];
+  tripMembers().forEach(function(owner){(PACKING[owner]||[]).forEach(function(cat,ci){(cat.items||[]).forEach(function(it,ii){if(it.needBuy)entries.push({owner:owner,ci:ci,ii:ii,it:it});});});});
+  var body='<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:16px;color:var(--ink)">Everything flagged <strong>Need to buy</strong> across '+esc(trip().name)+', grouped by who’s buying. The whole group can see this list.</div>';
+  if(!entries.length)return screenShell('Need to Buy',body+'<div class="body-empty">Nothing to buy right now. Flag a packing item “Need to buy” and it shows up here.</div>',null,null,'Done');
+  var groups={},order=[];
+  entries.forEach(function(e){var buyers=(e.it.who&&e.it.who.length)?e.it.who:[e.owner];buyers.forEach(function(b){if(!groups[b]){groups[b]=[];order.push(b);}groups[b].push(e);});});
+  for(var g=0;g<order.length;g++){var b=order[g],p=person(b);
+    body+='<div class="person-block-hd"><span class="pbdot" style="background:'+(p?p.color:'#999')+'">'+(p?esc(p.name[0]):'?')+'</span><span class="pbname">'+(p?esc(p.name):'Someone')+(b===S.persona?' (you)':'')+' to buy</span><span class="pbcount">'+groups[b].length+'</span></div>';
+    body+='<div class="card">';
+    for(var i=0;i<groups[b].length;i++){var e=groups[b][i],fw=person(e.owner);
+      var canGot=(e.it.who&&e.it.who.indexOf(S.persona)>=0)||e.owner===S.persona||b===S.persona||listOversight();
+      body+='<div class="pk-row"><div style="flex:1;min-width:0"><div class="pk-name">'+esc(e.it.n)+((e.it.qty&&!e.it.l)?' <span style="color:var(--muted);font-weight:600">×'+e.it.qty+'</span>':'')+'</div>';
+      body+='<div class="pk-by">For '+(fw?esc(fw.name):'?')+(e.it.l?' · Owners Locker':'')+'</div></div>';
+      if(canGot)body+='<button class="ri-btn" onclick="pkGotIt(\''+e.owner+'\','+e.ci+','+e.ii+')">Got it</button>';
+      body+='</div>';
+    }
+    body+='</div>';
+  }
+  return screenShell('Need to Buy',body,null,null,'Done');
 }
 
 /* Global per-person To Do template — edited from the account page */
@@ -1833,8 +1993,8 @@ function ttCapture(){
   var list=TODO_TMPL[S.persona]||[];
   for(var i=0;i<list.length;i++){
     var n=document.getElementById('tt-n-'+i),w=document.getElementById('tt-w-'+i);
-    if(n)list[i].n=n.value.trim();
-    if(w)list[i].when=w.value.trim();
+    if(n&&typeof n.value==='string')list[i].n=n.value.trim();
+    if(w&&typeof w.value==='string')list[i].when=w.value.trim();
   }
   TODO_TMPL[S.persona]=list;
 }
@@ -1844,6 +2004,52 @@ function ttSave(){
   ttCapture();
   TODO_TMPL[S.persona]=(TODO_TMPL[S.persona]||[]).filter(function(t){return t.n;});
   saveTmpl();toast('Template saved');closeScreen();render();
+}
+
+/* Global per-person Packing template — edited from the account page */
+function scrPackTmpl(){
+  var me=person(S.persona);
+  var list=PACKING_TMPL[S.persona]||(PACKING_TMPL[S.persona]=[]);
+  var body='<div class="body-empty" style="text-align:left;padding:0 2px 14px;font-size:16px;color:var(--ink)">Your reusable packing master, '+esc(me?me.name:'')+'. Organise it into your own sections — new trips can load it in.</div>';
+  for(var c=0;c<list.length;c++){var cat=list[c];
+    body+='<div class="card">';
+    body+='<div class="add-row" style="padding:10px 12px"><input class="field-input" id="pt-s-'+c+'" style="flex:1;min-width:0;font-weight:700" value="'+esc(cat.cat)+'" placeholder="Section name"><button class="del-btn" onclick="ptSectDel('+c+')">&times;</button></div>';
+    for(var i=0;i<cat.items.length;i++){var it=cat.items[i];
+      body+='<div class="pk-row">';
+      body+='<input class="field-input" id="pt-n-'+c+'-'+i+'" style="flex:2;min-width:0" value="'+esc(it.n)+'" placeholder="Item">';
+      body+='<input class="field-input" id="pt-q-'+c+'-'+i+'" type="number" inputmode="numeric" style="width:54px;flex:0 0 auto" value="'+(it.l?0:(it.qty||1))+'">';
+      body+='<button class="na-btn'+(it.l?' active':'')+'" onclick="ptLock('+c+','+i+')">Locker</button>';
+      body+='<button class="del-btn" onclick="ptItemDel('+c+','+i+')">&times;</button>';
+      body+='</div>';
+    }
+    body+='<button class="add-link" onclick="ptItemAdd('+c+')">'+IC.plus+' Add item</button>';
+    body+='</div>';
+  }
+  body+='<button class="add-link" onclick="ptSectAdd()">'+IC.plus+' Add section</button>';
+  return screenShell('Global Packing Template',body,'Save','ptSave()');
+}
+function ptCapture(){
+  var list=PACKING_TMPL[S.persona]||[];
+  for(var c=0;c<list.length;c++){
+    var s=document.getElementById('pt-s-'+c);if(s&&typeof s.value==='string')list[c].cat=s.value.trim();
+    for(var i=0;i<list[c].items.length;i++){
+      var n=document.getElementById('pt-n-'+c+'-'+i),q=document.getElementById('pt-q-'+c+'-'+i);
+      if(n&&typeof n.value==='string')list[c].items[i].n=n.value.trim();
+      if(q&&typeof q.value==='string'){var v=parseInt(q.value,10);list[c].items[i].qty=isNaN(v)?(list[c].items[i].l?0:1):v;}
+    }
+  }
+  PACKING_TMPL[S.persona]=list;
+}
+function ptSectAdd(){ptCapture();(PACKING_TMPL[S.persona]||(PACKING_TMPL[S.persona]=[])).push({cat:'New section',items:[]});renderScreen_inplace2();}
+function ptSectDel(c){ptCapture();PACKING_TMPL[S.persona].splice(c,1);renderScreen_inplace2();}
+function ptItemAdd(c){ptCapture();PACKING_TMPL[S.persona][c].items.push({n:'',qty:1,l:false});renderScreen_inplace2();}
+function ptItemDel(c,i){ptCapture();PACKING_TMPL[S.persona][c].items.splice(i,1);renderScreen_inplace2();}
+function ptLock(c,i){ptCapture();var it=PACKING_TMPL[S.persona][c].items[i];it.l=!it.l;if(it.l)it.qty=0;else if(!it.qty)it.qty=1;renderScreen_inplace2();}
+function ptSave(){
+  ptCapture();
+  var list=(PACKING_TMPL[S.persona]||[]).map(function(cat){cat.items=(cat.items||[]).filter(function(it){return it.n;});return cat;}).filter(function(cat){return cat.cat;});
+  PACKING_TMPL[S.persona]=list;
+  savePackTmpl();toast('Packing template saved');closeScreen();render();
 }
 
 /* Generic section screen (Plan hub destinations) */
