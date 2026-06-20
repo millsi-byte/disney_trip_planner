@@ -66,7 +66,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='56';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='57';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -429,11 +429,33 @@ function tripMembersFor(tid){var t=tripById(tid)||trip();return (t&&t.members&&t
 function notifForRecipient(id,o){
   var b=(S._notifById||{})[id];if(b)return b;
   /* someone the actor chose to also tell — a plain heads-up */
-  var who=pname(o.actor),oldA=whoArrFor(o.oldWho,o.trip),newA=whoArrFor(o.newWho,o.trip),text;
-  if(oldA.indexOf(o.actor)>=0&&newA.indexOf(o.actor)<0) text=who+' left “'+o.label+'” ('+o.cat+')';
-  else if(oldA.indexOf(o.actor)<0&&newA.indexOf(o.actor)>=0) text=who+' joined “'+o.label+'” ('+o.cat+')';
-  else text=who+' updated who’s on “'+o.label+'” ('+o.cat+')';
-  return {to:id,from:o.actor,trip:o.trip,cat:o.cat,label:o.label,kind:'change',text:text};
+  var who=pname(o.actor),text,kind='change';
+  if(o.deleted){ text=who+' deleted “'+o.label+'” ('+o.cat+')'; kind='removed'; }
+  else{
+    var oldA=whoArrFor(o.oldWho,o.trip),newA=whoArrFor(o.newWho,o.trip);
+    if(oldA.indexOf(o.actor)>=0&&newA.indexOf(o.actor)<0) text=who+' left “'+o.label+'” ('+o.cat+')';
+    else if(oldA.indexOf(o.actor)<0&&newA.indexOf(o.actor)>=0) text=who+' joined “'+o.label+'” ('+o.cat+')';
+    else text=who+' updated who’s on “'+o.label+'” ('+o.cat+')';
+  }
+  return {to:id,from:o.actor,trip:o.trip,cat:o.cat,label:o.label,kind:kind,text:text};
+}
+/* deleting an item that had people on it — offer to alert them (and the
+   creator, if an admin/owner is deleting someone else's). Same status gate. */
+function notifyDelete(cat,item){
+  if(!item||!cat)return;
+  var actor=S.persona,tid=item.trip||S.tripId,who=pname(actor),label=notifLabel(cat,item);
+  var people=whoArrFor(item.who,tid).filter(function(id){return id!==actor&&person(id);});
+  var creator=creatorOf(item,tid);
+  if(creator&&creator!==actor&&people.indexOf(creator)<0&&person(creator))people.push(creator);
+  if(!people.length)return;
+  var t=tripById(tid)||trip(),active=(t&&t.status==='active');
+  if(!active&&!S._notify)return;          /* planning: silent unless opted in */
+  var off=isActionCat(cat)?' — that booking is off':'';
+  var plan={forced:[],optional:[]};
+  people.forEach(function(id){
+    plan.optional.push({to:id,from:actor,trip:tid,cat:cat,label:label,kind:'removed',text:who+' deleted “'+label+'” ('+cat+')'+off});
+  });
+  openNotifConfirm({actor:actor,trip:tid,cat:cat,label:label,oldWho:item.who,newWho:[],deleted:true},plan);
 }
 
 /* confirm picker — choose who to notify */
@@ -798,7 +820,7 @@ function tdRemove(id){
   var t=tdById(id);if(!t)return;
   if(!tdCanEdit(t)){toast('Only the creator or an admin can delete this');return;}
   var k='tdrm_'+id;
-  if(S._deltd===k){for(var i=0;i<TODO.length;i++)if(TODO[i].id===id){TODO.splice(i,1);break;}S._deltd=null;saveTODO();}
+  if(S._deltd===k){for(var i=0;i<TODO.length;i++)if(TODO[i].id===id){TODO.splice(i,1);break;}S._deltd=null;saveTODO();notifyDelete('To Do',t);}
   else{S._deltd=k;}
   refreshTodo();
 }
@@ -1883,7 +1905,7 @@ function saveFlight(){
 function delFlight(id){
   var it=FLIGHTS.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;
   for(var i=0;i<FLIGHTS.length;i++)if(FLIGHTS[i].id===id){FLIGHTS.splice(i,1);break;}
-  save('dtp_flights',FLIGHTS);toast('Flight removed');closeScreen();render();
+  save('dtp_flights',FLIGHTS);notifyDelete('Flight',it);toast('Flight removed');closeScreen();render();
 }
 
 /* Add Dining */
@@ -1927,7 +1949,7 @@ function saveDining(){
 function delDining(id){
   var it=DINING.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;
   for(var i=0;i<DINING.length;i++)if(DINING[i].id===id){DINING.splice(i,1);break;}
-  save('dtp_dining',DINING);toast('Reservation removed');closeScreen();render();
+  save('dtp_dining',DINING);notifyDelete('Dining',it);toast('Reservation removed');closeScreen();render();
 }
 
 /* LL: Planning → Booked */
@@ -2001,7 +2023,7 @@ function delLL(id){
   var it=LLS.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;
   confirmCritical('Lightning Lane',function(){
     for(var i=0;i<LLS.length;i++)if(LLS[i].id===id){LLS.splice(i,1);break;}
-    save('dtp_lls',LLS);toast('Ride removed');closeScreen();render();
+    save('dtp_lls',LLS);notifyDelete('Lightning Lane',it);toast('Ride removed');closeScreen();render();
   });
 }
 
@@ -2556,7 +2578,7 @@ function delPR(id){
   var it=PARKRES.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;
   confirmCritical('park reservation',function(){
     for(var i=0;i<PARKRES.length;i++)if(PARKRES[i].id===id){PARKRES.splice(i,1);break;}
-    save('dtp_parkres',PARKRES);toast('Reservation removed');closeScreen();render();
+    save('dtp_parkres',PARKRES);notifyDelete('Park reservation',it);toast('Reservation removed');closeScreen();render();
   });
 }
 
@@ -2606,7 +2628,7 @@ function saveVisit(){
 function delVisit(id){
   var it=VISITS.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;
   for(var i=0;i<VISITS.length;i++)if(VISITS[i].id===id){VISITS.splice(i,1);break;}
-  save('dtp_visits',VISITS);toast('Visit removed');closeScreen();render();
+  save('dtp_visits',VISITS);notifyDelete('Park visit',it);toast('Visit removed');closeScreen();render();
 }
 
 /* ── Park hours (first-class item: park + day + hours + crowd) ─ */
@@ -2723,7 +2745,7 @@ function saveShow(){
 function delShow(id){
   var it=SHOWS.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;
   for(var i=0;i<SHOWS.length;i++)if(SHOWS[i].id===id){SHOWS.splice(i,1);break;}
-  save('dtp_shows',SHOWS);toast('Show removed');closeScreen();render();
+  save('dtp_shows',SHOWS);notifyDelete('Show',it);toast('Show removed');closeScreen();render();
 }
 
 /* ── Resort stay ───────────────────────────────────────────── */
@@ -2762,7 +2784,7 @@ function delResort(id){
   var it=RESORTS.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;
   confirmCritical('resort booking',function(){
     for(var i=0;i<RESORTS.length;i++)if(RESORTS[i].id===id){RESORTS.splice(i,1);break;}
-    save('dtp_resorts',RESORTS);toast('Stay removed');closeScreen();render();
+    save('dtp_resorts',RESORTS);notifyDelete('Resort',it);toast('Stay removed');closeScreen();render();
   });
 }
 
