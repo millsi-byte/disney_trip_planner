@@ -62,7 +62,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='10';
-var BUILD='32';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='33';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -232,6 +232,17 @@ function pinOK(){
   if(String(e).trim()===String(pin)) return true;
   toast('Incorrect PIN'); return false;
 }
+/* creator-based delete: your own items delete freely; others need the admin PIN */
+function ownOK(it){
+  if(!it||!it.by||it.by===S.persona) return true;
+  var who=person(it.by)?person(it.by).name:'someone else';
+  var pin=load('dtp_pin','');
+  if(!pin){toast('Only '+who+' or an admin can delete this');return false;}
+  var e=prompt('Added by '+who+'. Enter the admin PIN to delete it:');
+  if(e==null)return false;
+  if(String(e).trim()===String(pin))return true;
+  toast('Incorrect PIN');return false;
+}
 function setPin(){
   var cur=load('dtp_pin','');
   if(cur){var c=prompt('Enter current PIN:');if(c==null)return;if(String(c).trim()!==String(cur)){toast('Incorrect PIN');return;}}
@@ -313,7 +324,11 @@ function openScreen(def){
 function closeScreen(){var host=document.getElementById('screen-host');var s=host&&host.firstChild;if(s){s.classList.remove('in');setTimeout(function(){S.screen=null;renderOverlay();},260);}else{S.screen=null;renderOverlay();}}
 
 /* persona */
-function setPersona(id){S.persona=id;save('dtp_persona',id);toast("You are "+person(id).name);render();closeScreen();}
+function setPersona(id){
+  var p=person(id);if(!p){closeScreen();return;}
+  if(p.pin&&id!==S.persona){var e=prompt('Enter '+p.name+'\'s PIN:');if(e==null)return;if(String(e).trim()!==String(p.pin)){toast('Incorrect PIN');return;}}
+  S.persona=id;save('dtp_persona',id);toast("You are "+p.name);render();closeScreen();
+}
 
 /* packing / todo */
 function pkPersons(){var mem=tripMembers();if(S.filter.size===0)return mem.slice();return mem.filter(function(id){return S.filter.has(id);});}
@@ -1115,13 +1130,14 @@ function saveFlight(){
       depApt:ap,depCity:ap,depTime:val('ff-l'+i+'-depTime'),depDate:dy,
       arrApt:aap,arrCity:aap,arrTime:val('ff-l'+i+'-arrTime'),arrDate:dy});
   }
-  var rec=edit||{id:'f'+Date.now(),trip:S.tripId};
+  var rec=edit||{id:'f'+Date.now(),trip:S.tripId,by:S.persona};
   rec.label=val('ff-label')||'Flight';rec.day=dy;rec.who=whoVal();
   rec.status=S._formStatus.ff||'planning';rec.legs=legs;
   if(!edit)FLIGHTS.push(rec);
   save('dtp_flights',FLIGHTS);S._who=null;toast('Flight saved');closeScreen();render();
 }
 function delFlight(id){
+  var it=FLIGHTS.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;
   for(var i=0;i<FLIGHTS.length;i++)if(FLIGHTS[i].id===id){FLIGHTS.splice(i,1);break;}
   save('dtp_flights',FLIGHTS);toast('Flight removed');closeScreen();render();
 }
@@ -1155,7 +1171,7 @@ function saveDining(){
   var nm=val('dd-name');
   if(!nm){toast('Add a restaurant name');return;}
   var dy=val('dd-day')||S.screen.day||'2026-07-15';
-  var rec=edit||{id:'d'+Date.now(),trip:S.tripId};
+  var rec=edit||{id:'d'+Date.now(),trip:S.tripId,by:S.persona};
   rec.day=dy;rec.meal=val('dd-meal')||'Dinner';rec.name=nm;rec.time=val('dd-time')||'TBD';
   rec.loc=S._formLoc||'in';rec.park=(S._formLoc==='in')?(val('dd-park')||dayPrimaryPark(dy)):null;
   rec.status=S._formStatus.dd||'want';rec.conf=val('dd-conf')||'';rec.who=whoVal();
@@ -1163,6 +1179,7 @@ function saveDining(){
   save('dtp_dining',DINING);S._who=null;toast('Dining saved');closeScreen();render();
 }
 function delDining(id){
+  var it=DINING.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;
   for(var i=0;i<DINING.length;i++)if(DINING[i].id===id){DINING.splice(i,1);break;}
   save('dtp_dining',DINING);toast('Reservation removed');closeScreen();render();
 }
@@ -1218,7 +1235,7 @@ function saveLL(){
   var ride=val('ll-ride');
   if(!ride){toast('Add a ride name');return;}
   var dy=val('ll-day')||S.screen.day;
-  var rec=edit||{id:'ll'+Date.now(),trip:S.tripId,bookedTime:'',conf:'',bookDate:''};
+  var rec=edit||{id:'ll'+Date.now(),trip:S.tripId,by:S.persona,bookedTime:'',conf:'',bookDate:''};
   rec.day=dy;rec.park=dayPrimaryPark(dy);rec.ride=ride;
   rec.tier=S._formTier||'sp';rec.window=val('ll-window')||'~TBD';rec.who=whoVal();
   rec.status=S._formStatus.ll||'planning';
@@ -1362,6 +1379,7 @@ function scrPersonas(){
     body+='<div class="field" style="flex:2;margin:0"><label class="field-label">Name</label><input class="field-input" id="pn-'+p.id+'" value="'+esc(p.name)+'"></div>';
     body+='<div class="field" style="flex:1;margin:0"><label class="field-label">Color</label><select class="field-select" id="pc-'+p.id+'">'+colorOptions(p.color)+'</select></div>';
     body+='</div>';
+    body+='<div class="field" style="margin:8px 0 0"><label class="field-label">PIN to use this persona <span class="opt">(optional)</span></label><input class="field-input" id="pp-'+p.id+'" placeholder="blank = no PIN" value="'+esc(p.pin||'')+'"></div>';
     body+='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">';
     body+=p.admin?'<span class="st-badge st-booked">Admin</span>':'<span></span>';
     body+='<button style="color:#B91C1C;font-size:14px;font-weight:600;background:none;border:none;cursor:pointer;padding:4px 2px" onclick="delPersona(\''+p.id+'\')">Remove</button>';
@@ -1373,9 +1391,10 @@ function scrPersonas(){
 }
 function capturePersonas(){
   for(var i=0;i<FAMILY.length;i++){
-    var n=document.getElementById('pn-'+FAMILY[i].id),c=document.getElementById('pc-'+FAMILY[i].id);
+    var n=document.getElementById('pn-'+FAMILY[i].id),c=document.getElementById('pc-'+FAMILY[i].id),pn=document.getElementById('pp-'+FAMILY[i].id);
     if(n&&n.value&&n.value.trim())FAMILY[i].name=n.value.trim();
     if(c&&c.value)FAMILY[i].color=c.value;
+    if(pn)FAMILY[i].pin=(typeof pn.value==='string'?pn.value.trim():'');
   }
 }
 function savePersonas(){capturePersonas();save('dtp_family',FAMILY);toast('People updated');closeScreen();render();}
@@ -1603,7 +1622,7 @@ function scrPREdit(){
 }
 function savePR(){
   var edit=S.screen.edit?PARKRES.filter(function(x){return x.id===S.screen.edit;})[0]:null;
-  var rec=edit||{id:'pr'+Date.now(),trip:S.tripId};
+  var rec=edit||{id:'pr'+Date.now(),trip:S.tripId,by:S.persona};
   rec.park=val('pr-park')||'mk';rec.day=val('pr-day')||S.screen.day;
   rec.status=S._formStatus.pr||'booked';rec.who=whoVal();
   if(!edit)PARKRES.push(rec);
@@ -1648,7 +1667,7 @@ function upsertHours(park,day,vals){
 }
 function saveVisit(){
   var edit=S.screen.edit?VISITS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
-  var rec=edit||{id:'v'+Date.now(),trip:S.tripId};
+  var rec=edit||{id:'v'+Date.now(),trip:S.tripId,by:S.persona};
   rec.park=val('vs-park')||'mk';rec.day=val('vs-day')||S.screen.day;rec.timing=val('vs-timing')||'day';rec.who=whoVal();
   if(!edit)VISITS.push(rec);
   save('dtp_visits',VISITS);
@@ -1657,6 +1676,7 @@ function saveVisit(){
   S._who=null;toast('Park visit saved');closeScreen();render();
 }
 function delVisit(id){
+  var it=VISITS.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;
   for(var i=0;i<VISITS.length;i++)if(VISITS[i].id===id){VISITS.splice(i,1);break;}
   save('dtp_visits',VISITS);toast('Visit removed');closeScreen();render();
 }
@@ -1677,7 +1697,7 @@ function scrHoursEdit(){
 }
 function saveHours(){
   var edit=S.screen.edit?PARKHOURS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
-  var rec=edit||{id:'h'+Date.now(),trip:S.tripId};
+  var rec=edit||{id:'h'+Date.now(),trip:S.tripId,by:S.persona};
   rec.park=val('ph-park')||'mk';rec.day=val('ph-day')||S.screen.day;
   rec.open=val('ph-open');rec.close=val('ph-close');rec.early=val('ph-early');rec.late=val('ph-late');
   var c=val('ph-crowd');rec.crowd=c?parseInt(c,10):null;
@@ -1685,6 +1705,7 @@ function saveHours(){
   save('dtp_hours',PARKHOURS);toast('Park hours saved');closeScreen();render();
 }
 function delHours(id){
+  var it=PARKHOURS.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;
   for(var i=0;i<PARKHOURS.length;i++)if(PARKHOURS[i].id===id){PARKHOURS.splice(i,1);break;}
   save('dtp_hours',PARKHOURS);toast('Hours removed');closeScreen();render();
 }
@@ -1705,12 +1726,13 @@ function saveStop(){
   var tx=val('st-text');if(!tx){toast('Add a description');return;}
   var rec={t:val('st-time')||'TBD',x:tx,who:whoVal()};
   var cr=val('st-crit');if(cr)rec.crit=cr;
+  rec.by=(S.screen.idx!=null&&d.itin[S.screen.idx]&&d.itin[S.screen.idx].by)||S.persona;
   if(S.screen.idx!=null)d.itin[S.screen.idx]=rec; else d.itin.push(rec);
   save('dtp_days',DAYS);S._who=null;toast('Stop saved');closeScreen();render();
 }
 function delStop(){
   var d=dayByDate(S.screen.day);
-  if(d&&S.screen.idx!=null)d.itin.splice(S.screen.idx,1);
+  if(d&&S.screen.idx!=null){if(!ownOK(d.itin[S.screen.idx]))return;d.itin.splice(S.screen.idx,1);}
   save('dtp_days',DAYS);toast('Stop removed');closeScreen();render();
 }
 
@@ -1734,12 +1756,13 @@ function scrRebookEdit(){
 function saveRebook(){
   var edit=S.screen.edit?REBOOKS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
   var tx=val('rb-text');if(!tx){toast('Add what to book next');return;}
-  var rec=edit||{id:'rb'+Date.now(),trip:S.tripId};
+  var rec=edit||{id:'rb'+Date.now(),trip:S.tripId,by:S.persona};
   rec.text=tx;rec.after=val('rb-after');rec.day=val('rb-day')||S.screen.day;rec.who=whoVal();
   if(!edit)REBOOKS.push(rec);
   save('dtp_rebooks',REBOOKS);S._who=null;toast('Re-book saved');closeScreen();render();
 }
 function delRebook(id){
+  var it=REBOOKS.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;
   for(var i=0;i<REBOOKS.length;i++)if(REBOOKS[i].id===id){REBOOKS.splice(i,1);break;}
   save('dtp_rebooks',REBOOKS);toast('Re-book removed');closeScreen();render();
 }
@@ -1762,7 +1785,7 @@ function scrShowEdit(){
 function saveShow(){
   var edit=S.screen.edit?SHOWS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
   var nm=val('sh-name');if(!nm){toast('Add a show name');return;}
-  var rec=edit||{id:'s'+Date.now(),trip:S.tripId};
+  var rec=edit||{id:'s'+Date.now(),trip:S.tripId,by:S.persona};
   rec.name=nm;rec.time=val('sh-time')||'TBD';rec.day=val('sh-day')||S.screen.day;rec.status=S._formStatus.sh||'attend';rec.who=whoVal();
   if(!edit)SHOWS.push(rec);
   save('dtp_shows',SHOWS);S._who=null;toast('Show saved');closeScreen();render();
@@ -1795,7 +1818,7 @@ function scrResortEdit(){
 function saveResort(){
   var edit=S.screen.edit?RESORTS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
   var nm=val('rs-name');if(!nm){toast('Add a resort name');return;}
-  var rec=edit||{id:'r'+Date.now(),trip:S.tripId};
+  var rec=edit||{id:'r'+Date.now(),trip:S.tripId,by:S.persona};
   rec.name=nm;rec.room=val('rs-room')||'Room';rec.checkin=val('rs-in');rec.checkout=val('rs-out');
   rec.inTime=val('rs-intime');rec.outTime=val('rs-outtime');
   rec.conf=val('rs-conf')||'';rec.status=S._formStatus.rs||'planning';rec.who=whoVal();
@@ -1882,3 +1905,5 @@ materializeAllDays();
 loadLists();
 S.open=defOpen();
 render();
+/* first launch on this device: ask who you are (don't default silently to Scott) */
+try{ if(!localStorage.getItem('dtp_persona')) openScreen({type:'persona'}); }catch(e){}
