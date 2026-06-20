@@ -65,7 +65,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='50';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='51';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -968,14 +968,35 @@ function showsCard(sh,pk,date){
    LISTS HUB  (own nav tab)
    ============================================================ */
 function pkMyCount(){var n=0;(PACKING[S.persona]||[]).forEach(function(c){n+=(c.items?c.items.length:0);});return n;}
+function tdTmplCount(){return (TODO_TMPL[S.persona]||[]).length;}
+function pkTmplCount(){return (PACKING_TMPL[S.persona]||[]).reduce(function(a,c){return a+(c.items?c.items.length:0);},0);}
 function renderListsHub(){
   var t=trip();
   var o='<div class="pg-title">Lists</div><div class="pg-sub">'+esc(t.name)+' · '+esc(t.dates)+'</div>';
-  o+=hubRow(['To Do List',IC.checks,'#166534',tdVisibleCount()+' items','todo']);
-  o+=hubRow(['Packing List',IC.suitcase,'#92400E',pkMyCount()+' items','packing']);
+  o+= tdHasStarted(S.persona)
+      ? hubRow(['To Do List',IC.checks,'#166534',tdVisibleCount()+' items','todo'])
+      : listStarterCard('To Do List',IC.checks,'#166534','todo',tdTmplCount());
+  o+= pkHasStarted(S.persona)
+      ? hubRow(['Packing List',IC.suitcase,'#92400E',pkMyCount()+' items','packing'])
+      : listStarterCard('Packing List',IC.suitcase,'#92400E','packing',pkTmplCount());
   o+=hubRow(['Need to Buy',IC.cart,'#B45309',needBuyCount()+' items','needbuy']);
   o+='<div class="body-empty" style="text-align:left;padding:12px 2px 0;font-size:12px">Your To&nbsp;Do and Packing lists are private to you; the trip owner and admins can see everyone’s. <strong>Need to Buy</strong> is shared with the whole group.</div>';
   return o;
+}
+/* not-set-up-yet card: create the list blank or from your global template */
+function listStarterCard(title,icon,color,kind,nTmpl){
+  var o='<div class="hub-row" style="align-items:flex-start;cursor:default">';
+  o+='<div class="hub-icon" style="background:'+color+'">'+icon+'</div>';
+  o+='<div class="hub-main" style="width:100%"><div class="hub-title">'+title+'</div><div class="hub-sub">Not set up yet for this trip</div>';
+  o+='<div style="display:flex;gap:8px;margin-top:10px">';
+  if(nTmpl)o+='<button class="btn-primary" style="margin:0;flex:1;padding:9px" onclick="listStart(\''+kind+'\',\'tmpl\')">Use my template</button>';
+  o+='<button class="btn-secondary" style="margin:0;flex:1;padding:9px" onclick="listStart(\''+kind+'\',\'blank\')">Start blank</button>';
+  o+='</div></div></div>';
+  return o;
+}
+function listStart(kind,mode){
+  if(kind==='todo'){ if(mode==='tmpl')tdStartFromTemplate(); else tdStartEmpty(); openScreen({type:'todolist'}); }
+  else { if(mode==='tmpl')pkStartFromTemplate(); else pkStartEmpty(); openScreen({type:'packlist'}); }
 }
 
 /* ============================================================
