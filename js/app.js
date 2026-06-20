@@ -62,7 +62,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='10';
-var BUILD='22';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='23';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -181,14 +181,8 @@ function visible(who){
 }
 function esc(s){return (s==null?"":String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
-/* who display */
-function whoChips(who){
-  if(who==="all") return '<span class="who-all">'+IC.check.replace('#16a34a','#6B7280')+' Everyone</span>';
-  var h='<div class="who-chips">';
-  for(var i=0;i<who.length;i++){var p=person(who[i]);if(!p)continue;
-    h+='<span class="who-chip"><span class="wdot" style="background:'+p.color+'">'+p.name[0]+'</span>'+esc(p.name)+'</span>';}
-  return h+'</div>';
-}
+/* who display — person-initial circles everywhere something is assigned */
+function whoChips(who){return whoStack(who);}
 function whoStack(who){
   var ids=who==="all"?ALL_IDS:who;
   if(who==="all") return '<span class="who-all">Everyone</span>';
@@ -691,7 +685,7 @@ function diningRow(dn){
   o+='</div>';
   o+='<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">';
   o+=statusBadge(dn.status);
-  o+=(dn.loc==='in'&&dn.park)?'<span class="inpark-badge" style="background:'+PARKS[dn.park].color+'">In-Park</span>':'<span class="nonpark-badge">Non-Park</span>';
+  o+=(dn.loc==='in'&&dn.park&&PARKS[dn.park])?'<span class="inpark-badge" style="background:'+PARKS[dn.park].color+'">'+esc(PARKS[dn.park].short)+'</span>':(dn.loc==='in'?'<span class="inpark-badge" style="background:#8C9BAA">In-Park</span>':'<span class="nonpark-badge">Non-Park</span>');
   o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280" onclick="openScreen({type:\'adddining\',edit:\''+dn.id+'\',day:\''+dn.day+'\'})">'+IC.pencil+'</button>';
   o+='</div></div>';
   return o;
@@ -778,8 +772,9 @@ function renderOverview(){
   return o;
 }
 function dayHd(date){
-  var d=dayByDate(date),pk=pkOf(date);
-  return '<div class="day-hd" style="background:'+pk.color+'"><div class="day-hd-name">'+pk.name+'</div><div class="day-hd-date">'+monOf(date)+' '+(d?d.d:(+date.slice(8)))+(d?' · '+d.dl:'')+'</div></div>';
+  var d=dayByDate(date),pp=dayPrimaryPark(date),pk=(pp&&PARKS[pp])?PARKS[pp]:null;
+  var bg=pk?pk.color:PARKS.trv.color;
+  return '<div class="day-hd" style="background:'+bg+'"><div class="day-hd-name">'+monOf(date)+' '+(d?d.d:(+date.slice(8)))+(d?' · '+d.dl:'')+'</div>'+(pk?'<div class="day-hd-date">'+esc(pk.name)+'</div>':'')+'</div>';
 }
 function ovDining(){
   var o='',any=false,TD=tripDays();
@@ -797,11 +792,9 @@ function ovParkRes(){
     var prl=parkResFor(TD[i].date).filter(function(p){return visible(p.who);});
     if(!prl.length)continue;any=true;
     o+=dayHd(TD[i].date);
-    o+='<div class="ov-card">';
     for(var j=0;j<prl.length;j++){var pr=prl[j],ppk=PARKS[pr.park];
-      o+='<div class="din-row"><span style="width:12px;height:12px;border-radius:50%;background:'+(ppk?ppk.color:'#999')+';flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name" style="color:'+(ppk?ppk.color:'#333')+'">'+(ppk?esc(ppk.name):esc(pr.park))+'</div>'+(pr.who!=='all'?whoChips(pr.who):'')+'</div>'+statusBadge(pr.status)+'</div>';
+      o+='<div class="ov-card'+(isPlanningStatus(pr.status)?' planning':'')+'"><div class="din-row"><span style="width:12px;height:12px;border-radius:50%;background:'+(ppk?ppk.color:'#999')+';flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name">'+(ppk?esc(ppk.name):esc(pr.park))+'</div>'+(pr.who!=='all'?whoChips(pr.who):'<div class="din-time">Everyone</div>')+'</div>'+statusBadge(pr.status)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'predit\',edit:\''+pr.id+'\',day:\''+pr.day+'\'})">'+IC.pencil+'</button></div></div>';
     }
-    o+='</div>';
   }
   return any?o:'<div class="body-empty">No park reservations'+(S.filter.size?' for the selected people':'')+'. These days are Park Hopper.</div>';
 }
@@ -809,16 +802,11 @@ function ovResort(){
   var rs=RESORTS.filter(function(r){return r.trip===S.tripId&&visible(r.who);});
   if(!rs.length)return '<div class="body-empty">No resort stays'+(S.filter.size?' for the selected people':'')+' yet.</div>';
   rs.sort(function(a,b){return a.checkin<b.checkin?-1:1;});
-  var o='<div class="ov-card"><div class="timeline">';
+  var o='';
   for(var i=0;i<rs.length;i++){var r=rs[i];
     var nights=Math.max(0,Math.round((Date.parse(r.checkout)-Date.parse(r.checkin))/86400000));
-    o+='<div class="tl-stay"><div class="tl-bar" style="background:'+PALETTE[i%PALETTE.length][0]+'"></div>';
-    o+='<div style="flex:1"><div style="display:flex;justify-content:space-between;gap:8px"><div class="resort-name" style="font-size:17px">'+esc(r.name)+'</div>'+statusBadge(r.status)+'</div>';
-    o+='<div class="resort-room">'+esc(r.room)+'</div>';
-    o+='<div style="font-size:14px;color:var(--ink);font-weight:600;margin-top:6px">'+monOf(r.checkin)+' '+(+r.checkin.slice(8))+' → '+monOf(r.checkout)+' '+(+r.checkout.slice(8))+' · '+nights+' night'+(nights===1?'':'s')+'</div>';
-    o+='<div class="resort-conf">#'+esc(r.conf)+'</div></div></div>';
+    o+='<div class="ov-card'+(isPlanningStatus(r.status)?' planning':'')+'"><div class="din-row"><span style="width:12px;height:12px;border-radius:50%;background:'+PALETTE[i%PALETTE.length][0]+';flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name">'+esc(r.name)+'</div><div class="din-time">'+esc(r.room)+' · '+monOf(r.checkin)+' '+(+r.checkin.slice(8))+' → '+monOf(r.checkout)+' '+(+r.checkout.slice(8))+' · '+nights+' night'+(nights===1?'':'s')+'</div>'+(r.who!=='all'?whoChips(r.who):'')+'</div>'+statusBadge(r.status)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'resortedit\',edit:\''+r.id+'\'})">'+IC.pencil+'</button></div></div>';
   }
-  o+='</div></div>';
   return o;
 }
 function ovLL(){
@@ -827,13 +815,9 @@ function ovLL(){
     var lls=llFor(TD[i].date).filter(function(x){return visible(x.who);});
     if(!lls.length)continue;
     o+=dayHd(TD[i].date);
-    o+='<div class="ov-card">';
-    o+='<div class="ll-bookdate">'+IC.bolt+' Book '+esc(lls[0].bookDate)+'</div>';
     for(var j=0;j<lls.length;j++){var l=lls[j];
-      o+='<div class="ll-row"><div class="ll-top"><div class="ll-ride">'+esc(l.ride)+' <span class="ll-tag '+tagCls(l.tier)+'">'+tagShort(l.tier)+'</span></div>'+statusBadge(l.status)+'</div>';
-      o+='<div class="ll-win'+(l.status==='booked'?' booked':'')+'">'+(l.status==='booked'?(IC.check+' '+esc(l.bookedTime)):('Window: '+esc(l.window)))+'</div>'+whoStack(l.who)+'</div>';
+      o+='<div class="ov-card'+(isPlanningStatus(l.status)?' planning':'')+'"><div class="din-row"><div style="flex:1;min-width:0"><div class="din-name">'+esc(l.ride)+' <span class="ll-tag '+tagCls(l.tier)+'">'+tagShort(l.tier)+'</span></div><div class="din-time">'+(l.status==='booked'?('Booked '+esc(l.bookedTime||'')):('Window '+esc(l.window)))+'</div>'+(l.who!=='all'?whoChips(l.who):'')+'</div>'+statusBadge(l.status)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'addll\',edit:\''+l.id+'\',day:\''+l.day+'\'})">'+IC.pencil+'</button></div></div>';
     }
-    o+='</div>';
   }
   return o||'<div class="body-empty">No Lightning Lanes for the selected people.</div>';
 }
@@ -1138,6 +1122,7 @@ function scrAddDining(){
   body+='<button class="seg-btn'+(st==='reserved'?' on book':'')+'" onclick="pickStatus(\'dd\',\'reserved\')">Reserved</button></div></div>';
   if(st==='reserved') body+='<div class="field"><label class="field-label">Confirmation #</label><input class="field-input" id="dd-conf" placeholder="DR-118455" value="'+(edit&&edit.conf?esc(edit.conf):'')+'"></div>';
   body+='<div class="field"><label class="field-label">Location</label><div class="seg"><button class="seg-btn'+(loc==='in'?' on':'')+'" onclick="pickLoc(\'in\')">In-Park</button><button class="seg-btn'+(loc==='off'?' on':'')+'" onclick="pickLoc(\'off\')">Non-Park</button></div></div>';
+  if(loc==='in'){var _dy=(edit&&edit.day)||S.screen.day||'2026-07-15';body+='<div class="field"><label class="field-label">Which park</label><select class="field-select" id="dd-park">'+parkResOptions((edit&&edit.park)||dayPrimaryPark(_dy)||'mk')+'</select></div>';}
   body+=whoSelectField(pre);
   body+='<div class="field"><label class="field-label">Appears on day</label><select class="field-select" id="dd-day">'+dayOptions((edit&&edit.day)||S.screen.day||'2026-07-15')+'</select></div>';
   if(edit) body+='<button class="btn-danger-link" onclick="delDining(\''+edit.id+'\')">Delete this reservation</button>';
@@ -1150,7 +1135,7 @@ function saveDining(){
   var dy=val('dd-day')||S.screen.day||'2026-07-15';
   var rec=edit||{id:'d'+Date.now(),trip:S.tripId};
   rec.day=dy;rec.meal=val('dd-meal')||'Dinner';rec.name=nm;rec.time=val('dd-time')||'TBD';
-  rec.loc=S._formLoc||'in';rec.park=(S._formLoc==='in')?dayPrimaryPark(dy):null;
+  rec.loc=S._formLoc||'in';rec.park=(S._formLoc==='in')?(val('dd-park')||dayPrimaryPark(dy)):null;
   rec.status=S._formStatus.dd||'want';rec.conf=val('dd-conf')||'';rec.who=whoVal();
   if(!edit)DINING.push(rec);
   save('dtp_dining',DINING);S._who=null;toast('Dining saved');closeScreen();render();
