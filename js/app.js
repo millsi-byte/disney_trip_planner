@@ -62,7 +62,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='10';
-var BUILD='19';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='20';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -572,6 +572,7 @@ function dayPlanCard(d,pk){
       var chip=planChip(e.type);if(chip)tags.push(chip);
       if(e.soft) tags.push('<span class="t-tag" style="background:transparent;color:#92724A;border:1.5px dashed #C9A45E">Planned</span>');
       if(e.type==='dining'&&e.dstatus==='reserved') tags.push('<span class="t-tag" style="background:#DCFCE7;color:#15803D">Reserved</span>');
+      if(e.type==='ll'&&!e.soft) tags.push('<span class="t-tag" style="background:#DCFCE7;color:#15803D">Booked</span>');
       if(e.crit) tags.push('<span class="t-tag t-tag-crit">'+esc(e.crit)+'</span>');
       if(tags.length) o+='<div class="t-tags">'+tags.join('')+'</div>';
       o+='</div>';
@@ -615,9 +616,12 @@ function llCard(lls,d,pk){
         o+='<div class="ll-win">Planned window: '+esc(l.window)+'</div>';
       }
       o+=whoStack(l.who);
-      o+='<div class="ll-meta-row">'+statusBadge(l.status);
-      if(l.status==='planning') o+='<button class="ri-btn" style="margin-left:auto" onclick="openScreen({type:\'llbook\',id:\''+l.id+'\'})">Mark as booked</button>';
-      o+='</div></div>';
+      if(l.status!=='booked'){
+        o+='<div class="ll-meta-row">'+statusBadge(l.status);
+        o+='<button class="ri-btn" style="margin-left:auto" onclick="openScreen({type:\'llbook\',id:\''+l.id+'\'})">Mark as booked</button>';
+        o+='</div>';
+      }
+      o+='</div>';
     }
     o+='<div class="roll-hd">Rolling Re-books</div>';
     for(var r=0;r<roll.length;r++){var rb=roll[r];
@@ -1141,7 +1145,7 @@ function scrLLBook(){
   body+='<div class="field"><label class="field-label">Confirmation #</label><input class="field-input" id="llb-conf" placeholder="MP-00000"></div>';
   body+=whoSelectField(l.who);
   body+='<div class="body-empty" style="text-align:left;padding:4px 2px 0">Marking this booked switches it from a dashed planning card to a solid confirmed one across the Agenda and Overview.</div>';
-  return screenShell('Update Lightning Lane',body,'Mark Booked','saveLLBook()');
+  return screenShell('Update Lightning Lane',body,'Save','saveLLBook()');
 }
 function saveLLBook(){
   var l=LLS.filter(function(x){return x.id===S.screen.id;})[0];
