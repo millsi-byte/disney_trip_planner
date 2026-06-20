@@ -63,7 +63,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='47';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='48';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -459,13 +459,16 @@ function pkCancel(){ADD.pk=null;refreshLists();}
    Visibility: you see an item if you created it (`by`) or it's assigned
    to you (`who`). Creator + global admin may edit/delete; creator,
    assignee or admin may toggle done; an assignee may unassign themselves. */
+/* who gets full list oversight: the global admin, or this trip's owner
+   (they're organising the trip and keeping everyone on track) */
+function todoOversight(){return isAdmin()||isTripOwner();}
 function tdById(id){for(var i=0;i<TODO.length;i++)if(TODO[i].id===id)return TODO[i];return null;}
 function tdMine(pid){pid=pid||S.persona;return TODO.filter(function(t){return t.trip===S.tripId&&t.by===pid;});}
 function tdAssignedTo(pid){pid=pid||S.persona;return TODO.filter(function(t){return t.trip===S.tripId&&t.by!==pid&&t.who&&t.who.indexOf(pid)>=0;});}
-function tdVisibleCount(pid){pid=pid||S.persona;if(isAdmin())return TODO.filter(function(t){return t.trip===S.tripId;}).length;
+function tdVisibleCount(pid){pid=pid||S.persona;if(todoOversight())return TODO.filter(function(t){return t.trip===S.tripId;}).length;
   return TODO.filter(function(t){return t.trip===S.tripId&&(t.by===pid||(t.who&&t.who.indexOf(pid)>=0));}).length;}
-function tdCanEdit(t){return !!t&&(t.by===S.persona||isAdmin());}
-function tdCanCheck(t){return !!t&&(t.by===S.persona||isAdmin()||(t.who&&t.who.indexOf(S.persona)>=0));}
+function tdCanEdit(t){return !!t&&(t.by===S.persona||todoOversight());}
+function tdCanCheck(t){return !!t&&(t.by===S.persona||todoOversight()||(t.who&&t.who.indexOf(S.persona)>=0));}
 /* per-trip per-person "has started a list" flag (so we can offer template / blank) */
 function tdStartKey(){return 'dtp_todostart_'+S.tripId;}
 function tdStartedSet(){return load(tdStartKey(),[]);}
@@ -1119,9 +1122,9 @@ function scrTodo(){
 function todoBody(){
   var me=S.persona;
   var o='';
-  /* admins get a lens toggle; everyone (admin included) defaults to their own list */
-  if(isAdmin())o+=todoScopeToggle();
-  if(isAdmin()&&S.tdScope==='all')return o+todoEveryoneView();
+  /* admins & the trip owner get a lens toggle; everyone defaults to their own list */
+  if(todoOversight())o+=todoScopeToggle();
+  if(todoOversight()&&S.tdScope==='all')return o+todoEveryoneView();
   /* personal view — identical for every user */
   var mine=tdMine(me), assigned=tdAssignedTo(me);
   o+=todoSticky(mine.concat(assigned));
@@ -1155,7 +1158,7 @@ function todoScopeToggle(){
 function setTdScope(s){S.tdScope=s;S.tdForm=null;refreshTodo();}
 /* admin-only oversight: each person's list across the trip */
 function todoEveryoneView(){
-  var o='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">Everyone’s to-do lists for '+esc(trip().name)+'. As an admin you can check, edit or remove any item.</div>';
+  var o='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">Everyone’s to-do lists for '+esc(trip().name)+'. As the trip owner or an admin you can check, edit or remove any item.</div>';
   var mem=tripMembers();
   for(var p=0;p<mem.length;p++){var pid=mem[p];
     var items=tdMine(pid);
@@ -1198,7 +1201,7 @@ function todoRow(t){
   var pend=S._deltd==='tdrm_'+t.id;
   var sub=[];
   if(t.who&&t.who.length)sub.push('Assigned to '+t.who.map(function(p){var pp=person(p);return pp?esc(pp.name):'';}).filter(Boolean).join(', '));
-  if(!isAdmin()&&t.by!==me){var c=person(t.by);sub.push('From '+(c?esc(c.name):'someone'));}
+  if(!todoOversight()&&t.by!==me){var c=person(t.by);sub.push('From '+(c?esc(c.name):'someone'));}
   var o='<div class="pk-row">';
   o+='<div class="chkbox'+(t.done?' on':'')+'" onclick="tdToggle(\''+t.id+'\')">'+(t.done?IC.checkw:'')+'</div>';
   o+='<div class="pk-name'+(t.done?' done':'')+'" onclick="tdToggle(\''+t.id+'\')">'+esc(t.n)+(sub.length?'<div class="pk-by">'+sub.join(' · ')+'</div>':'')+'</div>';
@@ -1268,10 +1271,11 @@ function renderSheet(){
     h+='<div class="sheet-seclabel">'+groups[g][1]+'</div>';
     for(var i=0;i<list.length;i++){var t=list[i],on=t.id===S.tripId;
       var mc=(t.members?t.members.length:0);
+      var own=(t.by&&person(t.by))?person(t.by):null;
       h+='<div class="trip-row'+(on?' on':'')+'" onclick="switchTrip(\''+t.id+'\')">';
       h+='<div class="trip-bar" style="background:'+t.color+'"></div>';
       h+='<div class="trip-main"><div class="trip-name'+(t.status==='archived'?' archived':'')+'">'+esc(t.name)+'</div>';
-      h+='<div class="trip-sub">'+esc(t.dates)+' · '+mc+' '+(mc===1?'person':'people')+'</div></div>';
+      h+='<div class="trip-sub">'+esc(t.dates)+' · '+mc+' '+(mc===1?'person':'people')+(own?' · Owner: '+esc(own.name)+(own.id===S.persona?' (you)':''):'')+'</div></div>';
       if(canEditTrip(t))
         h+='<button class="hdr-icon" style="width:34px;height:34px;background:#F3F1EC;color:#6B7280;flex-shrink:0" onclick="event.stopPropagation();closeSheet();openScreen({type:\'tripedit\',tripId:\''+t.id+'\'})">'+IC.pencil+'</button>';
       h+='<span class="trip-status ts-'+t.status+'">'+(on?'Current':t.status)+'</span></div>';
@@ -2235,6 +2239,15 @@ function scrTripEdit(){
   body+='<button class="seg-btn'+(S._formStatus.tr==='archived'?' on':'')+'" onclick="pickStatus(\'tr\',\'archived\')">Archived</button></div></div>';
   body+='<div class="field"><label class="field-label">Color</label><select class="field-select" id="tr-color">'+colorOptions(S._formColor)+'</select></div>';
   body+=memberSelectField(t.members);
+  var own=(t.by&&person(t.by))?person(t.by):null;
+  body+='<div class="field"><label class="field-label">Trip owner</label>';
+  if(own){
+    body+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0"><span class="wdot" style="background:'+own.color+'">'+esc(own.name[0])+'</span><strong>'+esc(own.name)+'</strong>'+(own.id===S.persona?' (you)':'')+'</div>';
+    body+='<div class="body-empty" style="text-align:left;padding:2px 2px 0;font-size:12px">The owner organises this trip — they and any admin can edit it and see everyone’s lists.</div>';
+  }else{
+    body+='<div class="body-empty" style="text-align:left;padding:2px 2px 0;font-size:12px">No owner recorded for this trip — only admins can manage it.</div>';
+  }
+  body+='</div>';
   body+='<button class="btn-danger-link" onclick="delTrip(\''+t.id+'\')">Delete this trip</button>';
   return screenShell('Edit Trip',body,'Save','saveTrip()');
 }
