@@ -29,6 +29,7 @@ var IC = {
   check:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
   checkw:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
   arr:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>',
+  lock:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
   plus:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
   pencil:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>',
   back:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>',
@@ -62,7 +63,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='10';
-var BUILD='33';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='34';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -254,6 +255,15 @@ function clearPin(){
   var c=prompt('Enter current PIN to remove it:');if(c==null)return;if(String(c).trim()!==String(cur)){toast('Incorrect PIN');return;}
   try{localStorage.removeItem('dtp_pin');}catch(e){}toast('PIN removed');renderScreen_inplace2();
 }
+/* gate for admin-only areas (managing people). No admin PIN set = open (nothing to protect yet). */
+function adminGate(){
+  var pin=load('dtp_pin','');
+  if(!pin) return true;
+  var e=prompt('Managing people is admin-only.\nEnter the admin PIN:');
+  if(e==null) return false;
+  if(String(e).trim()===String(pin)) return true;
+  toast('Incorrect PIN'); return false;
+}
 
 /* queries — all scoped to the current trip */
 function flightsFor(date){return FLIGHTS.filter(function(f){return f.trip===S.tripId&&f.day===date;});}
@@ -328,6 +338,22 @@ function setPersona(id){
   var p=person(id);if(!p){closeScreen();return;}
   if(p.pin&&id!==S.persona){var e=prompt('Enter '+p.name+'\'s PIN:');if(e==null)return;if(String(e).trim()!==String(p.pin)){toast('Incorrect PIN');return;}}
   S.persona=id;save('dtp_persona',id);toast("You are "+p.name);render();closeScreen();
+}
+/* change your OWN persona PIN (no admin needed — it's yours) */
+function setMyPin(){
+  var me=person(S.persona);if(!me)return;
+  var has=!!me.pin;
+  if(has){var c=prompt('Enter your current PIN:');if(c==null)return;if(String(c).trim()!==String(me.pin)){toast('Incorrect PIN');return;}}
+  var np=prompt(has?'New PIN (leave blank to remove):':'Set a PIN so only you can switch to '+me.name+' (leave blank for none):');
+  if(np==null)return;np=String(np).trim();
+  me.pin=np;save('dtp_family',FAMILY);
+  toast(np?'Your PIN is set':'Your PIN was removed');renderScreen_inplace2();
+}
+/* sign out — forget who you are on this device and return to the chooser */
+function logoutPersona(){
+  try{localStorage.removeItem('dtp_persona');}catch(e){}
+  S.screen={type:'persona'};renderOverlay();
+  requestAnimationFrame(function(){var s=document.getElementById('screen-host').firstChild;if(s)s.classList.add('in');});
 }
 
 /* packing / todo */
@@ -786,7 +812,7 @@ function hubRow(r){
 function openSection(section){
   if(section==='packing'||section==='todo'){openScreen({type:'lists',which:section});return;}
   if(section==='templates'){openScreen({type:'templates'});return;}
-  if(section==='personas'){openScreen({type:'personas'});return;}
+  if(section==='personas'){if(!adminGate())return;openScreen({type:'personas'});return;}
   openScreen({type:'section',section:section});
 }
 
@@ -1333,14 +1359,15 @@ function createTrip(){
 
 /* Settings */
 function scrSettings(){
-  var body='<div class="hub-section-label" style="margin-left:0">About personas</div>';
-  body+='<div class="body-empty" style="text-align:left;padding:0 2px 14px">Switch who you are anytime from the <strong>I am</strong> button in the header — your choice is stored on this device, no login. Everyone can add and edit. Deleting a booking (Lightning Lane, resort, or park reservation) needs the admin PIN below.</div>';
-  body+=hubRow(['Templates',IC.suitcase,'#92400E','Packing & to-do masters','templates']);
-  body+=hubRow(['Persona',IC.home,'#1C3A5E',FAMILY.length+' people','personas']);
   var hasPin=!!load('dtp_pin','');
-  body+='<div class="hub-section-label" style="margin-left:0">Protect bookings</div>';
-  body+='<div class="body-empty" style="text-align:left;padding:0 2px 10px">Deleting a Lightning Lane, resort booking, or park reservation requires this PIN — so they can\'t be removed by mistake. '+(hasPin?'<strong>A PIN is set.</strong>':'No PIN set yet.')+'</div>';
-  body+='<button class="btn-secondary" onclick="setPin()">'+(hasPin?'Change delete PIN':'Set delete PIN')+'</button>';
+  var body='<div class="hub-section-label" style="margin-left:0">About personas</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 14px">Switch who you are, change your own PIN, or log out anytime from the <strong>I am</strong> button in the header — your choice is stored on this device, no login. Everyone can add and edit.</div>';
+  body+=hubRow(['Templates',IC.suitcase,'#92400E','Packing & to-do masters','templates']);
+  body+=hubRow(['People'+(hasPin?' '+IC.lock:''),IC.home,'#1C3A5E',FAMILY.length+' people','personas']);
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 14px;font-size:12px">Adding, renaming, removing people and setting their PINs is admin-only'+(hasPin?' — protected by the admin PIN below.':'. Set an admin PIN below to lock it down.')+'</div>';
+  body+='<div class="hub-section-label" style="margin-left:0">Admin PIN</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 10px">One PIN guards the things you don\'t want changed by mistake: deleting a Lightning Lane, resort booking or park reservation, deleting a trip, deleting other people\'s items, and managing people above. '+(hasPin?'<strong>A PIN is set.</strong>':'No PIN set yet.')+'</div>';
+  body+='<button class="btn-secondary" onclick="setPin()">'+(hasPin?'Change admin PIN':'Set admin PIN')+'</button>';
   if(hasPin) body+='<button class="btn-secondary" onclick="clearPin()">Remove PIN</button>';
   body+='<div class="hub-section-label" style="margin-left:0">Device</div>';
   body+='<button class="btn-secondary" onclick="if(confirm(\'Reset all saved data on this device?\')){localStorage.clear();location.reload();}">Reset local data</button>';
@@ -1349,19 +1376,27 @@ function scrSettings(){
   return screenShell('Settings',body,null,null,'Done');
 }
 
-/* Persona switch (from the header) */
+/* Persona switch (from the header). Two modes:
+   - first run / signed out: a plain chooser, no account actions
+   - signed in: switch persona, change your own PIN, or log out */
 function scrPersona(){
+  var signedIn=false;try{signedIn=!!localStorage.getItem('dtp_persona');}catch(e){}
   var mem=tripMembers();
   var body='<div class="hub-section-label" style="margin-left:0">Who are you on '+esc(trip().name)+'?</div>';
   body+='<div class="whoselect" style="margin-bottom:16px">';
-  for(var i=0;i<mem.length;i++){var p=person(mem[i]);if(!p)continue;var on=S.persona===p.id;
-    body+='<div class="who-opt'+(on?' on':'')+'" onclick="setPersona(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+(p.admin?' · Admin':'')+(on?'<span class="wcheck" style="display:flex">'+IC.checkw.replace('currentColor','#15803D')+'</span>':'')+'</div>';
+  for(var i=0;i<mem.length;i++){var p=person(mem[i]);if(!p)continue;var on=signedIn&&S.persona===p.id;
+    body+='<div class="who-opt'+(on?' on':'')+'" onclick="setPersona(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+(p.pin?' '+IC.lock:'')+(on?'<span class="wcheck" style="display:flex">'+IC.checkw.replace('currentColor','#15803D')+'</span>':'')+'</div>';
   }
   body+='</div>';
-  body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px">Personalises your packing list, to-dos, and what the family thread highlights. Stored on this device only.</div>';
-  body+='<button class="hub-row" onclick="openScreen({type:\'personas\'})"><div class="hub-icon" style="background:#1C3A5E">'+IC.home+'</div>'
-    +'<div class="hub-main"><div class="hub-title">Manage people</div><div class="hub-sub">Add, rename, recolor or remove personas</div></div><div class="chev">'+IC.chev+'</div></button>';
-  return screenShell('Switch Persona',body,null,null,'Done');
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px">Personalises your packing list, to-dos, and what the family thread highlights. Stored on this device only. A '+IC.lock+' persona needs its PIN to switch into.</div>';
+  if(signedIn){
+    var me=person(S.persona);
+    body+='<div class="hub-section-label" style="margin-left:0">Your account</div>';
+    body+='<button class="btn-secondary" onclick="setMyPin()">'+((me&&me.pin)?'Change my PIN':'Set my PIN')+'</button>';
+    body+='<button class="btn-secondary" onclick="logoutPersona()">Log out</button>';
+    body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px">Adding, renaming or removing people is admin-only — find it in <strong>Plan → Settings</strong>.</div>';
+  }
+  return screenShell(signedIn?'Switch Persona':'Welcome',body,null,null,signedIn?'Done':'');
 }
 
 /* Manage personas — global add / rename / recolor / delete */
