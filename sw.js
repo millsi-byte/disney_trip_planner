@@ -1,7 +1,7 @@
 /* Disney Trip Planner — service worker
    Network-first so new versions show up on the next load; cache is the
    offline fallback only. */
-var CACHE = 'dtp-v42';
+var CACHE = 'dtp-v43';
 var ASSETS = [
   './',
   './index.html',
