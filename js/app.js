@@ -970,7 +970,7 @@ function toggleWho(id){if(S._who.has(id))S._who.delete(id);else S._who.add(id);
 }
 function renderScreen_inplace(){var host=document.getElementById('screen-host');host.innerHTML=renderScreen();var s=host.firstChild;if(s)s.classList.add('in');}
 
-function dayOptions(sel){var h='',TD=tripDays();for(var i=0;i<TD.length;i++){var d=TD[i];var vsd=visitsFor(d.date);var pp=vsd.length?vsd[0].park:null;var lbl=(pp&&PARKS[pp])?PARKS[pp].name:(d.visit||'—');h+='<option value="'+d.date+'"'+(d.date===sel?' selected':'')+'>'+monOf(d.date)+' '+d.d+' · '+d.dl+' · '+esc(lbl)+'</option>';}return h;}
+function dayOptions(sel){var h='',TD=tripDays();for(var i=0;i<TD.length;i++){var d=TD[i];h+='<option value="'+d.date+'"'+(d.date===sel?' selected':'')+'>'+monOf(d.date)+' '+d.d+' · '+d.dl+'</option>';}return h;}
 
 /* Add Flight (with connecting leg) */
 function scrAddFlight(){
