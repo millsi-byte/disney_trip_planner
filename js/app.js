@@ -164,6 +164,7 @@ function diningFor(date){return DINING.filter(function(d){return d.day===date;})
 function llFor(date){return LLS.filter(function(l){return l.day===date;});}
 function showsFor(date){return SHOWS.filter(function(s){return s.day===date;});}
 function resortsFor(date){return RESORTS.filter(function(r){return date>=r.checkin&&date<=r.checkout;});}
+function parkResFor(date){return PARKRES.filter(function(p){return p.day===date;});}
 
 /* ── Actions ───────────────────────────────────────────────── */
 function go(tab){S.tab=tab;closeSheet();render();}
@@ -296,8 +297,12 @@ function renderAgenda(){
   o+='<div class="ib-cell"><div class="ib-lbl">Hours</div><div class="ib-val">'+esc(d.hours)+'</div></div>';
   o+='<div class="ib-cell"><div class="ib-lbl">Crowd</div><div class="ib-val">'+crowdPill(d.crowd)+'</div></div>';
   o+='<div class="ib-cell"><div class="ib-lbl">Park Res.</div><div class="ib-val">';
-  if(d.parkRes){var rp=PARKS[d.parkRes];o+='<div class="ib-res"><span class="ib-res-dot" style="background:'+rp.color+'"></span><span style="color:'+rp.color+'">'+rp.short+'</span> '+IC.check+'</div>';}
-  else{o+='<span style="color:var(--muted);font-weight:600;font-size:13px">None · Hopper</span>';}
+  var prs=parkResFor(d.date).filter(function(p){return visible(p.who);});
+  if(prs.length){
+    var seen={};
+    for(var pi=0;pi<prs.length;pi++){var rp=PARKS[prs[pi].park];if(!rp||seen[prs[pi].park])continue;seen[prs[pi].park]=1;
+      o+='<div class="ib-res"><span class="ib-res-dot" style="background:'+rp.color+'"></span><span style="color:'+rp.color+'">'+rp.short+'</span>'+(prs[pi].status==='booked'?' '+IC.check:'')+'</div>';}
+  }else{o+='<span style="color:var(--muted);font-weight:600;font-size:13px">None · Hopper</span>';}
   o+='</div></div></div>';
   o+='<button class="add-link" style="margin:-2px 0 6px" onclick="openScreen({type:\'dayedit\',day:\''+d.date+'\'})">'+IC.pencil+' Edit day details</button>';
 
@@ -603,21 +608,18 @@ function ovDining(){
   return any?o:'<div class="body-empty">No dining for the selected people.</div>';
 }
 function ovParkRes(){
-  var o='<div class="ov-card">';
-  for(var i=0;i<DAYS.length;i++){var d=DAYS[i];
-    o+='<div class="din-row"><div style="display:flex;align-items:center;gap:9px;flex:1">';
-    if(d.parkRes){var rp=PARKS[d.parkRes];
-      o+='<span style="width:11px;height:11px;border-radius:50%;background:'+rp.color+';flex-shrink:0"></span>';
-      o+='<div><div style="font-size:16px;font-weight:700;color:'+rp.color+'">'+rp.name+'</div><div style="font-size:12px;color:var(--muted)">Jul '+d.d+' · '+d.dl+'</div></div></div>';
-      o+=statusBadge('booked');
-    }else{
-      o+='<span style="width:11px;height:11px;border-radius:50%;background:#D1D5DB;flex-shrink:0"></span>';
-      o+='<div><div style="font-size:16px;font-weight:600;color:var(--muted)">No reservation · Hopper</div><div style="font-size:12px;color:var(--muted)">Jul '+d.d+' · '+d.dl+'</div></div></div>';
-      o+='<span class="st-badge st-todo">Hopper</span>';
+  var o='',any=false;
+  for(var i=0;i<DAYS.length;i++){
+    var prl=parkResFor(DAYS[i].date).filter(function(p){return visible(p.who);});
+    if(!prl.length)continue;any=true;
+    o+=dayHd(DAYS[i].date);
+    o+='<div class="ov-card">';
+    for(var j=0;j<prl.length;j++){var pr=prl[j],ppk=PARKS[pr.park];
+      o+='<div class="din-row"><span style="width:12px;height:12px;border-radius:50%;background:'+(ppk?ppk.color:'#999')+';flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name" style="color:'+(ppk?ppk.color:'#333')+'">'+(ppk?esc(ppk.name):esc(pr.park))+'</div>'+(pr.who!=='all'?whoChips(pr.who):'')+'</div>'+statusBadge(pr.status)+'</div>';
     }
     o+='</div>';
   }
-  return o+'</div>';
+  return any?o:'<div class="body-empty">No park reservations'+(S.filter.size?' for the selected people':'')+'. These days are Park Hopper.</div>';
 }
 function ovResort(){
   var o='<div class="ov-card"><div class="timeline">';
@@ -826,6 +828,7 @@ function renderScreen(){
   if(t==='personas')  return scrPersonas();
   if(t==='templates') return scrTemplates();
   if(t==='dayedit')   return scrDayEdit();
+  if(t==='predit')    return scrPREdit();
   if(t==='stopedit')  return scrStopEdit();
   if(t==='showedit')  return scrShowEdit();
   if(t==='resortedit')return scrResortEdit();
@@ -1231,12 +1234,15 @@ function scrSection(){
     }
     body+='<button class="btn-primary" onclick="openScreen({type:\'resortedit\'})">Add resort stay</button>';
   }else if(sec==='parkres'){
-    for(var ip=0;ip<DAYS.length;ip++){var dp=DAYS[ip];
-      body+='<div class="ov-card"><div class="din-row" onclick="openScreen({type:\'dayedit\',day:\''+dp.date+'\'})" style="cursor:pointer"><div style="flex:1"><div class="din-name">Jul '+dp.d+' · '+dp.dl+'</div><div class="din-time">'+(dp.parkRes?esc(PARKS[dp.parkRes].name):'No reservation · Hopper')+'</div></div>';
-      body+=dp.parkRes?('<span class="inpark-badge" style="background:'+PARKS[dp.parkRes].color+'">'+PARKS[dp.parkRes].short+'</span>'):'<span class="st-badge st-todo">Hopper</span>';
-      body+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px">'+IC.pencil+'</button></div></div>';
+    var anyPR=false;
+    for(var ip=0;ip<DAYS.length;ip++){var dp=DAYS[ip];var prl=parkResFor(dp.date);if(!prl.length)continue;anyPR=true;
+      body+=dayHd(dp.date);
+      for(var pj=0;pj<prl.length;pj++){var prx=prl[pj],ppk=PARKS[prx.park];
+        body+='<div class="ov-card'+(isPlanningStatus(prx.status)?' planning':'')+'"><div class="din-row"><span style="background:'+(ppk?ppk.color:'#999')+';width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name">'+(ppk?esc(ppk.name):esc(prx.park))+'</div>'+(prx.who!=='all'?whoChips(prx.who):'<div class="din-time">Everyone</div>')+'</div>'+statusBadge(prx.status)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'predit\',edit:\''+prx.id+'\',day:\''+prx.day+'\'})">'+IC.pencil+'</button></div></div>';
+      }
     }
-    body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0">Tap any day to set or change its park reservation.</div>';
+    if(!anyPR) body+='<div class="body-empty">No park reservations yet.</div>';
+    body+='<button class="btn-primary" onclick="openScreen({type:\'predit\',day:\''+DAYS[1].date+'\'})">Add park reservation</button>';
   }else if(sec==='visits'){
     for(var i3=0;i3<DAYS.length;i3++){var d=DAYS[i3];
       body+='<div class="ov-card"><div class="din-row" onclick="openScreen({type:\'dayedit\',day:\''+d.date+'\'})" style="cursor:pointer"><div style="flex:1"><div class="din-name">Jul '+d.d+' · '+d.dl+'</div><div class="din-time">'+esc(d.visit)+'</div></div>'
@@ -1275,7 +1281,14 @@ function scrDayEdit(){
   var body='<div class="hub-section-label" style="margin-left:0">Jul '+d.d+' · '+d.dl+'</div>';
   body+='<div class="field"><label class="field-label">Main park</label><select class="field-select" id="dy-park">'+parkOptions(d.park,null)+'</select></div>';
   body+='<div class="field"><label class="field-label">Second park <span class="opt">(two-park / hopper days)</span></label><select class="field-select" id="dy-park2">'+parkOptions(d.park2,'None')+'</select></div>';
-  body+='<div class="field"><label class="field-label">Park reservation</label><select class="field-select" id="dy-pres">'+parkOptions(d.parkRes,'None · Hopper')+'</select></div>';
+  body+='<div class="field"><label class="field-label">Park reservations <span class="opt">(assigned items — tap to edit)</span></label>';
+  var prs=parkResFor(d.date);
+  for(var pi=0;pi<prs.length;pi++){var pr=prs[pi],ppk=PARKS[pr.park];
+    body+='<div class="ov-card'+(isPlanningStatus(pr.status)?' planning':'')+'" style="margin:0 0 8px"><div class="din-row" style="padding:10px 12px"><span style="background:'+(ppk?ppk.color:'#999')+';width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name">'+(ppk?esc(ppk.name):esc(pr.park))+'</div>'+(pr.who!=='all'?whoChips(pr.who):'<div class="din-time">Everyone</div>')+'</div>'+statusBadge(pr.status)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'predit\',edit:\''+pr.id+'\',day:\''+d.date+'\'})">'+IC.pencil+'</button></div></div>';
+  }
+  if(!prs.length) body+='<div class="body-empty" style="text-align:left;padding:2px 2px 4px">No park reservation — Hopper day.</div>';
+  body+='<button class="add-link" style="margin-top:0" onclick="openScreen({type:\'predit\',day:\''+d.date+'\'})">'+IC.plus+' Add park reservation</button>';
+  body+='</div>';
   body+='<div class="field"><label class="field-label">Park hours</label><input class="field-input" id="dy-hours" placeholder="8:30 AM – 9:00 PM" value="'+esc(d.hours||'')+'"></div>';
   body+='<div class="field"><label class="field-label">Expected crowd</label><select class="field-select" id="dy-crowd">'+crowdOptions(d.crowd)+'</select></div>';
   body+='<div class="field"><label class="field-label">Day summary</label><input class="field-input" id="dy-visit" placeholder="EPCOT all day" value="'+esc(d.visit||'')+'"></div>';
@@ -1286,12 +1299,44 @@ function saveDay(){
   var d=DAYS_BY_DATE[S.screen.day];if(!d){closeScreen();return;}
   d.park=val('dy-park')||d.park;
   d.park2=val('dy-park2')||null;
-  d.parkRes=val('dy-pres')||null;
   d.hours=val('dy-hours');
   var c=val('dy-crowd');d.crowd=c?parseInt(c,10):null;
   d.visit=val('dy-visit');
   d.alert=val('dy-alert')||null;
   save('dtp_days',DAYS);toast('Day updated');closeScreen();render();
+}
+
+/* ── Park reservation (first-class item: park + day + people) ─ */
+function parkResOptions(sel){
+  var keys=['mk','ep','hs','ak'],h='';
+  for(var i=0;i<keys.length;i++)h+='<option value="'+keys[i]+'"'+(keys[i]===sel?' selected':'')+'>'+esc(PARKS[keys[i]].name)+'</option>';
+  return h;
+}
+function scrPREdit(){
+  var edit=S.screen.edit?PARKRES.filter(function(x){return x.id===S.screen.edit;})[0]:null;
+  if(S._formInit!=='pr'){S._formStatus.pr=edit?edit.status:'booked';S._formInit='pr';}
+  var st=S._formStatus.pr,pre=edit?edit.who:'all';
+  var body='<div class="field"><label class="field-label">Park</label><select class="field-select" id="pr-park">'+parkResOptions(edit?edit.park:'mk')+'</select></div>';
+  body+='<div class="field"><label class="field-label">Day</label><select class="field-select" id="pr-day">'+dayOptions((edit&&edit.day)||S.screen.day)+'</select></div>';
+  body+='<div class="field"><label class="field-label">Status</label><div class="seg">';
+  body+='<button class="seg-btn'+(st==='planning'?' on':'')+'" onclick="pickStatus(\'pr\',\'planning\')">Planning</button>';
+  body+='<button class="seg-btn'+(st==='booked'?' on book':'')+'" onclick="pickStatus(\'pr\',\'booked\')">Booked</button></div></div>';
+  body+=whoSelectField(pre);
+  body+='<div class="body-empty" style="text-align:left;padding:2px 2px 0">Park reservations are items assigned to people and a day. They drive the Park Res. line on the Agenda and the Overview — change one here and it updates everywhere.</div>';
+  if(edit) body+='<button class="btn-danger-link" onclick="delPR(\''+edit.id+'\')">Delete this reservation</button>';
+  return screenShell(edit?'Edit Park Reservation':'Add Park Reservation',body,'Save','savePR()');
+}
+function savePR(){
+  var edit=S.screen.edit?PARKRES.filter(function(x){return x.id===S.screen.edit;})[0]:null;
+  var rec=edit||{id:'pr'+Date.now()};
+  rec.park=val('pr-park')||'mk';rec.day=val('pr-day')||S.screen.day;
+  rec.status=S._formStatus.pr||'booked';rec.who=whoVal();
+  if(!edit)PARKRES.push(rec);
+  save('dtp_parkres',PARKRES);S._who=null;toast('Park reservation saved');closeScreen();render();
+}
+function delPR(id){
+  for(var i=0;i<PARKRES.length;i++)if(PARKRES[i].id===id){PARKRES.splice(i,1);break;}
+  save('dtp_parkres',PARKRES);toast('Reservation removed');closeScreen();render();
 }
 
 /* ── Day-plan stop ─────────────────────────────────────────── */

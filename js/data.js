@@ -45,7 +45,7 @@ var TRIPS = [
 var DAYS = [
   { date:"2026-07-14", d:"14", dl:"Tue", park:"trv", park2:null,
     badges:["Travel Day","Check-in","Activate APs"],
-    alert:null, crowd:null, hours:"Parks 8:30 AM – 9:00 PM", parkRes:null,
+    alert:null, crowd:null, hours:"Parks 8:30 AM – 9:00 PM",
     visit:"Evening at Disney Springs",
     strategy:"Land at MCO around noon, grab the Owners Locker delivery at the room, then keep day one loose — dinner at Disney Springs and an early night before the parks start.\n\nDon't forget to activate the Annual Passes at any park entrance or Guest Relations before the first park day. Magic Bands are already linked.\n\nOwners Locker is scheduled for room delivery on arrival day — text the front desk if it hasn't shown by 4 PM.",
     itin:[
@@ -59,7 +59,7 @@ var DAYS = [
   },
   { date:"2026-07-15", d:"15", dl:"Wed", park:"ep", park2:null,
     badges:["Single Pass Day","Park Reservation"],
-    alert:null, crowd:4, hours:"8:30 AM – 9:00 PM", parkRes:"ep",
+    alert:null, crowd:4, hours:"8:30 AM – 9:00 PM",
     visit:"EPCOT all day",
     strategy:"Enter EPCOT at rope drop and knock out the headliners before the heat. Test Track standby is reasonable early; Guardians is the Single Pass for the day.\n\nThe reliable July storm window hits around 3–4 PM — that's the cue to break for the resort pool, then come back for World Showcase and Luminous at 9.\n\nSpace 220 is still a 'want to try' — if a reservation opens on the app at 60 days, grab it. Otherwise the Garden Grill lunch carries the day.",
     itin:[
@@ -78,7 +78,7 @@ var DAYS = [
   { date:"2026-07-16", d:"16", dl:"Thu", park:"mk", park2:null,
     badges:["Early Entry 8:30 AM","Multi Pass Day","Park Reservation"],
     alert:"Severe afternoon thunderstorms likely 2–4 PM. Be at the tap stiles by 7:45 AM — the whole rope-drop morning depends on it.",
-    crowd:7, hours:"8:30 AM – 10:00 PM", parkRes:"mk",
+    crowd:7, hours:"8:30 AM – 10:00 PM",
     visit:"Magic Kingdom all day",
     strategy:"By roughly 1:00 PM the full must-do list is done — Tiana's, Big Thunder, Space, TRON, Jungle, Pirates, Haunted, Small World, plus Buzz from the nice-to-haves. That's the whole morning driven by the rolling re-book engine.\n\nEveryone buys Single Pass for TRON on Jul 9 at 7 AM sharp, and Multi Pass the same morning. Scan each Multi Pass the moment you tap in, then immediately book the next.\n\nStorms are likely 2–4 PM. Use that window for the afternoon resort break, then return in the evening for the Monorail Crawl, Happily Ever After, and the two nighttime re-rides you've banked.",
     itin:[
@@ -97,7 +97,7 @@ var DAYS = [
   },
   { date:"2026-07-17", d:"17", dl:"Fri", park:"hs", park2:"ep",
     badges:["Park Hopper","Single Pass Day"],
-    alert:null, crowd:5, hours:"HS 8:30 AM – 9:00 PM · EPCOT to 9:00 PM", parkRes:null,
+    alert:null, crowd:5, hours:"HS 8:30 AM – 9:00 PM · EPCOT to 9:00 PM",
     visit:"Morning Hollywood Studios · evening EPCOT via International Gateway",
     strategy:"No official park reservation today — this is a hopper day. Morning at Hollywood Studios for the headliners, then hop to EPCOT in the evening through the International Gateway since the BoardWalk is a short walk away.\n\nRise of the Resistance is the Single Pass. Get Slinky and the Multi Pass rides done before the midday heat, break at the BoardWalk pool, then walk in the back gate of EPCOT around 5 for World Showcase, a Le Cellier dinner, and Luminous.\n\nThe International Gateway entrance puts you right at the UK/France end — perfect for an evening that's mostly eating and drinking around the lagoon.",
     itin:[
@@ -115,7 +115,7 @@ var DAYS = [
   },
   { date:"2026-07-18", d:"18", dl:"Sat", park:"ak", park2:null,
     badges:["Early Entry","Multi Pass Day","Park Reservation"],
-    alert:null, crowd:6, hours:"7:00 AM – 8:00 PM", parkRes:"ak",
+    alert:null, crowd:6, hours:"7:00 AM – 8:00 PM",
     visit:"Animal Kingdom all day",
     strategy:"Animal Kingdom rewards an early start more than any other park. Flight of Passage is the Single Pass — everything else falls into place with Multi Pass and a rope-drop Safari before the animals nap.\n\nMidday gets brutally hot with little shade, so plan the long Tiffins / Nomad Lounge lunch for the worst of it. Afternoon is for shows and a slow Pandora walk-through after dark when it lights up.\n\nNo nighttime spectacular tonight — head back to the BoardWalk for a relaxed last full evening.",
     itin:[
@@ -134,7 +134,7 @@ var DAYS = [
   { date:"2026-07-19", d:"19", dl:"Sun", park:"trv", park2:"mk",
     badges:["Last Day","Check-out","Two Return Flights"],
     alert:"Resort check-out is 11:00 AM. Drop the Owners Locker at Bell Services for pickup before you leave.",
-    crowd:6, hours:"MK 8:00 AM – 11:00 PM", parkRes:null,
+    crowd:6, hours:"MK 8:00 AM – 11:00 PM",
     visit:"Morning Magic Kingdom · afternoon & evening departures",
     strategy:"Two flights home today. Scott, Hayley and Corey are on the afternoon Delta out of MCO; Nancy and Cian have a later JetBlue and can squeeze in more park time.\n\nMorning is a relaxed last hurrah at Magic Kingdom — no Lightning Lanes booked, just favorites and a Main Street breakfast. Bags go to Bell Services at check-out so nobody is dragging luggage around.\n\nNancy & Cian's flight is still showing as planning — confirm the JetBlue booking before the trip so it's locked in.",
     itin:[
