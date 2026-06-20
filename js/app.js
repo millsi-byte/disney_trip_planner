@@ -110,7 +110,7 @@ function genDays(tid){
   var WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   while(cur<=end){
     var ds=cur.getUTCFullYear()+'-'+('0'+(cur.getUTCMonth()+1)).slice(-2)+'-'+('0'+cur.getUTCDate()).slice(-2);
-    DAYS.push({trip:tid,date:ds,d:String(cur.getUTCDate()),dl:WD[cur.getUTCDay()],badges:[],alert:null,visit:'',blurb:'',strategy:'',itin:[]});
+    DAYS.push({trip:tid,date:ds,d:String(cur.getUTCDate()),dl:WD[cur.getUTCDay()],tags:[],alert:null,visit:'',blurb:'',strategy:'',itin:[]});
     cur.setUTCDate(cur.getUTCDate()+1);
   }
 }
@@ -356,6 +356,25 @@ function dayConditions(d){
   }
   return o;
 }
+/* badges derived from the day's items (+ any custom one-off tags) */
+function dayBadges(d){
+  var date=d.date,out=[],vis=function(w){return visible(w);};
+  if(flightsFor(date).filter(function(f){return vis(f.who);}).length) out.push('Travel Day');
+  var anyIn=false,anyOut=false;
+  for(var i=0;i<RESORTS.length;i++){var r=RESORTS[i];if(r.trip===S.tripId&&vis(r.who)){if(r.checkin===date)anyIn=true;if(r.checkout===date)anyOut=true;}}
+  if(anyIn) out.push('Check-in');
+  if(anyOut) out.push('Check-out');
+  if(visitsFor(date).filter(function(v){return vis(v.who);}).length>=2) out.push('Park Hopper');
+  if(parkResFor(date).filter(function(p){return vis(p.who);}).length) out.push('Park Reservation');
+  if(parkHoursFor(date).some(function(h){return h.early;})) out.push('Early Entry');
+  var lls=llFor(date).filter(function(l){return vis(l.who);});
+  if(lls.some(function(l){return l.tier==='sp';})) out.push('Single Pass Day');
+  if(lls.some(function(l){return l.tier==='mp1'||l.tier==='mp2';})) out.push('Multi Pass Day');
+  var TD=tripDays();
+  if(TD.length&&TD[TD.length-1].date===date) out.push('Last Day');
+  if(d.tags&&d.tags.length) out=out.concat(d.tags);
+  return out;
+}
 function renderAgenda(){
   var d=day();
   if(!d) return '<div class="body-empty" style="margin-top:30px">No days for this trip yet.<br><br>Set the trip\'s start and end dates (tap the trip name in the header → edit) and days will be generated automatically.</div>';
@@ -373,8 +392,9 @@ function renderAgenda(){
   o+='<div class="h-park">'+esc(d.visit||pk.name)+'</div>';
   if(p2&&!d.visit) o+='<div class="h-park2"><span class="p2dot" style="background:'+p2.color+'"></span>then '+p2.name+' · '+timingLbl(sec.timing).toLowerCase()+'</div>';
   if(d.blurb) o+='<div class="h-resort">'+esc(d.blurb)+'</div>';
+  var bdg=dayBadges(d);
   o+='<div class="h-badges">';
-  for(var b=0;b<(d.badges||[]).length;b++) o+='<span class="badge">'+esc(d.badges[b])+'</span>';
+  for(var b=0;b<bdg.length;b++) o+='<span class="badge">'+esc(bdg[b])+'</span>';
   o+='</div></div>';
   if(d.alert) o+='<div class="hero-alert">'+IC.warn+'<div class="hero-alert-txt">'+esc(d.alert)+'</div></div>';
   o+='</div>';
@@ -1418,6 +1438,7 @@ function scrDayEdit(){
   body+='</div>';
   body+='<div class="field"><label class="field-label">Day headline <span class="opt">(big text on the day — defaults to the park name)</span></label><input class="field-input" id="dy-visit" placeholder="'+esc(pkOf(d.date).name)+'" value="'+esc(d.visit||'')+'"></div>';
   body+='<div class="field"><label class="field-label">Short blurb <span class="opt">(small line under the headline)</span></label><input class="field-input" id="dy-blurb" placeholder="e.g. EPCOT all day" value="'+esc(d.blurb||'')+'"></div>';
+  body+='<div class="field"><label class="field-label">Custom tags <span class="opt">(comma-separated · most pills are auto from your items)</span></label><input class="field-input" id="dy-tags" placeholder="e.g. Activate APs" value="'+esc((d.tags||[]).join(', '))+'"></div>';
   body+='<div class="field"><label class="field-label">Alert / heads-up <span class="opt">(optional)</span></label><textarea class="field-input" id="dy-alert" rows="3" placeholder="e.g. Storms likely 2–4 PM">'+esc(d.alert||'')+'</textarea></div>';
   return screenShell('Edit Day',body,'Save','saveDay()');
 }
@@ -1425,6 +1446,7 @@ function saveDay(){
   var d=dayByDate(S.screen.day);if(!d){closeScreen();return;}
   d.visit=val('dy-visit');
   d.blurb=val('dy-blurb');
+  d.tags=val('dy-tags').split(',').map(function(s){return s.trim();}).filter(function(s){return s;});
   d.alert=val('dy-alert')||null;
   save('dtp_days',DAYS);toast('Day updated');closeScreen();render();
 }

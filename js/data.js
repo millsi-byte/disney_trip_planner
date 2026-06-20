@@ -44,7 +44,7 @@ var TRIPS = [
 /* park2 = secondary park visit (handles two-park days)        */
 var DAYS = [
   { date:"2026-07-14", d:"14", dl:"Tue", trip:"jul26",
-    badges:["Travel Day","Check-in","Activate APs"],
+    tags:["Activate APs"],
     alert:null,
     visit:"Travel Day · Disney Springs",
     blurb:"Dinner at Disney Springs, early night",
@@ -59,7 +59,7 @@ var DAYS = [
     ]
   },
   { date:"2026-07-15", d:"15", dl:"Wed", trip:"jul26",
-    badges:["Single Pass Day","Park Reservation"],
+    tags:[],
     alert:null,
     visit:"",
     blurb:"EPCOT all day",
@@ -78,7 +78,7 @@ var DAYS = [
     ]
   },
   { date:"2026-07-16", d:"16", dl:"Thu", trip:"jul26",
-    badges:["Early Entry 8:30 AM","Multi Pass Day","Park Reservation"],
+    tags:[],
     alert:"Severe afternoon thunderstorms likely 2–4 PM. Be at the tap stiles by 7:45 AM — the whole rope-drop morning depends on it.",
     visit:"",
     blurb:"Magic Kingdom all day",
@@ -98,7 +98,7 @@ var DAYS = [
     ]
   },
   { date:"2026-07-17", d:"17", dl:"Fri", trip:"jul26",
-    badges:["Park Hopper","Single Pass Day"],
+    tags:[],
     alert:null,
     visit:"",
     blurb:"Morning Hollywood Studios · evening EPCOT via International Gateway",
@@ -117,7 +117,7 @@ var DAYS = [
     ]
   },
   { date:"2026-07-18", d:"18", dl:"Sat", trip:"jul26",
-    badges:["Early Entry","Multi Pass Day","Park Reservation"],
+    tags:[],
     alert:null,
     visit:"",
     blurb:"Animal Kingdom all day",
@@ -136,7 +136,7 @@ var DAYS = [
     ]
   },
   { date:"2026-07-19", d:"19", dl:"Sun", trip:"jul26",
-    badges:["Last Day","Check-out","Two Return Flights"],
+    tags:["Two Return Flights"],
     alert:"Resort check-out is 11:00 AM. Drop the Owners Locker at Bell Services for pickup before you leave.",
     visit:"",
     blurb:"Morning Magic Kingdom · afternoon & evening departures",
