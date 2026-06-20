@@ -61,7 +61,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
-var DATA_VERSION='6';
+var DATA_VERSION='7';
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -110,7 +110,7 @@ function genDays(tid){
   var WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   while(cur<=end){
     var ds=cur.getUTCFullYear()+'-'+('0'+(cur.getUTCMonth()+1)).slice(-2)+'-'+('0'+cur.getUTCDate()).slice(-2);
-    DAYS.push({trip:tid,date:ds,d:String(cur.getUTCDate()),dl:WD[cur.getUTCDay()],badges:[],alert:null,visit:'',strategy:'',itin:[]});
+    DAYS.push({trip:tid,date:ds,d:String(cur.getUTCDate()),dl:WD[cur.getUTCDay()],badges:[],alert:null,visit:'',blurb:'',strategy:'',itin:[]});
     cur.setUTCDate(cur.getUTCDate()+1);
   }
 }
@@ -371,6 +371,7 @@ function renderAgenda(){
   o+='<div class="h-date">'+monOf(d.date)+' '+d.d+' · '+(WDF[d.dl]||d.dl)+'</div>';
   o+='<div class="h-park">'+esc(d.visit||pk.name)+'</div>';
   if(p2) o+='<div class="h-park2"><span class="p2dot" style="background:'+p2.color+'"></span>then '+p2.name+' · evening</div>';
+  if(d.blurb) o+='<div class="h-resort">'+esc(d.blurb)+'</div>';
   o+='<div class="h-badges">';
   for(var b=0;b<(d.badges||[]).length;b++) o+='<span class="badge">'+esc(d.badges[b])+'</span>';
   o+='</div></div>';
@@ -1415,12 +1416,14 @@ function scrDayEdit(){
   body+='<button class="add-link" style="margin-top:0" onclick="openScreen({type:\'hoursedit\',day:\''+d.date+'\'})">'+IC.plus+' Add park hours</button>';
   body+='</div>';
   body+='<div class="field"><label class="field-label">Day headline <span class="opt">(big text on the day — defaults to the park name)</span></label><input class="field-input" id="dy-visit" placeholder="'+esc(pkOf(d.date).name)+'" value="'+esc(d.visit||'')+'"></div>';
+  body+='<div class="field"><label class="field-label">Short blurb <span class="opt">(small line under the headline)</span></label><input class="field-input" id="dy-blurb" placeholder="e.g. EPCOT all day" value="'+esc(d.blurb||'')+'"></div>';
   body+='<div class="field"><label class="field-label">Alert / heads-up <span class="opt">(optional)</span></label><textarea class="field-input" id="dy-alert" rows="3" placeholder="e.g. Storms likely 2–4 PM">'+esc(d.alert||'')+'</textarea></div>';
   return screenShell('Edit Day',body,'Save','saveDay()');
 }
 function saveDay(){
   var d=dayByDate(S.screen.day);if(!d){closeScreen();return;}
   d.visit=val('dy-visit');
+  d.blurb=val('dy-blurb');
   d.alert=val('dy-alert')||null;
   save('dtp_days',DAYS);toast('Day updated');closeScreen();render();
 }
