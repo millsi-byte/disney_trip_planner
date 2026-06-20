@@ -63,7 +63,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='10';
-var BUILD='35';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='36';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -395,7 +395,6 @@ function renderHeader(){
   h+='<div class="hdr-trip-name">'+esc(t.name)+' '+IC.chevd+'</div>';
   h+='<div class="hdr-trip-sub">'+esc(t.dates)+'</div></button>';
   h+='<button class="hdr-iam" onclick="openScreen({type:\'persona\'})">';
-  h+='<span class="iam-lbl">I am</span>';
   h+='<span class="iam-name"><span class="pdot" style="background:'+me.color+'">'+esc(me.name[0])+'</span>'+esc(me.name)+' '+IC.chevd+'</span>';
   h+='</button>';
   h+='</header>';
@@ -1387,25 +1386,30 @@ function scrSettings(){
    - signed in: switch persona, change your own PIN, or log out */
 function scrPersona(){
   var signedIn=false;try{signedIn=!!localStorage.getItem('dtp_persona');}catch(e){}
-  var mem=ALL_IDS;
-  var body='<div class="hub-section-label" style="margin-left:0">'+(signedIn?'Switch to':'Who are you?')+'</div>';
-  body+='<div class="whoselect" style="margin-bottom:16px">';
-  for(var i=0;i<mem.length;i++){var p=person(mem[i]);if(!p)continue;var on=signedIn&&S.persona===p.id;
-    body+='<div class="who-opt'+(on?' on':'')+'" onclick="setPersona(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+(p.admin?' · Admin':'')+(p.pin?' '+IC.lock:'')+(on?'<span class="wcheck" style="display:flex">'+IC.checkw.replace('currentColor','#15803D')+'</span>':'')+'</div>';
-  }
-  body+='</div>';
-  body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px">Your choice is stored on this device only — it personalises your packing list, to-dos and assignments. First time logging in as someone, you\'ll set a PIN; after that a '+IC.lock+' persona needs that PIN to switch into.</div>';
   if(signedIn){
+    /* account menu — no persona switching here; log out to become someone else */
     var me=person(S.persona);
-    body+='<div class="hub-section-label" style="margin-left:0">Your account</div>';
+    var body='<div class="hub-section-label" style="margin-left:0">Your account</div>';
+    body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px">You\'re signed in as <strong>'+esc(me?me.name:'')+'</strong>'+(isAdmin()?' · Admin':'')+'. To use the app as someone else, log out and choose a persona.</div>';
     body+='<button class="btn-secondary" onclick="setMyPin()">Change my PIN</button>';
     body+='<button class="btn-secondary" onclick="logoutPersona()">Log out</button>';
-    body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px">'+(isAdmin()?'You\'re an admin — manage people and templates in <strong>Plan → Settings</strong>.':'Forgot your PIN? An admin can reset it in <strong>Settings → People</strong>.')+'</div>';
-    body+='<div class="hub-section-label" style="margin-left:0">Device</div>';
-    body+='<button class="btn-secondary" onclick="forceUpdate()">Force app update</button>';
-    body+='<button class="btn-secondary" onclick="if(confirm(\'Reset all saved data on this device? This wipes everything and starts fresh.\')){localStorage.clear();location.reload();}">Reset local data</button>';
+    body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px">'+(isAdmin()?'Manage people and templates in <strong>Plan → Settings</strong>.':'Forgot your PIN? An admin can reset it in <strong>Settings → People</strong>.')+'</div>';
+    return screenShell('Account',body,null,null,'Done');
   }
-  return screenShell(signedIn?'Account':'Welcome',body,null,null,signedIn?'Done':'');
+  /* first run / after logout — choose who you are */
+  var mem=ALL_IDS;
+  var body='<div class="hub-section-label" style="margin-left:0">Choose your persona</div>';
+  body+='<div class="whoselect" style="margin-bottom:16px">';
+  for(var i=0;i<mem.length;i++){var p=person(mem[i]);if(!p)continue;
+    body+='<div class="who-opt" onclick="setPersona(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+(p.admin?' · Admin':'')+(p.pin?' '+IC.lock:'')+'</div>';
+  }
+  body+='</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px">Your choice is stored on this device only — it personalises your packing list, to-dos and assignments. The first time as someone you\'ll set a PIN; after that a '+IC.lock+' persona needs that PIN.</div>';
+  /* device recovery tools live here (reachable any time via Log out) */
+  body+='<div class="hub-section-label" style="margin-left:0">Device</div>';
+  body+='<button class="btn-secondary" onclick="forceUpdate()">Force app update</button>';
+  body+='<button class="btn-secondary" onclick="if(confirm(\'Reset all saved data on this device? This wipes everything and starts fresh.\')){localStorage.clear();location.reload();}">Reset local data</button>';
+  return screenShell('Choose Persona',body,null,null,'');
 }
 
 /* Manage personas — global add / rename / recolor / delete */
