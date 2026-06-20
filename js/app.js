@@ -36,7 +36,8 @@ var IC = {
   pencil:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>',
   back:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>',
   send:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
-  upload:'<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>'
+  upload:'<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
+  bell:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>'
 };
 
 /* ── State ─────────────────────────────────────────────────── */
@@ -65,7 +66,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='53';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='54';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -103,7 +104,9 @@ RESORTS = load('dtp_resorts', RESORTS);
 PARKRES = load('dtp_parkres', PARKRES);
 REBOOKS = load('dtp_rebooks', REBOOKS);
 TRIPS   = load('dtp_trips', TRIPS);
+NOTIFS  = load('dtp_notifs', NOTIFS);
 S.persona = load('dtp_persona', S.persona);
+function saveNotifs(){save('dtp_notifs',NOTIFS);}
 
 /* every planning item belongs to a trip — default seed items to jul26 */
 function tagTrip(coll){for(var i=0;i<coll.length;i++)if(!coll[i].trip)coll[i].trip='jul26';}
@@ -303,9 +306,170 @@ function screenItem(){
 /* remove just yourself from an item's people (the self-removal exception) */
 function removeMe(){
   var it=screenItem();if(!it){closeScreen();return;}
+  var cat=CAT_OF[S.screen.type]||'';
+  var oldWho=it.who;
   if(it.who==='all') it.who=tripMembers().filter(function(m){return m!==S.persona;});
   else if(Array.isArray(it.who)) it.who=it.who.filter(function(m){return m!==S.persona;});
-  persist();toast('Removed you from this');closeScreen();render();
+  persist();
+  if(cat) notifyChange({trip:it.trip,cat:cat,label:notifLabel(cat,it),item:it,oldWho:oldWho,newWho:it.who,actor:S.persona,optIn:S._notify});
+  toast('Removed you from this');closeScreen();render();
+}
+
+/* ============================================================
+   NOTIFICATIONS
+   action-required kinds always notify the creator; everything else is
+   gated by trip status (planning = silent unless opted in; active = prompt)
+   ============================================================ */
+var ACTION_CATS={Dining:1,'Lightning Lane':1,'Park reservation':1};
+function isActionCat(c){return !!ACTION_CATS[c];}
+/* screen type → notification category (drives self-leave from plan items) */
+var CAT_OF={adddining:'Dining',llbook:'Lightning Lane',addll:'Lightning Lane',predit:'Park reservation',
+  showedit:'Show',addflight:'Flight',resortedit:'Resort',visedit:'Park visit'};
+
+function pname(id){var p=person(id);return p?p.name:'Someone';}
+/* a who-bearing item's responsible person: its creator, else the trip owner */
+function creatorOf(item,tid){
+  if(item&&item.by)return item.by;
+  var t=tripById(tid||(item&&item.trip)||S.tripId);
+  return t?t.by:null;
+}
+/* normalise an item's `who` to an explicit member array for a given trip */
+function whoArrFor(who,tid){
+  if(who==='all'){var t=tripById(tid)||trip();return (t&&t.members&&t.members.length)?t.members.slice():tripMembers();}
+  return Array.isArray(who)?who.slice():[];
+}
+function notifLabel(cat,it){
+  it=it||{};
+  if(cat==='Dining')return it.name||'a dining reservation';
+  if(cat==='Lightning Lane')return it.ride||'a Lightning Lane';
+  if(cat==='Park reservation')return (it.park&&PARKS[it.park]?PARKS[it.park].name:'a park')+' reservation';
+  if(cat==='Show')return it.name||'a show';
+  if(cat==='Flight')return it.label||'a flight';
+  if(cat==='Resort')return it.name||'a resort stay';
+  if(cat==='Park visit')return (it.park&&PARKS[it.park]?PARKS[it.park].name:'a park')+' visit';
+  if(cat==='To Do')return it.n||'a to-do';
+  if(cat==='Packing')return it.n||'a packing item';
+  return 'this item';
+}
+
+/* pure: split a who-change into forced (always-send) + optional notifications */
+function buildNotifPlan(o){
+  var actor=o.actor||S.persona, cat=o.cat, label=o.label||'this item', item=o.item||{}, tid=o.trip||S.tripId;
+  var oldA=whoArrFor(o.oldWho,tid), newA=whoArrFor(o.newWho,tid);
+  var added=newA.filter(function(x){return oldA.indexOf(x)<0;});
+  var removed=oldA.filter(function(x){return newA.indexOf(x)<0;});
+  var priv=!!item.priv, onItem=newA, who=pname(actor);
+  var optional=[], forced=[];
+  function mk(to,kind,text){return {to:to,kind:kind,cat:cat,label:label,text:text,trip:tid,from:actor};}
+  added.forEach(function(id){ if(id&&id!==actor) optional.push(mk(id,'added',who+' added you to “'+label+'” ('+cat+')')); });
+  removed.forEach(function(id){
+    if(!id||id===actor)return;
+    if(priv&&onItem.indexOf(id)<0)return;       /* hidden item: only notify people still on it */
+    optional.push(mk(id,'removed',who+' removed you from “'+label+'” ('+cat+')'));
+  });
+  if(isActionCat(cat)){
+    var creator=creatorOf(item,tid);
+    var canSeeCreator=!priv||onItem.indexOf(creator)>=0;
+    if(creator&&creator!==actor&&canSeeCreator){
+      if(added.length){
+        var names=added.map(function(x){return pname(x);}).join(', ');
+        forced.push(mk(creator,'action',who+' added '+names+' to “'+label+'” — you may need to update the booking'));
+      }
+      if(removed.indexOf(actor)>=0){
+        forced.push(mk(creator,'left',who+' left “'+label+'” — you may need to update the booking'));
+      }
+    }
+  }
+  return {optional:optional,forced:forced};
+}
+
+function sendNotifPlan(items){
+  if(!items||!items.length)return 0;
+  for(var i=0;i<items.length;i++){var p=items[i];
+    NOTIFS.push({id:'n'+Date.now()+'_'+Math.random().toString(36).slice(2,6),
+      trip:p.trip,to:p.to,from:p.from,kind:p.kind,cat:p.cat,label:p.label,text:p.text,time:Date.now(),read:false});
+  }
+  saveNotifs();return items.length;
+}
+function bumpBell(){var hh=document.getElementById('header-host');if(hh)hh.innerHTML=renderHeader();}
+
+/* orchestrate after a who-change: forced always fire; optional are prompted
+   on active trips (or when opted in during planning), otherwise dropped */
+function notifyChange(o){
+  var plan=buildNotifPlan(o);
+  var forcedTo={};plan.forced.forEach(function(p){forcedTo[p.to]=1;});
+  var optional=plan.optional.filter(function(p){return !forcedTo[p.to];});  /* don't double-notify the creator */
+  if(plan.forced.length)sendNotifPlan(plan.forced);
+  var t=tripById(o.trip)||trip();
+  var wantPrompt=(t&&t.status==='active')||!!o.optIn;
+  if(wantPrompt&&optional.length){ openNotifConfirm(optional); }
+  bumpBell();
+}
+
+/* confirm sheet — pick who to notify (everyone preselected, can remove) */
+function openNotifConfirm(items){
+  S._notifQ=items;S._notifSel=new Set();for(var i=0;i<items.length;i++)S._notifSel.add(i);
+  var host=document.getElementById('notif-host');
+  if(!host){host=document.createElement('div');host.id='notif-host';document.body.appendChild(host);}
+  renderNotifConfirm();
+}
+function notifKindShort(k){return k==='removed'?'removed':k==='left'?'left':k==='action'?'needs action':'added';}
+function renderNotifConfirm(){
+  var host=document.getElementById('notif-host');if(!host)return;
+  var items=S._notifQ||[];if(!items.length){host.innerHTML='';return;}
+  var h='<div class="pin-backdrop" onclick="if(event.target===this)skipNotif()"><div class="pin-modal" style="max-width:340px">';
+  h+='<div class="pin-title">Send a notification?</div>';
+  h+='<div class="pin-sub">Everyone affected is selected — tap to leave anyone out.</div>';
+  h+='<div class="whoselect" style="margin:12px 0 4px">';
+  for(var i=0;i<items.length;i++){var it=items[i],p=person(it.to);if(!p)continue;var on=S._notifSel.has(i);
+    h+='<div class="who-opt'+(on?' on':'')+'" onclick="toggleNotifSel('+i+')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+'<span class="notif-sel-kind">'+notifKindShort(it.kind)+'</span><span class="wcheck">'+IC.checkw.replace('currentColor','#15803D')+'</span></div>';
+  }
+  h+='</div>';
+  h+='<div style="display:flex;gap:8px;margin-top:14px"><button class="btn-secondary" style="margin:0;flex:1" onclick="skipNotif()">Skip</button><button class="btn-secondary green" style="margin:0;flex:1" onclick="sendNotif()">Send</button></div>';
+  h+='</div></div>';
+  host.innerHTML=h;
+}
+function toggleNotifSel(i){if(S._notifSel.has(i))S._notifSel.delete(i);else S._notifSel.add(i);renderNotifConfirm();}
+function skipNotif(){S._notifQ=null;S._notifSel=null;var host=document.getElementById('notif-host');if(host)host.innerHTML='';}
+function sendNotif(){
+  var items=S._notifQ||[],sel=[];
+  (S._notifSel||new Set()).forEach(function(i){if(items[i])sel.push(items[i]);});
+  var n=sendNotifPlan(sel);skipNotif();bumpBell();
+  toast(n?('Notified '+n+' '+(n===1?'person':'people')):'No notifications sent');
+}
+
+/* recipient-side queries */
+function notifsFor(pid){pid=pid||S.persona;return NOTIFS.filter(function(n){return n.to===pid;}).sort(function(a,b){return b.time-a.time;});}
+function notifUnread(pid){pid=pid||S.persona;var n=0;for(var i=0;i<NOTIFS.length;i++)if(NOTIFS[i].to===pid&&!NOTIFS[i].read)n++;return n;}
+function markNotifsRead(pid){pid=pid||S.persona;var ch=false;for(var i=0;i<NOTIFS.length;i++)if(NOTIFS[i].to===pid&&!NOTIFS[i].read){NOTIFS[i].read=true;ch=true;}if(ch)saveNotifs();}
+function clearNotifs(){NOTIFS=NOTIFS.filter(function(n){return n.to!==S.persona;});saveNotifs();
+  var h=document.getElementById('screen-host');if(h){h.innerHTML=renderScreen();var s=h.firstChild;if(s)s.classList.add('in');}bumpBell();}
+function agoText(ts){
+  var s=Math.floor((Date.now()-ts)/1000);if(s<60)return 'just now';
+  var m=Math.floor(s/60);if(m<60)return m+'m ago';
+  var hr=Math.floor(m/60);if(hr<24)return hr+'h ago';
+  var d=Math.floor(hr/24);if(d<7)return d+'d ago';
+  try{return new Date(ts).toLocaleDateString();}catch(e){return '';}
+}
+function notifKindCls(k){return (k==='action'||k==='left')?'nk-act':k==='removed'?'nk-rm':'nk-add';}
+function notifKindMark(k){return (k==='action'||k==='left')?IC.warn:k==='removed'?'<span style="font-weight:800">–</span>':IC.checkw;}
+function notifDefault(){return !!(trip()&&trip().status==='active');}
+function notifToggle(){S._notify=!S._notify;renderScreen_inplace2();}
+/* the in-editor notify control (appended after the who-select) */
+function notifyField(cat){
+  var active=!!(trip()&&trip().status==='active'),on=!!S._notify;
+  var h='<div class="field"><label class="field-label">Notifications</label>';
+  if(active){
+    h+='<div class="notify-note">'+IC.bell+' This trip is active — when you save, you’ll be asked who to notify about changes to who’s on this.</div>';
+  }else{
+    h+='<div class="notify-row'+(on?' on':'')+'" onclick="notifToggle()"><span class="notify-check">'+(on?IC.checkw:'')+'</span>';
+    h+='<div><div class="notify-lbl">Notify people of this change</div><div class="notify-sub">This trip is still planning, so changes stay silent unless you switch this on.</div></div></div>';
+  }
+  if(isActionCat(cat))h+='<div class="notify-note amber">'+IC.warn+' Whoever booked this is always told when people join or leave — it may need a real reservation change.</div>';
+  return h+'</div>';
+}
+function afterWhoSave(cat,rec,oldWho){
+  notifyChange({trip:rec.trip||S.tripId,cat:cat,label:notifLabel(cat,rec),item:rec,oldWho:oldWho,newWho:rec.who,actor:S.persona,optIn:S._notify});
 }
 
 /* queries — all scoped to the current trip */
@@ -375,6 +539,7 @@ function openScreen(def){
   S.screen=def;S._who=null;S._formStatus={};S._delpk=null;S._deltd=null;S.tdForm=null;S.tdScope='mine';S._tdPriv=false;
   S.pkForm=null;S.pkScope='mine';S._delsect=null;S._pksect=null;ADD.psect=null;
   S._formLoc=null;S._formTier=null;S._formInit=null;S._members=null;S._formColor=null;
+  S._notify=notifDefault();
   if(def.type==='addflight'){S.formLegs=def.edit?((FLIGHTS.filter(function(f){return f.id===def.edit;})[0]||{legs:[0]}).legs.length):1;}
   else{S.formLegs=1;}
   renderOverlay();requestAnimationFrame(function(){var s=document.getElementById('screen-host').firstChild;if(s)s.classList.add('in');});
@@ -487,12 +652,12 @@ function pkSectDel(pid,c){if(!pkCanList(pid))return;var k='ds_'+pid+'_'+c;if(S._
 function pkSectDelCancel(){S._delsect=null;refreshLists();}
 /* per-item editor (storage, need-to-buy, buyer assignment) */
 function pkFormItem(){var f=S.pkForm;return f?(PACKING[f.pid]&&PACKING[f.pid][f.c]&&PACKING[f.pid][f.c].items[f.i]):null;}
-function pkItemEdit(pid,c,i){var it=PACKING[pid][c].items[i];if(!pkCanItem(pid,it)){toast('Only the owner or an admin can edit this');return;}S.pkForm={pid:pid,c:c,i:i};S._who=new Set(it.who||[]);refreshLists();}
+function pkItemEdit(pid,c,i){var it=PACKING[pid][c].items[i];if(!pkCanItem(pid,it)){toast('Only the owner or an admin can edit this');return;}S.pkForm={pid:pid,c:c,i:i};S._who=new Set(it.who||[]);S._notify=notifDefault();refreshLists();}
 function pkItemCancel(){S.pkForm=null;S._who=null;refreshLists();}
 function pkFormStore(v){var it=pkFormItem();if(!it)return;it.l=v;if(v)it.qty=0;else if(!it.qty)it.qty=1;saveLists();renderScreen_inplace2();}
 function pkFormNeed(v){var it=pkFormItem();if(!it)return;it.needBuy=v;saveLists();renderScreen_inplace2();}
 function pkFormPriv(v){var it=pkFormItem();if(!it)return;it.priv=v;saveLists();renderScreen_inplace2();}
-function pkItemSave(){var it=pkFormItem();if(!it){pkItemCancel();return;}var nm=val('pki-name');if(nm)it.n=nm;it.who=S._who?tripMembers().filter(function(id){return S._who.has(id);}):[];saveLists();S.pkForm=null;S._who=null;toast('Saved');refreshLists();}
+function pkItemSave(){var it=pkFormItem();if(!it){pkItemCancel();return;}var nm=val('pki-name');if(nm)it.n=nm;var oldWho=it.who||[];it.who=S._who?tripMembers().filter(function(id){return S._who.has(id);}):[];saveLists();afterWhoSave('Packing',it,oldWho);S.pkForm=null;S._who=null;toast('Saved');refreshLists();}
 /* trip-wide Need to Buy (shared) */
 /* shared shopping entries — private items only surface to their own owner */
 function needBuyEntries(){
@@ -558,8 +723,8 @@ function tdMarkStarted(pid){pid=pid||S.persona;var s=tdStartedSet();if(s.indexOf
 function refreshTodo(){var b=document.getElementById('todo-body');if(b&&S.screen&&S.screen.type==='todolist')b.innerHTML=todoBody();else render();}
 
 function tdToggle(id){var t=tdById(id);if(!t)return;if(!tdCanCheck(t)){toast('Only the creator, an assignee or an admin can check this');return;}t.done=!t.done;saveTODO();refreshTodo();}
-function tdAddOpen(){S.tdForm={id:null};S._who=new Set();S._tdPriv=false;refreshTodo();}
-function tdEdit(id){var t=tdById(id);if(!t)return;if(!tdCanEdit(t)){toast('Only the creator or an admin can edit this');return;}S.tdForm={id:id};S._who=new Set(t.who||[]);S._tdPriv=!!t.priv;refreshTodo();}
+function tdAddOpen(){S.tdForm={id:null};S._who=new Set();S._tdPriv=false;S._notify=notifDefault();refreshTodo();}
+function tdEdit(id){var t=tdById(id);if(!t)return;if(!tdCanEdit(t)){toast('Only the creator or an admin can edit this');return;}S.tdForm={id:id};S._who=new Set(t.who||[]);S._tdPriv=!!t.priv;S._notify=notifDefault();refreshTodo();}
 function tdCancelForm(){S.tdForm=null;S._who=null;S._tdPriv=false;refreshTodo();}
 function tdRemoveCancel(){S._deltd=null;refreshTodo();}
 function tdFormPriv(v){S._tdPriv=v;renderScreen_inplace2();}
@@ -569,11 +734,12 @@ function tdSave(){
   var edit=f.id?tdById(f.id):null;
   if(edit&&!tdCanEdit(edit)){toast('Only the creator or an admin can edit this');S.tdForm=null;refreshTodo();return;}
   var creator=edit?edit.by:S.persona;
+  var oldWho=edit?(edit.who||[]):[];
   var who=S._who?tripMembers().filter(function(id){return id!==creator&&S._who.has(id);}):[];
   var rec=edit||{id:'td'+Date.now(),trip:S.tripId,by:S.persona,done:false};
   rec.n=nm;rec.when=val('td-when');rec.who=who;rec.priv=!!S._tdPriv;
   if(!edit){TODO.push(rec);tdMarkStarted(S.persona);}
-  saveTODO();S.tdForm=null;S._who=null;S._tdPriv=false;toast('Saved');refreshTodo();
+  saveTODO();afterWhoSave('To Do',rec,oldWho);S.tdForm=null;S._who=null;S._tdPriv=false;toast('Saved');refreshTodo();
 }
 function tdRemove(id){
   var t=tdById(id);if(!t)return;
@@ -606,6 +772,8 @@ function renderHeader(){
   h+='<button class="hdr-trip left" onclick="openSheet({type:\'trips\'})">';
   h+='<div class="hdr-trip-name">'+esc(t.name)+' '+IC.chevd+'</div>';
   h+='<div class="hdr-trip-sub">'+esc(t.dates)+'</div></button>';
+  var nb=notifUnread();
+  h+='<button class="hdr-bell" onclick="openScreen({type:\'notifs\'})" aria-label="Notifications">'+IC.bell+(nb?'<span class="bell-badge">'+(nb>9?'9+':nb)+'</span>':'')+'</button>';
   h+='<button class="hdr-iam" onclick="openScreen({type:\'persona\'})">';
   h+='<span class="iam-name"><span class="pdot" style="background:'+me.color+'">'+esc(me.name[0])+'</span>'+esc(me.name)+' '+IC.chevd+'</span>';
   h+='</button>';
@@ -1292,6 +1460,7 @@ function pkItemEditor(pid,c,j){
   if(it.needBuy)o+=pkBuyerField();
   o+='<div class="field" style="margin:0"><label class="field-label">Privacy</label><div class="seg"><button class="seg-btn'+(!it.priv?' on':'')+'" onclick="pkFormPriv(false)">Visible</button><button class="seg-btn'+(it.priv?' on book':'')+'" onclick="pkFormPriv(true)">'+IC.lock+' Hidden</button></div></div>';
   if(it.priv)o+='<div class="priv-note">Hidden from the trip owner and admins, and kept off the shared Need to Buy list. Only you can see it — handy for surprises.</div>';
+  o+=notifyField('Packing');
   o+='<div style="display:flex;gap:8px"><button class="btn-primary" style="margin:0;flex:1" onclick="pkItemSave()">Save</button><button class="btn-secondary" style="margin:0;flex:1" onclick="pkItemCancel()">Cancel</button></div>';
   o+='</div>';
   return o;
@@ -1422,6 +1591,7 @@ function todoEditor(item){
   o+=todoAssignField(creator);
   o+='<div class="field" style="margin:0"><label class="field-label">Privacy</label><div class="seg"><button class="seg-btn'+(!S._tdPriv?' on':'')+'" onclick="tdFormPriv(false)">Visible</button><button class="seg-btn'+(S._tdPriv?' on book':'')+'" onclick="tdFormPriv(true)">'+IC.lock+' Hidden</button></div></div>';
   if(S._tdPriv)o+='<div class="priv-note">Hidden from the trip owner and admins. Anyone you assign it to still sees it; otherwise it’s just yours.</div>';
+  o+=notifyField('To Do');
   o+='<div style="display:flex;gap:8px"><button class="btn-primary" style="margin:0;flex:1" onclick="tdSave()">Save</button><button class="btn-secondary" style="margin:0;flex:1" onclick="tdCancelForm()">Cancel</button></div>';
   o+='</div>';
   return o;
@@ -1519,7 +1689,32 @@ function renderScreen(){
   if(t==='packtmpl')  return scrPackTmpl();
   if(t==='needbuy')   return scrNeedBuy();
   if(t==='section')   return scrSection();
+  if(t==='notifs')    return scrNotifs();
   return scrGeneric();
+}
+function scrNotifs(){
+  var list=notifsFor(S.persona);
+  if(!list.length){
+    markNotifsRead(S.persona);
+    var empty='<div class="body-empty" style="text-align:left;padding:10px 2px">No notifications yet. When someone adds you to a plan, a ride, a dining reservation or a list — or needs you to act on a booking — it shows up here.</div>';
+    return screenShell('Notifications',empty,null,null,'Done');
+  }
+  var groups={},order=[];
+  list.forEach(function(n){if(!groups[n.trip]){groups[n.trip]=[];order.push(n.trip);}groups[n.trip].push(n);});
+  var body='';
+  order.forEach(function(tid){
+    var t=tripById(tid);
+    body+='<div class="hub-section-label" style="margin-left:0">'+esc(t?t.name:'Trip')+'</div>';
+    groups[tid].forEach(function(n){
+      body+='<div class="notif-item'+(n.read?'':' unread')+'">';
+      body+='<span class="notif-dot '+notifKindCls(n.kind)+'">'+notifKindMark(n.kind)+'</span>';
+      body+='<div class="notif-main"><div class="notif-text">'+esc(n.text)+'</div>';
+      body+='<div class="notif-meta">'+esc(n.cat)+' · '+agoText(n.time)+'</div></div></div>';
+    });
+  });
+  body+='<button class="btn-danger-link" onclick="clearNotifs()">Clear all</button>';
+  markNotifsRead(S.persona);   /* viewing the page marks them read */
+  return screenShell('Notifications',body,null,null,'Done');
 }
 function scrLimitedItem(it){
   var by=(it.by&&person(it.by))?person(it.by).name:'someone';
@@ -1578,6 +1773,7 @@ function scrAddFlight(){
   body+='<button class="seg-btn'+(st==='planning'?' on':'')+'" onclick="pickStatus(\'ff\',\'planning\')">Planning</button>';
   body+='<button class="seg-btn'+(st==='booked'?' on book':'')+'" onclick="pickStatus(\'ff\',\'booked\')">Booked</button></div></div>';
   body+=whoSelectField(pre);
+  body+=notifyField('Flight');
   body+='<div class="field"><label class="field-label">Appears on day</label><select class="field-select" id="ff-day">'+dayOptions((edit&&edit.day)||S.screen.day||'2026-07-14')+'</select></div>';
   for(var i=0;i<legs;i++){
     var lg=edit&&edit.legs[i]?edit.legs[i]:null;
@@ -1618,11 +1814,12 @@ function saveFlight(){
       depApt:ap,depCity:ap,depTime:val('ff-l'+i+'-depTime'),depDate:dy,
       arrApt:aap,arrCity:aap,arrTime:val('ff-l'+i+'-arrTime'),arrDate:dy});
   }
+  var oldWho=edit?edit.who:[];
   var rec=edit||{id:'f'+Date.now(),trip:S.tripId,by:S.persona};
   rec.label=val('ff-label')||'Flight';rec.day=dy;rec.who=whoVal();
   rec.status=S._formStatus.ff||'planning';rec.legs=legs;
   if(!edit)FLIGHTS.push(rec);
-  save('dtp_flights',FLIGHTS);S._who=null;toast('Flight saved');closeScreen();render();
+  save('dtp_flights',FLIGHTS);afterWhoSave('Flight',rec,oldWho);S._who=null;toast('Flight saved');closeScreen();render();
 }
 function delFlight(id){
   var it=FLIGHTS.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;
@@ -1650,6 +1847,7 @@ function scrAddDining(){
   body+='<div class="field"><label class="field-label">Location</label><div class="seg"><button class="seg-btn'+(loc==='in'?' on':'')+'" onclick="pickLoc(\'in\')">In-Park</button><button class="seg-btn'+(loc==='off'?' on':'')+'" onclick="pickLoc(\'off\')">Non-Park</button></div></div>';
   if(loc==='in'){var _dy=(edit&&edit.day)||S.screen.day||'2026-07-15';body+='<div class="field"><label class="field-label">Which park</label><select class="field-select" id="dd-park">'+parkResOptions((edit&&edit.park)||dayPrimaryPark(_dy)||'mk')+'</select></div>';}
   body+=whoSelectField(pre);
+  body+=notifyField('Dining');
   body+='<div class="field"><label class="field-label">Appears on day</label><select class="field-select" id="dd-day">'+dayOptions((edit&&edit.day)||S.screen.day||'2026-07-15')+'</select></div>';
   if(edit) body+='<button class="btn-danger-link" onclick="delDining(\''+edit.id+'\')">Delete this reservation</button>';
   return screenShell(edit?'Edit Dining':'Add Dining',body,'Save','saveDining()');
@@ -1659,12 +1857,13 @@ function saveDining(){
   var nm=val('dd-name');
   if(!nm){toast('Add a restaurant name');return;}
   var dy=val('dd-day')||S.screen.day||'2026-07-15';
+  var oldWho=edit?edit.who:[];
   var rec=edit||{id:'d'+Date.now(),trip:S.tripId,by:S.persona};
   rec.day=dy;rec.meal=val('dd-meal')||'Dinner';rec.name=nm;rec.time=val('dd-time')||'TBD';
   rec.loc=S._formLoc||'in';rec.park=(S._formLoc==='in')?(val('dd-park')||dayPrimaryPark(dy)):null;
   rec.status=S._formStatus.dd||'want';rec.conf=val('dd-conf')||'';rec.who=whoVal();
   if(!edit)DINING.push(rec);
-  save('dtp_dining',DINING);S._who=null;toast('Dining saved');closeScreen();render();
+  save('dtp_dining',DINING);afterWhoSave('Dining',rec,oldWho);S._who=null;toast('Dining saved');closeScreen();render();
 }
 function delDining(id){
   var it=DINING.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;
@@ -1683,6 +1882,7 @@ function scrLLBook(){
   body+='<div class="field"><label class="field-label">Confirmed return time</label><input class="field-input" id="llb-time" placeholder="e.g. 1:25 PM" value=""></div>';
   body+='<div class="field"><label class="field-label">Confirmation #</label><input class="field-input" id="llb-conf" placeholder="MP-00000"></div>';
   body+=whoSelectField(l.who);
+  body+=notifyField('Lightning Lane');
   body+='<div class="body-empty" style="text-align:left;padding:4px 2px 0">Marking this booked switches it from a dashed planning card to a solid confirmed one across the Agenda and Overview.</div>';
   return screenShell('Update Lightning Lane',body,'Save','saveLLBook()');
 }
@@ -1692,8 +1892,9 @@ function saveLLBook(){
   l.status='booked';
   l.bookedTime=(tm&&tm.value.trim())||l.window.replace(/[~]/g,'').split('–')[0].trim();
   l.conf=(cf&&cf.value.trim())||'MP-'+Math.floor(10000+Math.random()*89999);
+  var oldWho=l.who;
   if(S._who)l.who=whoVal();
-  save('dtp_lls',LLS);S._who=null;toast(l.ride+' booked');closeScreen();render();
+  save('dtp_lls',LLS);afterWhoSave('Lightning Lane',l,oldWho);S._who=null;toast(l.ride+' booked');closeScreen();render();
 }
 function scrAddLL(){
   var edit=S.screen.edit?LLS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
@@ -1713,6 +1914,7 @@ function scrAddLL(){
     body+='<div class="field"><label class="field-label">Confirmation #</label><input class="field-input" id="ll-conf" placeholder="MP-44190" value="'+(edit&&edit.conf?esc(edit.conf):'')+'"></div>';
   }
   body+=whoSelectField(pre);
+  body+=notifyField('Lightning Lane');
   body+='<div class="field"><label class="field-label">Day</label><select class="field-select" id="ll-day">'+dayOptions((edit&&edit.day)||S.screen.day)+'</select></div>';
   if(edit) body+='<button class="btn-danger-link" onclick="delLL(\''+edit.id+'\')">Delete this ride</button>';
   return screenShell(edit?'Edit Ride':'Add Ride',body,'Save','saveLL()');
@@ -1723,6 +1925,7 @@ function saveLL(){
   var ride=val('ll-ride');
   if(!ride){toast('Add a ride name');return;}
   var dy=val('ll-day')||S.screen.day;
+  var oldWho=edit?edit.who:[];
   var rec=edit||{id:'ll'+Date.now(),trip:S.tripId,by:S.persona,bookedTime:'',conf:'',bookDate:''};
   rec.day=dy;rec.park=dayPrimaryPark(dy);rec.ride=ride;
   rec.tier=S._formTier||'sp';rec.window=val('ll-window')||'~TBD';rec.who=whoVal();
@@ -1733,7 +1936,7 @@ function saveLL(){
   }
   if(!rec.bookDate)rec.bookDate=monOf(dy)+' '+(+dy.slice(8))+' @ 7:00 AM';
   if(!edit)LLS.push(rec);
-  save('dtp_lls',LLS);S._who=null;toast('Ride saved');closeScreen();render();
+  save('dtp_lls',LLS);afterWhoSave('Lightning Lane',rec,oldWho);S._who=null;toast('Ride saved');closeScreen();render();
 }
 function delLL(id){
   var it=LLS.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;
@@ -2276,17 +2479,19 @@ function scrPREdit(){
   body+='<button class="seg-btn'+(st==='planning'?' on':'')+'" onclick="pickStatus(\'pr\',\'planning\')">Planning</button>';
   body+='<button class="seg-btn'+(st==='booked'?' on book':'')+'" onclick="pickStatus(\'pr\',\'booked\')">Booked</button></div></div>';
   body+=whoSelectField(pre);
+  body+=notifyField('Park reservation');
   body+='<div class="body-empty" style="text-align:left;padding:2px 2px 0">Park reservations are items assigned to people and a day. They drive the Park Res. line on the Agenda and the Overview — change one here and it updates everywhere.</div>';
   if(edit) body+='<button class="btn-danger-link" onclick="delPR(\''+edit.id+'\')">Delete this reservation</button>';
   return screenShell(edit?'Edit Park Reservation':'Add Park Reservation',body,'Save','savePR()');
 }
 function savePR(){
   var edit=S.screen.edit?PARKRES.filter(function(x){return x.id===S.screen.edit;})[0]:null;
+  var oldWho=edit?edit.who:[];
   var rec=edit||{id:'pr'+Date.now(),trip:S.tripId,by:S.persona};
   rec.park=val('pr-park')||'mk';rec.day=val('pr-day')||S.screen.day;
   rec.status=S._formStatus.pr||'booked';rec.who=whoVal();
   if(!edit)PARKRES.push(rec);
-  save('dtp_parkres',PARKRES);S._who=null;toast('Park reservation saved');closeScreen();render();
+  save('dtp_parkres',PARKRES);afterWhoSave('Park reservation',rec,oldWho);S._who=null;toast('Park reservation saved');closeScreen();render();
 }
 function delPR(id){
   var it=PARKRES.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;
@@ -2307,6 +2512,7 @@ function scrVisitEdit(){
   ['morning','day','evening','late'].forEach(function(k){body+='<option value="'+k+'"'+(tm===k?' selected':'')+'>'+TIMING[k]+'</option>';});
   body+='</select></div>';
   body+=whoSelectField(pre);
+  body+=notifyField('Park visit');
   /* inline park hours & crowd — prefilled from / saved to the Park Hours item */
   var eh=hoursFor(edit?edit.park:'mk',(edit&&edit.day)||S.screen.day)||{};
   body+='<div class="field-group"><div class="field-group-title">Park hours & crowd <span style="text-transform:none;font-weight:600;color:var(--muted)">(optional · saved as a Park Hours item)</span></div>';
@@ -2329,10 +2535,11 @@ function upsertHours(park,day,vals){
 }
 function saveVisit(){
   var edit=S.screen.edit?VISITS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
+  var oldWho=edit?edit.who:[];
   var rec=edit||{id:'v'+Date.now(),trip:S.tripId,by:S.persona};
   rec.park=val('vs-park')||'mk';rec.day=val('vs-day')||S.screen.day;rec.timing=val('vs-timing')||'day';rec.who=whoVal();
   if(!edit)VISITS.push(rec);
-  save('dtp_visits',VISITS);
+  save('dtp_visits',VISITS);afterWhoSave('Park visit',rec,oldWho);
   var c=val('vh-crowd');
   upsertHours(rec.park,rec.day,{open:val('vh-open'),close:val('vh-close'),early:val('vh-early'),late:val('vh-late'),crowd:c?parseInt(c,10):null});
   S._who=null;toast('Park visit saved');closeScreen();render();
@@ -2440,6 +2647,7 @@ function scrShowEdit(){
   body+='<button class="seg-btn'+(st==='scheduled'?' on':'')+'" onclick="pickStatus(\'sh\',\'scheduled\')">Scheduled</button>';
   body+='<button class="seg-btn'+(st==='attend'?' on book':'')+'" onclick="pickStatus(\'sh\',\'attend\')">Attend</button></div></div>';
   body+=whoSelectField(pre);
+  body+=notifyField('Show');
   body+='<div class="field"><label class="field-label">Day</label><select class="field-select" id="sh-day">'+dayOptions((edit&&edit.day)||S.screen.day)+'</select></div>';
   if(edit) body+='<button class="btn-danger-link" onclick="delShow(\''+edit.id+'\')">Delete this show</button>';
   return screenShell(edit?'Edit Show':'Add Show',body,'Save','saveShow()');
@@ -2447,10 +2655,11 @@ function scrShowEdit(){
 function saveShow(){
   var edit=S.screen.edit?SHOWS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
   var nm=val('sh-name');if(!nm){toast('Add a show name');return;}
+  var oldWho=edit?edit.who:[];
   var rec=edit||{id:'s'+Date.now(),trip:S.tripId,by:S.persona};
   rec.name=nm;rec.time=val('sh-time')||'TBD';rec.day=val('sh-day')||S.screen.day;rec.status=S._formStatus.sh||'attend';rec.who=whoVal();
   if(!edit)SHOWS.push(rec);
-  save('dtp_shows',SHOWS);S._who=null;toast('Show saved');closeScreen();render();
+  save('dtp_shows',SHOWS);afterWhoSave('Show',rec,oldWho);S._who=null;toast('Show saved');closeScreen();render();
 }
 function delShow(id){
   var it=SHOWS.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;
@@ -2475,18 +2684,20 @@ function scrResortEdit(){
   body+='<button class="seg-btn'+(st==='planning'?' on':'')+'" onclick="pickStatus(\'rs\',\'planning\')">Planning</button>';
   body+='<button class="seg-btn'+(st==='booked'?' on book':'')+'" onclick="pickStatus(\'rs\',\'booked\')">Booked</button></div></div>';
   body+=whoSelectField(pre);
+  body+=notifyField('Resort');
   if(edit) body+='<button class="btn-danger-link" onclick="delResort(\''+edit.id+'\')">Delete this stay</button>';
   return screenShell(edit?'Edit Resort':'Add Resort',body,'Save','saveResort()');
 }
 function saveResort(){
   var edit=S.screen.edit?RESORTS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
   var nm=val('rs-name');if(!nm){toast('Add a resort name');return;}
+  var oldWho=edit?edit.who:[];
   var rec=edit||{id:'r'+Date.now(),trip:S.tripId,by:S.persona};
   rec.name=nm;rec.room=val('rs-room')||'Room';rec.checkin=val('rs-in');rec.checkout=val('rs-out');
   rec.inTime=val('rs-intime');rec.outTime=val('rs-outtime');
   rec.conf=val('rs-conf')||'';rec.status=S._formStatus.rs||'planning';rec.who=whoVal();
   if(!edit)RESORTS.push(rec);
-  save('dtp_resorts',RESORTS);S._who=null;toast('Resort saved');closeScreen();render();
+  save('dtp_resorts',RESORTS);afterWhoSave('Resort',rec,oldWho);S._who=null;toast('Resort saved');closeScreen();render();
 }
 function delResort(id){
   var it=RESORTS.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;

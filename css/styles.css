@@ -454,3 +454,32 @@ button{font-family:inherit}
 .pin-actions{display:flex;gap:10px;margin-top:16px}
 .pin-btn{flex:1;padding:11px;border-radius:10px;border:none;font-size:15px;font-weight:600;cursor:pointer;background:#F3F4F6;color:#374151}
 .pin-btn.primary{background:#2563EB;color:#fff}
+
+/* ── Notifications ───────────────────────────────────────── */
+/* header bell + unread badge */
+.hdr-bell{position:relative;flex-shrink:0;width:40px;height:40px;border-radius:10px;border:none;background:rgba(255,255,255,.1);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.hdr-bell:active{background:rgba(255,255,255,.2)}
+.bell-badge{position:absolute;top:3px;right:3px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:#EF4444;color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;border:2px solid var(--ink);box-sizing:content-box}
+/* notifications list */
+.notif-item{display:flex;gap:11px;align-items:flex-start;padding:12px;background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:8px}
+.notif-item.unread{border-color:#C7D2FE;background:#F5F7FF}
+.notif-dot{flex-shrink:0;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff}
+.notif-dot.nk-add{background:#16A34A}
+.notif-dot.nk-rm{background:#B91C1C}
+.notif-dot.nk-act{background:#D97706}
+.notif-main{flex:1;min-width:0}
+.notif-text{font-size:14px;font-weight:600;color:var(--ink);line-height:1.4}
+.notif-item.unread .notif-text{font-weight:700}
+.notif-meta{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:3px}
+/* in-editor notify control */
+.notify-row{display:flex;align-items:flex-start;gap:9px;padding:11px 13px;border-radius:12px;border:1.5px solid var(--border);background:var(--card);cursor:pointer}
+.notify-row.on{border-color:var(--ink);background:#fff}
+.notify-check{flex-shrink:0;width:22px;height:22px;border-radius:6px;border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;color:#15803D;margin-top:1px}
+.notify-row.on .notify-check{border-color:#15803D;background:#ECFDF3}
+.notify-lbl{font-size:15px;font-weight:600;color:var(--ink)}
+.notify-sub{font-size:12px;color:var(--muted);line-height:1.4;margin-top:2px}
+.notify-note{display:flex;align-items:flex-start;gap:7px;font-size:12px;color:var(--muted);line-height:1.45;padding:2px 2px 0}
+.notify-note svg{flex-shrink:0;margin-top:2px;opacity:.7}
+.notify-note.amber{color:#92400E}
+.notif-sel-kind{margin-left:auto;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.who-opt.on .notif-sel-kind{color:var(--ink)}

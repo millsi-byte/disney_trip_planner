@@ -496,6 +496,24 @@ var CHAT = [
   {from:"scott",  text:"Perfect. Poly first, then Grand Flo. Fireworks at 9:20.", time:"Jul 16 · 3:11 PM", ref:{type:"show", label:"Happily Ever After · 9:20 PM"}}
 ];
 
+/* ── Notifications — per recipient, newest first by `time` ─────
+   Each notif: to (recipient), from (actor), kind (added|removed|left|
+   action), cat (item kind), label (item name), text (message), read.    */
+var NOTIFS = [
+  {id:"ntf1", trip:"jul26", to:"scott", from:"cian", kind:"added", cat:"To Do",
+   label:"Make a ride wish list with Dad",
+   text:"Cian added you to “Make a ride wish list with Dad” (To Do)",
+   time:Date.now()-1000*60*42, read:false},
+  {id:"ntf2", trip:"jul26", to:"scott", from:"corey", kind:"action", cat:"Dining",
+   label:"Space 220",
+   text:"Corey joined “Space 220” — you may need to update the reservation",
+   time:Date.now()-1000*60*60*5, read:false},
+  {id:"ntf3", trip:"jul26", to:"corey", from:"hayley", kind:"added", cat:"To Do",
+   label:"Buy travel snacks",
+   text:"Hayley added you to “Buy travel snacks” (To Do)",
+   time:Date.now()-1000*60*60*26, read:true}
+];
+
 /* Minimal data for non-active trips (switcher only) */
 var TRIP_SUMMARY = {
   thanks26:{resort:"Disney's Animal Kingdom Lodge", days:6, dining:4, flights:1, status:"Booking dining at 180 days"},
