@@ -1,6 +1,6 @@
 {
-  "name": "Disney Trip Planner",
-  "short_name": "Trip Planner",
+  "name": "Baseline Tap",
+  "short_name": "Baseline Tap",
   "description": "Mobile-first planner for family Walt Disney World trips.",
   "start_url": "./index.html",
   "scope": "./",

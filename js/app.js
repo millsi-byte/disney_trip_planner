@@ -1,5 +1,5 @@
 /* ============================================================
-   Disney Trip Planner — App
+   Baseline Tap — App
    Vanilla JS. Global handlers (matches the prototype's style).
    ============================================================ */
 
@@ -67,7 +67,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='85';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='86';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2668,7 +2668,7 @@ function scrPersona(){
     body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px">'+(isAdmin()?'Manage the roster in <strong>Plan → Manage People</strong>.':'Forgot your PIN? An admin can reset it in <strong>Plan → Manage People</strong>.')+'</div>';
     body+='<div class="hub-section-label" style="margin-left:0">Device</div>';
     body+='<button class="btn-secondary" onclick="forceUpdate()">Force app update</button>';
-    body+='<div class="body-empty" style="text-align:center;padding:14px 2px 0;font-size:12px">Build '+BUILD+'</div>';
+    body+='<div class="body-empty" style="text-align:center;padding:14px 2px 0;font-size:12px">Baseline Tap · Build '+BUILD+'</div>';
     return screenShell('Account',body,null,null,'Done');
   }
   /* first run / after logout — choose who you are */
