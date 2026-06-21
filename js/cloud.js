@@ -54,7 +54,7 @@
 
   /* ── sync engine ───────────────────────────────────────── */
   /* keys that must stay device-local */
-  var LOCAL_ONLY={dtp_persona:1,dtp_tripId:1,dtp_groupId:1,dtp_chatseen:1,dtp_emailForSignIn:1,dtp_ver:1,dtp_wid:1};
+  var LOCAL_ONLY={dtp_persona:1,dtp_tripId:1,dtp_groupId:1,dtp_chatseen:1,dtp_emailForSignIn:1,dtp_ver:1,dtp_wid:1,dtp_invite:1};
   function syncable(k){return !!k&&k.indexOf('dtp_')===0&&k.indexOf('dtp__')!==0&&!LOCAL_ONLY[k];}
   /* the active key/value collection: family workspace if joined, else personal */
   function kvCol(){return C.wid?db().collection('workspaces/'+C.wid+'/kv'):db().collection('users/'+C.user.uid+'/kv');}

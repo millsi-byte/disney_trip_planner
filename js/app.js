@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='92';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='93';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -817,18 +817,43 @@ function finishLogin(id){
    on every device. No PINs anywhere. */
 function cloudUid(){return (window.CLOUD&&window.CLOUD.user)?window.CLOUD.user.uid:null;}
 function personaForUid(uid){if(!uid)return null;for(var i=0;i<FAMILY.length;i++)if(FAMILY[i].uid===uid)return FAMILY[i];return null;}
-/* called by cloud.js once sign-in + data sync have completed */
+function pendingInvite(){
+  if(S._invite)return S._invite;
+  try{var s=localStorage.getItem('dtp_invite');if(s)return JSON.parse(s);}catch(e){}
+  return null;
+}
+function clearInvite(){S._invite=null;try{localStorage.removeItem('dtp_invite');}catch(e){}}
+/* called by cloud.js once sign-in + data sync have completed.
+   The goal: you just sign in. We figure out who you are with no screen when we can. */
 function onCloudSynced(){
   var uid=cloudUid();if(!uid)return;
+  var i;
+  /* 1. already linked → straight in */
   var mine=personaForUid(uid);
   if(mine){
     S.persona=mine.id;save('dtp_persona',mine.id);
     ensureVisibleGroup();ensureVisibleTrip();
     if(S.screen&&(S.screen.type==='signin'||S.screen.type==='claim'))closeScreen();
-    render();
-  }else{
-    openScreen({type:'claim'});   /* who are you? */
+    render();return;
   }
+  /* 2. you opened a personal invite link → join + become that person, no screen */
+  var inv=pendingInvite();
+  if(inv&&inv.code){
+    clearInvite();
+    window.CLOUD.joinParty(inv.code).then(function(){
+      if(personaForUid(uid)){onCloudSynced();return;}        /* you'd claimed before */
+      if(inv.as&&person(inv.as)){claimPersona(inv.as);return;} /* become the invited person */
+      openScreen({type:'claim'});                             /* generic link → pick once */
+    }).catch(function(e){toast(e.message||'Invite failed');openScreen({type:'claim'});});
+    return;
+  }
+  /* 3. first sign-in on your own data → take the owner seat automatically */
+  var seat=null;
+  for(i=0;i<FAMILY.length;i++)if(FAMILY[i].admin&&!FAMILY[i].uid){seat=FAMILY[i];break;}
+  if(!seat)for(i=0;i<FAMILY.length;i++)if(!FAMILY[i].uid){seat=FAMILY[i];break;}
+  if(seat){claimPersona(seat.id);return;}   /* claimPersona also spins up your party */
+  /* 4. everyone is already linked and you have no invite → genuinely new, pick/join */
+  openScreen({type:'claim'});
 }
 /* called by cloud.js when there's no signed-in cloud user */
 function onCloudSignedOut(){
@@ -2777,6 +2802,16 @@ function cloudLeaveParty(){
   toast('Leaving…');
   window.CLOUD.leaveParty().then(function(){toast('Left the party');if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();}).catch(function(e){toast(e.message||'Could not leave');});
 }
+/* admin: a personal invite link — the invitee opens it, signs in, and is
+   dropped straight into the party AS this person (no codes, no picking) */
+function copyInviteLink(pid){
+  if(!(window.CLOUD&&window.CLOUD.inParty&&window.CLOUD.inParty())){toast('Start a Planning Party first (Account → Sync)');return;}
+  var code=window.CLOUD.partyCode();
+  var url=location.origin+location.pathname+'#join='+code+(pid?'&as='+encodeURIComponent(pid):'');
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(function(){toast('Invite link copied');},function(){window.prompt('Copy this invite link:',url);});
+  }else window.prompt('Copy this invite link:',url);
+}
 
 /* Persona switch (from the header). Two modes:
    - first run / signed out: a plain chooser, no account actions
@@ -2947,9 +2982,12 @@ function scrPersonEdit(){
   /* sign-in link */
   body+='<div class="field"><label class="field-label">Sign-in</label>';
   body+='<div style="display:flex;align-items:center;justify-content:space-between;font-size:14px">';
-  body+='<span style="color:#6B7280">'+(p.uid?'Linked'+(p.email?' · '+esc(p.email):''):'Not yet claimed')+'</span>';
+  body+='<span style="color:#6B7280">'+(p.uid?'Linked'+(p.email?' · '+esc(p.email):''):'Not yet joined')+'</span>';
   if(p.uid)body+='<button class="btn-secondary" style="margin:0;width:auto;padding:8px 14px;min-height:0" onclick="unclaimPersona(\''+pid+'\')">Unlink</button>';
-  body+='</div></div>';
+  body+='</div>';
+  if(!p.uid&&window.CLOUD&&window.CLOUD.inParty&&window.CLOUD.inParty())
+    body+='<button class="btn-secondary" style="margin-top:8px" onclick="copyInviteLink(\''+pid+'\')">Copy invite link for '+esc(p.name)+'</button>';
+  body+='</div>';
   /* travel details */
   body+='<div class="hub-section-label" style="margin-left:0">Travel details</div>';
   body+=personTravelFields(p,'pe');
@@ -3673,6 +3711,19 @@ ensureVisibleTrip();
 loadLists();
 S.open=defOpen();
 render();
+/* an invite link (#join=CODE&as=PERSON) — stash it so onCloudSynced can act
+   on it after sign-in, then strip it from the URL */
+try{
+  if(typeof location!=='undefined'&&location.hash&&location.hash.indexOf('join=')>=0){
+    var _ip={};location.hash.replace(/^#/,'').split('&').forEach(function(kv){var a=kv.split('=');_ip[a[0]]=decodeURIComponent(a[1]||'');});
+    if(_ip.join){
+      S._invite={code:(_ip.join||'').toUpperCase(),as:_ip.as||null};
+      try{localStorage.setItem('dtp_invite',JSON.stringify(S._invite));}catch(e){}
+      try{if(history&&history.replaceState)history.replaceState(null,'',location.pathname+location.search);}catch(e){}
+    }
+  }
+}catch(e){}
+
 /* front door. Deferred a tick so cloud.js (loaded after this file) has set
    window.CLOUD. With cloud: sign-in/claim is driven by the auth callbacks;
    show Sign in until auth resolves. Without cloud: the local persona chooser. */
