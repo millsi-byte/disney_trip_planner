@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='62';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='63';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2161,9 +2161,11 @@ var IMPORT_PARKS={mk:'Magic Kingdom',ep:'EPCOT',hs:'Hollywood Studios',ak:'Anima
 function importPromptText(){
   return [
 'You are turning Walt Disney World reservation details into JSON for my trip planner app.',
-'Read the confirmation I paste next and reply with ONLY a JSON object (no prose, no code fence) shaped like:',
+'Read the confirmation I paste next and reply with ONLY a JSON object, wrapped in a ```json code block (this keeps the quotes intact when I copy it), shaped like:',
 '',
+'```json',
 '{ "items": [ ... ] }',
+'```',
 '',
 'Each item has a "type" and these fields (use YYYY-MM-DD for all dates, omit anything you cannot find):',
 '',
@@ -2189,10 +2191,15 @@ function copyImportPrompt(){
   }catch(e){}
   toast('Copy not supported here');
 }
-/* tolerant JSON parse: strips code fences and grabs the first {...} block */
+/* tolerant JSON parse: normalises "smart" quotes (chat apps turn straight
+   quotes curly when you copy plain text, which breaks JSON.parse), strips code
+   fences, and grabs the first {...} block. */
 function parseImportText(raw){
   if(!raw||!raw.trim())return null;
-  var s=raw.trim().replace(/^```(json)?/i,'').replace(/```$/,'').trim();
+  var s=raw
+    .replace(/[“”„‟″‶]/g,'"')   /* curly/smart double quotes → " */
+    .replace(/[‘’‚‛′‵]/g,"'")   /* curly/smart single quotes → ' */
+    .trim().replace(/^```(json)?/i,'').replace(/```$/,'').trim();
   try{return JSON.parse(s);}catch(e){}
   var a=s.indexOf('{'),b=s.lastIndexOf('}');
   if(a>=0&&b>a){try{return JSON.parse(s.slice(a,b+1));}catch(e2){}}
