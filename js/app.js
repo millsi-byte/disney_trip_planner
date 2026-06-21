@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='94';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='95';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -823,6 +823,14 @@ function pendingInvite(){
   return null;
 }
 function clearInvite(){S._invite=null;try{localStorage.removeItem('dtp_invite');}catch(e){}}
+/* a persona pre-tagged with the email you signed in with (and not already
+   linked to someone else) — lets sign-in match a person with no picking */
+function emailPersona(email){
+  if(!email)return null;email=String(email).toLowerCase();
+  for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i];
+    if(p.email&&String(p.email).toLowerCase()===email&&(!p.uid||p.uid===cloudUid()))return p;}
+  return null;
+}
 /* called by cloud.js once sign-in + data sync have completed.
    The goal: you just sign in. We figure out who you are with no screen when we can. */
 function onCloudSynced(){
@@ -836,23 +844,31 @@ function onCloudSynced(){
     if(S.screen&&(S.screen.type==='signin'||S.screen.type==='claim'))closeScreen();
     render();return;
   }
-  /* 2. you opened a personal invite link → join + become that person, no screen */
+  /* 2. your email matches a person the admin set up → link automatically */
+  var byEmail=emailPersona(window.CLOUD.user&&window.CLOUD.user.email);
+  if(byEmail){claimPersona(byEmail.id);return;}
+  /* 3. you opened a personal invite link → join, then match by email or name */
   var inv=pendingInvite();
   if(inv&&inv.code){
     clearInvite();
     window.CLOUD.joinParty(inv.code).then(function(){
-      if(personaForUid(uid)){onCloudSynced();return;}        /* you'd claimed before */
-      if(inv.as&&person(inv.as)){claimPersona(inv.as);return;} /* become the invited person */
-      openScreen({type:'claim'});                             /* generic link → pick once */
+      if(personaForUid(uid)){onCloudSynced();return;}                 /* claimed before */
+      var be=emailPersona(window.CLOUD.user&&window.CLOUD.user.email);
+      if(be){claimPersona(be.id);return;}                             /* email match */
+      if(inv.as&&person(inv.as)){claimPersona(inv.as);return;}        /* invited person */
+      openScreen({type:'claim'});                                     /* fall back to pick */
     }).catch(function(e){toast(e.message||'Invite failed');openScreen({type:'claim'});});
     return;
   }
-  /* 3. first sign-in on your own data → take the owner seat automatically */
-  var seat=null;
-  for(i=0;i<FAMILY.length;i++)if(FAMILY[i].admin&&!FAMILY[i].uid){seat=FAMILY[i];break;}
-  if(!seat)for(i=0;i<FAMILY.length;i++)if(!FAMILY[i].uid){seat=FAMILY[i];break;}
-  if(seat){claimPersona(seat.id);return;}   /* claimPersona also spins up your party */
-  /* 4. everyone is already linked and you have no invite → genuinely new, pick/join */
+  /* 4. first ever sign-in on this data (nobody linked yet) → you're the owner */
+  var anyLinked=FAMILY.some(function(p){return p.uid;});
+  if(!anyLinked){
+    var seat=null;
+    for(i=0;i<FAMILY.length;i++)if(FAMILY[i].admin){seat=FAMILY[i];break;}
+    if(!seat)seat=FAMILY[0];
+    if(seat){claimPersona(seat.id);return;}   /* claimPersona also spins up your party */
+  }
+  /* 5. established data, no match → pick who you are (or enter a code) */
   openScreen({type:'claim'});
 }
 /* called by cloud.js when there's no signed-in cloud user */
@@ -3000,8 +3016,13 @@ function scrPersonEdit(){
   body+='<span style="color:#6B7280">'+(p.uid?'Linked'+(p.email?' · '+esc(p.email):''):'Not yet joined')+'</span>';
   if(p.uid)body+='<button class="btn-secondary" style="margin:0;width:auto;padding:8px 14px;min-height:0" onclick="unclaimPersona(\''+pid+'\')">Unlink</button>';
   body+='</div>';
-  if(!p.uid&&window.CLOUD&&window.CLOUD.inParty&&window.CLOUD.inParty())
-    body+='<button class="btn-secondary" style="margin-top:8px" onclick="copyInviteLink(\''+pid+'\')">Copy invite link for '+esc(p.name)+'</button>';
+  if(!p.uid){
+    body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0;font-size:12px">'
+      +(p.email?'When <strong>'+esc(p.email)+'</strong> signs in, they\'re matched to '+esc(p.name)+' automatically.'
+               :'Add an email under Travel details so they\'re matched automatically at sign-in — or send an invite link.')+'</div>';
+    if(window.CLOUD&&window.CLOUD.inParty&&window.CLOUD.inParty())
+      body+='<button class="btn-secondary" style="margin-top:8px" onclick="copyInviteLink(\''+pid+'\')">Copy invite link for '+esc(p.name)+'</button>';
+  }
   body+='</div>';
   /* travel details */
   body+='<div class="hub-section-label" style="margin-left:0">Travel details</div>';
