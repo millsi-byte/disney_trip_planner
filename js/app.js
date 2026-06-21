@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='70';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='71';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1385,6 +1385,10 @@ function renderPlanHub(){
     ['Park Visits',IC.map,'#3B7549',cnt(VISITS)+' visits','visits'],
     ['Park Hours',IC.bolt,'#0F5F73',cnt(PARKHOURS)+' set','hours']
   ];
+  /* Edit Trip Details sits at the top of the page */
+  if(canEditTrip())
+    o+='<button class="hub-row" onclick="openScreen({type:\'tripedit\'})"><div class="hub-icon" style="background:#6B4FA0">'+IC.pencil+'</div>'
+      +'<div class="hub-main"><div class="hub-title">Edit Trip Details</div><div class="hub-sub">'+esc(trip().dates)+'</div></div><div class="chev">'+IC.chev+'</div></button>';
   o+='<div class="hub-section-label">Trip components</div>';
   for(var i=0;i<rows.length;i++) o+=hubRow(rows[i]);
   /* Import tools are admin-only for now — power-user seeding */
@@ -1395,13 +1399,11 @@ function renderPlanHub(){
     o+='<button class="hub-row" onclick="openScreen({type:\'csvimport\'})"><div class="hub-icon" style="background:#0F766E">'+IC.upload+'</div>'
       +'<div class="hub-main"><div class="hub-title">CSV Import <span class="admin-tag">Admin</span></div><div class="hub-sub">Seed a trip from a spreadsheet</div></div><div class="chev">'+IC.chev+'</div></button>';
   }
-  o+='<div class="hub-section-label">Trip & settings</div>';
-  if(canEditTrip())
-    o+='<button class="hub-row" onclick="openScreen({type:\'tripedit\'})"><div class="hub-icon" style="background:#6B4FA0">'+IC.pencil+'</div>'
-      +'<div class="hub-main"><div class="hub-title">Edit trip name & dates</div><div class="hub-sub">'+esc(trip().dates)+'</div></div><div class="chev">'+IC.chev+'</div></button>';
-  if(isAdmin())
-    o+='<button class="hub-row" onclick="openScreen({type:\'settings\'})"><div class="hub-icon" style="background:#1C3A5E">'+IC.gear+'</div>'
-      +'<div class="hub-main"><div class="hub-title">Settings <span style="font-size:11px;font-weight:600;color:#92400E">· Admin</span></div><div class="hub-sub">People & templates</div></div><div class="chev">'+IC.chev+'</div></button>';
+  if(isAdmin()){
+    o+='<div class="hub-section-label">Admin</div>';
+    o+='<button class="hub-row" onclick="openScreen({type:\'personas\'})"><div class="hub-icon" style="background:#1C3A5E">'+IC.users+'</div>'
+      +'<div class="hub-main"><div class="hub-title">Manage People <span class="admin-tag">Admin</span></div><div class="hub-sub">'+FAMILY.length+' people</div></div><div class="chev">'+IC.chev+'</div></button>';
+  }
   return o;
 }
 function hubRow(r){
@@ -1417,7 +1419,6 @@ function openSection(section){
   if(section==='todo'){openScreen({type:'todolist'});return;}
   if(section==='packing'){openScreen({type:'packlist'});return;}
   if(section==='needbuy'){openScreen({type:'needbuy'});return;}
-  if(section==='templates'){openScreen({type:'templates'});return;}
   if(section==='personas'){if(!adminGate())return;openScreen({type:'personas'});return;}
   openScreen({type:'section',section:section});
 }
@@ -1878,10 +1879,8 @@ function renderScreen(){
   if(t==='import')    return scrImport();
   if(t==='csvimport') return scrCsvImport();
   if(t==='newtrip')   return scrNewTrip();
-  if(t==='settings')  return scrSettings();
   if(t==='persona')   return scrPersona();
   if(t==='personas')  return scrPersonas();
-  if(t==='templates') return scrTemplates();
   if(t==='dayedit')   return scrDayEdit();
   if(t==='predit')    return scrPREdit();
   if(t==='visedit')   return scrVisitEdit();
@@ -2625,23 +2624,6 @@ function createTrip(){
   notifyMembership(tripObj,[],mem,optIn);
 }
 
-/* Settings — admin only */
-function scrSettings(){
-  if(!isAdmin()){
-    var b='<div class="body-empty" style="text-align:left;padding:6px 2px">Settings are admin-only. Switch to an admin persona from the <strong>I am</strong> button to manage people and templates.</div>';
-    return screenShell('Settings',b,null,null,'Done');
-  }
-  var body='<div class="hub-section-label" style="margin-left:0">Admin tools</div>';
-  body+='<div class="body-empty" style="text-align:left;padding:0 2px 14px">You\'re signed in as an admin, so you can manage the whole roster and templates here. Everyone else can still add and edit items, and delete what they create.</div>';
-  body+=hubRow(['Templates',IC.suitcase,'#92400E','Packing & to-do masters','templates']);
-  body+=hubRow(['People',IC.home,'#1C3A5E',FAMILY.length+' people','personas']);
-  body+='<div class="body-empty" style="text-align:left;padding:0 2px 14px;font-size:12px">Add, rename, remove people, mark who\'s an admin, and reset a forgotten PIN (clear it — they\'ll set a new one next time they log in).</div>';
-  body+='<div class="hub-section-label" style="margin-left:0">Device</div>';
-  body+='<button class="btn-secondary" onclick="if(confirm(\'Reset all saved data on this device?\')){localStorage.clear();location.reload();}">Reset local data</button>';
-  body+='<button class="btn-secondary" onclick="forceUpdate()">Force app update</button>';
-  body+='<div class="body-empty" style="text-align:center;padding:14px 2px 0;font-size:12px">Build '+BUILD+'</div>';
-  return screenShell('Settings',body,null,null,'Done');
-}
 
 /* Persona switch (from the header). Two modes:
    - first run / signed out: a plain chooser, no account actions
@@ -2660,7 +2642,7 @@ function scrPersona(){
     body+='<div class="hub-section-label" style="margin-left:0">Security</div>';
     body+='<button class="btn-secondary" onclick="setMyPin()">Change my PIN</button>';
     body+='<button class="btn-secondary" onclick="logoutPersona()">Log out</button>';
-    body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px">'+(isAdmin()?'Manage people and templates in <strong>Plan → Settings</strong>.':'Forgot your PIN? An admin can reset it in <strong>Settings → People</strong>.')+'</div>';
+    body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px">'+(isAdmin()?'Manage the roster in <strong>Plan → Manage People</strong>.':'Forgot your PIN? An admin can reset it in <strong>Plan → Manage People</strong>.')+'</div>';
     body+='<div class="hub-section-label" style="margin-left:0">Device</div>';
     body+='<button class="btn-secondary" onclick="forceUpdate()">Force app update</button>';
     return screenShell('Account',body,null,null,'Done');
@@ -2688,6 +2670,7 @@ function colorOptions(sel){
   return h;
 }
 function scrPersonas(){
+  if(!isAdmin())return screenShell('Manage People','<div class="body-empty" style="padding:24px 12px">Admin only — switch to an admin persona from the <strong>I am</strong> button.</div>',null,null,'Done');
   var body='<div class="hub-section-label" style="margin-left:0">All personas</div>';
   for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i];
     body+='<div class="field-group" style="margin-bottom:10px">';
@@ -2708,6 +2691,10 @@ function scrPersonas(){
   }
   body+='<button class="sheet-new" style="margin:6px 0 0;width:100%" onclick="addPersona()">'+IC.plus+' Add person</button>';
   body+='<div class="body-empty" style="text-align:left;padding:10px 2px 0">Personas are global — assign them to any trip from the trip editor (tap the trip name in the header). <strong>Admins</strong> can manage people, see every trip, and delete any item or booking. To reset a forgotten PIN, tap <strong>Reset PIN</strong> — the person picks a new one next time they log in.</div>';
+  body+='<div class="hub-section-label" style="margin-left:0">Device</div>';
+  body+='<button class="btn-secondary" onclick="if(confirm(\'Reset all saved data on this device?\')){localStorage.clear();location.reload();}">Reset local data</button>';
+  body+='<button class="btn-secondary" onclick="forceUpdate()">Force app update</button>';
+  body+='<div class="body-empty" style="text-align:center;padding:14px 2px 0;font-size:12px">Build '+BUILD+'</div>';
   return screenShell('Manage People',body,'Save','savePersonas()');
 }
 function capturePersonas(){
@@ -2789,21 +2776,6 @@ function memberSelectField(pre){
   return h+'</div></div>';
 }
 function toggleMember(id){if(!S._members)S._members=new Set();if(S._members.has(id))S._members.delete(id);else S._members.add(id);renderScreen_inplace2();}
-
-/* Templates */
-function scrTemplates(){
-  var body='<div class="body-empty" style="text-align:left;padding:0 2px 14px;font-size:16px;color:var(--ink)">Your master lists. New trips can start pre-loaded with each person\'s packing and to-do items so you\'re never building from scratch.</div>';
-  body+='<div class="hub-section-label" style="margin-left:0">Per-person masters</div>';
-  for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i];
-    var pk=PACKING_TMPL[p.id]?PACKING_TMPL[p.id].reduce(function(n,c){return n+(c.items?c.items.length:0);},0):0;
-    var td=TODO_TMPL[p.id]?TODO_TMPL[p.id].length:0;
-    body+='<div class="hub-row" style="cursor:default"><div class="hub-icon" style="background:'+p.color+'">'+esc(p.name[0])+'</div>';
-    body+='<div class="hub-main"><div class="hub-title">'+esc(p.name)+'</div><div class="hub-sub">'+pk+' packing · '+td+' to-do items</div></div></div>';
-  }
-  body+='<button class="btn-primary" onclick="toast(\'Current lists saved as your master template\')">Save current lists as template</button>';
-  body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0">When you create a new trip and choose “My template,” these lists are copied in for each person.</div>';
-  return screenShell('Templates',body,null,null,'Done');
-}
 
 /* legacy packing list (kept for the old combined route, now unused) */
 function listScreenBody(which){return renderFilter()+renderLists(which);}
