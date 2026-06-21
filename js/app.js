@@ -67,7 +67,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='81';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='82';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2656,9 +2656,8 @@ function scrPersonas(){
       +'<div class="hub-icon" style="background:'+p.color+'">'+esc(p.name[0])+'</div>'
       +'<div class="hub-main"><div class="hub-title">'+esc(p.name)+(p.pin?' '+IC.lock:'')+'</div><div class="hub-sub">'+bits.join(' · ')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
   }
-  body+='<button class="sheet-new" style="margin:10px 0 0;width:100%" onclick="addPersona()">'+IC.plus+' Add person</button>';
   body+='<div class="body-empty" style="text-align:left;padding:10px 2px 0;font-size:12px">Tap a person to edit their name, role, groups, PIN and travel details. People are global — assign them to trips from the trip editor.</div>';
-  return screenShell('Manage People',body,null,null,'Done');
+  return screenShell('Manage People',body,null,null,'Done','<button class="sec-add" onclick="addPersona()">Add person</button>');
 }
 /* admin PIN management: reset (clear → they choose next login) or set a specific one.
    Text/transient edits in the open form survive via renderScreen_inplace2's snapshot. */
@@ -2687,8 +2686,7 @@ function scrGroups(){
       +'<div class="hub-icon" style="background:#6B4FA0">'+IC.home+'</div>'
       +'<div class="hub-main"><div class="hub-title">'+esc(g.name)+'</div><div class="hub-sub">'+np+' '+(np===1?'person':'people')+' · '+nt+' '+(nt===1?'trip':'trips')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
   }
-  body+='<button class="sheet-new" style="margin:10px 0 0;width:100%" onclick="addGroup()">'+IC.plus+' Add group</button>';
-  return screenShell('Manage Groups',body,null,null,'Done');
+  return screenShell('Manage Groups',body,null,null,'Done','<button class="sec-add" onclick="addGroup()">Add group</button>');
 }
 function addGroup(){var id='g'+Date.now();GROUPS.push({id:id,name:'New Group',by:S.persona});saveGroups();S._formInit=null;openScreen({type:'groupedit',gid:id});}
 /* per-group editor: name + members (with a Save button) */
