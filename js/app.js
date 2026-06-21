@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='69';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='70';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -706,7 +706,7 @@ function openScreen(def){
   else if(def.type==='tripedit'){var _et=tripById(def.tripId);S._notify=!!(_et&&_et.status==='active');}
   if(def.type==='addflight'){S.formLegs=def.edit?((FLIGHTS.filter(function(f){return f.id===def.edit;})[0]||{legs:[0]}).legs.length):1;}
   else{S.formLegs=1;}
-  if(def.type==='import'){S.importStep=1;S._importItems=null;S._importCount=0;S._importEdit=null;}
+  if(def.type==='import'||def.type==='csvimport'){S.importStep=1;S._importItems=null;S._importCount=0;S._importEdit=null;}
   renderOverlay();requestAnimationFrame(function(){var s=document.getElementById('screen-host').firstChild;if(s)s.classList.add('in');});
 }
 function closeScreen(){var host=document.getElementById('screen-host');var s=host&&host.firstChild;if(s){s.classList.remove('in');setTimeout(function(){S.screen=null;renderOverlay();},260);}else{S.screen=null;renderOverlay();}}
@@ -1387,11 +1387,13 @@ function renderPlanHub(){
   ];
   o+='<div class="hub-section-label">Trip components</div>';
   for(var i=0;i<rows.length;i++) o+=hubRow(rows[i]);
-  /* AI Import is admin-only for now — it's a power-user paste tool */
+  /* Import tools are admin-only for now — power-user seeding */
   if(isAdmin()){
     o+='<div class="hub-section-label">Get started fast</div>';
     o+='<button class="hub-row" onclick="openScreen({type:\'import\'})"><div class="hub-icon" style="background:#1E40AF">'+IC.sparkles+'</div>'
       +'<div class="hub-main"><div class="hub-title">AI Import <span class="admin-tag">Admin</span></div><div class="hub-sub">Paste structured details from Claude</div></div><div class="chev">'+IC.chev+'</div></button>';
+    o+='<button class="hub-row" onclick="openScreen({type:\'csvimport\'})"><div class="hub-icon" style="background:#0F766E">'+IC.upload+'</div>'
+      +'<div class="hub-main"><div class="hub-title">CSV Import <span class="admin-tag">Admin</span></div><div class="hub-sub">Seed a trip from a spreadsheet</div></div><div class="chev">'+IC.chev+'</div></button>';
   }
   o+='<div class="hub-section-label">Trip & settings</div>';
   if(canEditTrip())
@@ -1874,6 +1876,7 @@ function renderScreen(){
   if(t==='llbook')    return scrLLBook();
   if(t==='addll')     return scrAddLL();
   if(t==='import')    return scrImport();
+  if(t==='csvimport') return scrCsvImport();
   if(t==='newtrip')   return scrNewTrip();
   if(t==='settings')  return scrSettings();
   if(t==='persona')   return scrPersona();
@@ -2478,33 +2481,50 @@ function importEditPanel(e,i){
     +'<button class="btn-secondary green" style="margin:0;flex:1" onclick="importEditApply('+i+')">Done</button></div>';
   return h+'</div>';
 }
+/* AI Import — paste JSON from Claude */
 function scrImport(){
   if(!isAdmin())return screenShell('AI Import','<div class="body-empty" style="padding:24px 12px">This tool is admin-only.</div>',null,null,'Close');
-  var step=S.importStep||1,body='';
-  if(step===1){
-    body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:15px;color:var(--ink)">'
-      +'Parse a confirmation with <strong>Claude</strong>, then paste the JSON it gives you here. Items are added to <strong>'+esc(trip().name)+'</strong>.</div>';
-    body+='<div class="import-steps">'
-      +'<div class="import-step"><span class="is-n">1</span>Copy the instructions and paste them to Claude, then add your email or screenshot.</div>'
-      +'<div class="import-step"><span class="is-n">2</span>Claude replies with JSON. Copy it.</div>'
-      +'<div class="import-step"><span class="is-n">3</span>Paste it below and review.</div></div>';
-    body+='<button class="btn-secondary" onclick="copyImportPrompt()">'+IC.sparkles+' Copy instructions for Claude</button>';
-    body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px">Tip: for repeated planning, set up a reusable <strong>Claude Project</strong> with these instructions — see <code>docs/claude-project-setup.md</code> in the repo. <span style="white-space:nowrap">Build '+BUILD+'</span></div>';
-    body+='<div class="field" style="margin-top:14px"><label class="field-label">Paste Claude\'s JSON</label>'
-      +'<textarea class="field-input" id="import-paste" rows="8" placeholder=\'{ "items": [ ... ] }\' style="font-family:monospace;font-size:13px;resize:vertical"></textarea></div>';
-    body+='<button class="btn-primary" onclick="importParse()">Review items</button>';
-    body+='<div class="import-or">or use a spreadsheet</div>';
-    body+='<button class="btn-secondary" onclick="importCsvDownload()">'+IC.upload+' Download CSV template</button>';
-    body+='<button class="btn-secondary" onclick="importCsvPick()">'+IC.upload+' Upload filled CSV</button>';
-    body+='<input type="file" id="import-csv" accept=".csv,text/csv" style="display:none" onchange="importCsvFile(event)">';
-    body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0;font-size:12px">Fill the template in Excel or Google Sheets — one row per item, dates as YYYY-MM-DD. Replace the example rows. You\'ll review everything before it saves.</div>';
-    body+='<button class="btn-secondary" onclick="closeScreen()">Cancel</button>';
-    return screenShell('AI Import',body,null,null,'Close');
-  }
-  if(step===2){
+  if((S.importStep||1)>1)return importReviewScreen();
+  var body='';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:15px;color:var(--ink)">'
+    +'Parse a confirmation with <strong>Claude</strong>, then paste the JSON it gives you here. Items are added to <strong>'+esc(trip().name)+'</strong>.</div>';
+  body+='<div class="import-steps">'
+    +'<div class="import-step"><span class="is-n">1</span>Copy the instructions and paste them to Claude, then add your email or screenshot.</div>'
+    +'<div class="import-step"><span class="is-n">2</span>Claude replies with JSON. Copy it.</div>'
+    +'<div class="import-step"><span class="is-n">3</span>Paste it below and review.</div></div>';
+  body+='<button class="btn-secondary" onclick="copyImportPrompt()">'+IC.sparkles+' Copy instructions for Claude</button>';
+  body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px">Tip: for repeated planning, set up a reusable <strong>Claude Project</strong> with these instructions — see <code>docs/claude-project-setup.md</code> in the repo. <span style="white-space:nowrap">Build '+BUILD+'</span></div>';
+  body+='<div class="field" style="margin-top:14px"><label class="field-label">Paste Claude\'s JSON</label>'
+    +'<textarea class="field-input" id="import-paste" rows="8" placeholder=\'{ "items": [ ... ] }\' style="font-family:monospace;font-size:13px;resize:vertical"></textarea></div>';
+  body+='<button class="btn-primary" onclick="importParse()">Review items</button>';
+  body+='<button class="btn-secondary" onclick="closeScreen()">Cancel</button>';
+  return screenShell('AI Import',body,null,null,'Close');
+}
+/* CSV Import — download a template, fill it in a spreadsheet, upload */
+function scrCsvImport(){
+  if(!isAdmin())return screenShell('CSV Import','<div class="body-empty" style="padding:24px 12px">This tool is admin-only.</div>',null,null,'Close');
+  if((S.importStep||1)>1)return importReviewScreen();
+  var body='';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:15px;color:var(--ink)">'
+    +'Seed <strong>'+esc(trip().name)+'</strong> from a spreadsheet. Download the template, fill it in Excel or Google Sheets, then upload it.</div>';
+  body+='<div class="import-steps">'
+    +'<div class="import-step"><span class="is-n">1</span>Download the template and open it in Excel or Google Sheets.</div>'
+    +'<div class="import-step"><span class="is-n">2</span>One row per item. Dates as YYYY-MM-DD. Replace the example rows.</div>'
+    +'<div class="import-step"><span class="is-n">3</span>Upload it and review before saving.</div></div>';
+  body+='<button class="btn-secondary" onclick="importCsvDownload()">'+IC.upload+' Download CSV template</button>';
+  body+='<button class="btn-primary" onclick="importCsvPick()">'+IC.upload+' Upload filled CSV</button>';
+  body+='<input type="file" id="import-csv" accept=".csv,text/csv" style="display:none" onchange="importCsvFile(event)">';
+  body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0;font-size:12px">Columns: type, name, day, time, park, tier, status, check-in/out, flight legs, etc. You\'ll review everything before it saves. <span style="white-space:nowrap">Build '+BUILD+'</span></div>';
+  body+='<button class="btn-secondary" onclick="closeScreen()">Cancel</button>';
+  return screenShell('CSV Import',body,null,null,'Close');
+}
+/* shared review + done screen, used by both AI Import and CSV Import */
+function importReviewScreen(){
+  var body='';
+  if((S.importStep||1)===2){
     var items=S._importItems||[];
     var okN=items.filter(function(e){return !e.error&&!e._removed;}).length;
-    body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:15px;color:var(--ink)"><strong>Here\'s what I found.</strong> Remove anything you don\'t want before saving.</div>';
+    body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:15px;color:var(--ink)"><strong>Here\'s what I found.</strong> Edit, remove, or assign people before saving.</div>';
     var anyWarn=false;
     for(var i=0;i<items.length;i++){var e=items[i];
       var editing=(S._importEdit===i);
