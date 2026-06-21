@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='93';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='94';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -865,6 +865,12 @@ function claimPersona(id){
   var p=person(id);if(!p)return;
   var uid=cloudUid();
   if(!uid){toast('Sign in first');return;}
+  /* no stealing: a seat already linked to a different account is off-limits */
+  if(p.uid&&p.uid!==uid){toast(p.name+' is already taken — an admin can unlink it first');return;}
+  /* no self-promotion: you can't grab an admin seat unless you're already an
+     admin or no admin has been set up yet (the very first owner) */
+  var adminExists=FAMILY.some(function(x){return x.admin&&x.uid&&x.uid!==uid;});
+  if(p.admin&&adminExists&&!isAdmin()){toast('Only an admin can take an admin seat');return;}
   var prev=personaForUid(uid);if(prev&&prev.id!==id)prev.uid=null;   /* one persona per account */
   p.uid=uid;
   if(window.CLOUD&&window.CLOUD.user&&window.CLOUD.user.email&&!p.email)p.email=window.CLOUD.user.email;
@@ -885,6 +891,14 @@ function unclaimPersona(id){
   var p=person(id);if(!p)return;
   if(!confirm('Unlink '+p.name+' from their sign-in? They\'ll claim it again next time they sign in.'))return;
   p.uid=null;save('dtp_family',FAMILY);toast(p.name+' unlinked');renderScreen_inplace2();
+}
+/* self-service fix for an honest mistake: release my own seat and re-pick */
+function switchMyPersona(){
+  if(!confirm('Not you? Release this seat and pick the right person next.'))return;
+  var uid=cloudUid(), me=personaForUid(uid);
+  if(me){me.uid=null;save('dtp_family',FAMILY);}
+  try{localStorage.removeItem('dtp_persona');}catch(e){}
+  openScreen({type:'claim'});   /* pick again — no auto-seating here */
 }
 /* sign out — cloud sign-out when available, else just forget the local persona */
 function logoutPersona(){
@@ -2780,6 +2794,7 @@ function cloudSection(){
     h+='<div class="field" style="margin-top:6px"><input class="field-input" id="cloud-join" placeholder="Enter an invite code" style="text-transform:uppercase"></div>';
   }
   h+='<div class="hub-section-label" style="margin-left:0">Account</div>';
+  h+='<button class="btn-secondary" onclick="switchMyPersona()">This isn\'t me — switch person</button>';
   h+='<button class="btn-secondary" onclick="logoutPersona()">Sign out</button>';
   return h;
 }
