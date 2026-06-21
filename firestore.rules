@@ -23,15 +23,20 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
 
+    // The super-admin can enumerate every tenant for the console.
+    match /workspaces/{wid=**} {
+      allow list: if isSuper();
+    }
+
     // Planning Parties (shared trips).
     match /workspaces/{wid} {
       function isMember() {
         return request.auth != null &&
           exists(/databases/$(database)/documents/workspaces/$(wid)/members/$(request.auth.uid));
       }
-      allow get: if request.auth != null;        // verify a code before joining
-      allow create: if isOwner();                // only authorized owners start a party
-      allow update, delete: if isMember();
+      allow get: if request.auth != null;              // verify a code before joining
+      allow create: if isOwner();                      // only authorized owners start a party
+      allow update, delete: if isMember() || isSuper();
 
       // Each member self-adds (join) and self-removes (leave).
       match /members/{uid} {
@@ -39,9 +44,9 @@ service cloud.firestore {
         allow create, delete: if request.auth != null && request.auth.uid == uid;
       }
 
-      // The shared data — members only.
+      // The shared data — members, or the super-admin (cross-tenant console).
       match /kv/{key} {
-        allow read, write: if isMember();
+        allow read, write: if isMember() || isSuper();
       }
     }
   }

@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='104';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='105';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1564,9 +1564,13 @@ function renderAdminHub(){
     +'<div class="hub-main"><div class="hub-title">Planning Parties</div><div class="hub-sub">'+PARTIES.length+' '+(PARTIES.length===1?'party':'parties')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
   o+='<button class="hub-row" onclick="openScreen({type:\'personas\'})"><div class="hub-icon" style="background:#1C3A5E">'+IC.users+'</div>'
     +'<div class="hub-main"><div class="hub-title">People</div><div class="hub-sub">'+FAMILY.length+' '+(FAMILY.length===1?'person':'people')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
-  if(window.CLOUD&&window.CLOUD.isSuper)
+  if(window.CLOUD&&window.CLOUD.isSuper){
+    o+='<div class="hub-section-label">Super Admin</div>';
+    o+='<button class="hub-row" onclick="openTenants()"><div class="hub-icon" style="background:#7C2D12">'+IC.grid+'</div>'
+      +'<div class="hub-main"><div class="hub-title">All Parties</div><div class="hub-sub">Every family’s parties, people & trips</div></div><div class="chev">'+IC.chev+'</div></button>';
     o+='<button class="hub-row" onclick="openOwners()"><div class="hub-icon" style="background:#0F766E">'+IC.users+'</div>'
       +'<div class="hub-main"><div class="hub-title">Authorized Users</div><div class="hub-sub">Who may sign in to the app</div></div><div class="chev">'+IC.chev+'</div></button>';
+  }
   o+='<div class="hub-section-label">Data</div>';
   o+='<button class="hub-row" onclick="exportAllData()"><div class="hub-icon" style="background:#475569">'+IC.upload+'</div>'
     +'<div class="hub-main"><div class="hub-title">Export / Backup</div><div class="hub-sub">Download all data as JSON</div></div><div class="chev">'+IC.chev+'</div></button>';
@@ -2020,6 +2024,8 @@ function renderScreen(){
   if(t==='partyedit') return scrPartyEdit();
   if(t==='personas')  return scrPersonas();
   if(t==='owners')    return scrOwners();
+  if(t==='tenants')   return scrTenants();
+  if(t==='tenant')    return scrTenant();
   if(t==='personedit') return scrPersonEdit();
   if(t==='persondetails') return scrPersonDetails();
   if(t==='dayedit')   return scrDayEdit();
@@ -3174,6 +3180,73 @@ function emailOwnerInvite(email){
   location.href='mailto:'+encodeURIComponent(email)+'?subject='+subj+'&body='+bd;
 }
 
+/* ── Super-admin console: every tenant (family workspace) ── */
+function openTenants(){
+  if(!(window.CLOUD&&window.CLOUD.isSuper)){toast('Super-admin only');return;}
+  S._tenants=null;openScreen({type:'tenants'});
+  window.CLOUD.listWorkspaces().then(function(a){S._tenants=a;if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();}).catch(function(e){S._tenants=[];toast(e.message||'Could not load');renderScreen_inplace2();});
+}
+function scrTenants(){
+  if(!(window.CLOUD&&window.CLOUD.isSuper))return screenShell('All Parties','<div class="body-empty" style="padding:24px 12px">Super-admin only.</div>',null,null,'Done');
+  var body='<div class="hub-section-label" style="margin-left:0">Every family</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">Each authorized owner has their own walled space. Tap one to see (and manage) their parties, people and trips.</div>';
+  if(S._tenants===null){body+='<div class="body-empty" style="padding:8px 2px">Loading…</div>';return screenShell('All Parties',body,null,null,'Done');}
+  if(!S._tenants.length){body+='<div class="body-empty" style="padding:8px 2px">No family spaces yet. They appear once an owner signs in and creates one.</div>';return screenShell('All Parties',body,null,null,'Done');}
+  for(var i=0;i<S._tenants.length;i++){var w=S._tenants[i];
+    var sub=(w.byEmail||w.by||'unknown owner')+' · '+w.memberCount+' '+(w.memberCount===1?'member':'members');
+    body+='<button class="hub-row" onclick="openTenant(\''+esc(w.wid)+'\')"><div class="hub-icon" style="background:#7C2D12">'+IC.home+'</div>'
+      +'<div class="hub-main"><div class="hub-title">'+esc(w.name)+'</div><div class="hub-sub">'+esc(sub)+'</div></div><div class="chev">'+IC.chev+'</div></button>';
+  }
+  return screenShell('All Parties',body,null,null,'Done');
+}
+function openTenant(wid){
+  if(!(window.CLOUD&&window.CLOUD.isSuper)){toast('Super-admin only');return;}
+  S._tenantData=null;S._tenantWid=wid;
+  var nm='';for(var i=0;i<(S._tenants||[]).length;i++)if(S._tenants[i].wid===wid)nm=S._tenants[i].name;
+  S._tenantName=nm;openScreen({type:'tenant',wid:wid});
+  window.CLOUD.readWorkspace(wid).then(function(map){S._tenantData=map;renderScreen_inplace2();}).catch(function(e){S._tenantData={};toast(e.message||'Could not load');renderScreen_inplace2();});
+}
+function scrTenant(){
+  if(!(window.CLOUD&&window.CLOUD.isSuper))return screenShell('Family','<div class="body-empty" style="padding:24px 12px">Super-admin only.</div>',null,null,'Done');
+  var d=S._tenantData, nm=S._tenantName||'Family';
+  if(d===null)return screenShell(nm,'<div class="body-empty" style="padding:24px 12px">Loading…</div>',null,null,'Done');
+  var parties=d.dtp_parties||[], fam=d.dtp_family||[], trips=d.dtp_trips||[];
+  var body='<div class="body-empty" style="text-align:left;padding:2px 2px 8px;font-size:12px">Read-only view of this family\'s data. Use “Manage this family” to make changes.</div>';
+  body+='<div class="hub-section-label" style="margin-left:0">Planning Parties ('+parties.length+')</div>';
+  for(var i=0;i<parties.length;i++)body+='<div class="hub-row" style="cursor:default"><div class="hub-icon" style="background:#6B4FA0">'+IC.home+'</div><div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(parties[i].name||'(unnamed)')+'</div></div></div>';
+  body+='<div class="hub-section-label" style="margin-left:0">People ('+fam.length+')</div>';
+  for(var j=0;j<fam.length;j++){var p=fam[j];var bits=[];if(p.admin)bits.push('Admin');if(p.email)bits.push(esc(p.email));bits.push(p.uid?'signed in':'not joined');
+    body+='<div class="hub-row" style="cursor:default"><div class="hub-icon" style="background:'+(p.color||'#475569')+'">'+esc((p.name||'?')[0])+'</div><div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(p.name||'(unnamed)')+'</div><div class="hub-sub">'+bits.join(' · ')+'</div></div></div>';}
+  body+='<div class="hub-section-label" style="margin-left:0">Trips ('+trips.length+')</div>';
+  for(var k=0;k<trips.length;k++){var t=trips[k];var mc=(t.members||[]).length;
+    body+='<div class="hub-row" style="cursor:default"><div class="hub-icon" style="background:'+(t.color||'#475569')+'">'+IC.map+'</div><div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(t.name||'(unnamed)')+'</div><div class="hub-sub">'+esc(t.dates||(t.start||'')+(t.end?' – '+t.end:''))+' · '+mc+' '+(mc===1?'person':'people')+'</div></div></div>';}
+  return screenShell(nm,body,null,null,'Back','<button class="sec-add" onclick="enterTenant(\''+esc(S._tenantWid)+'\')">Manage this family</button>','openTenants()');
+}
+/* switch INTO a tenant to manage it (super-admin); banner offers Exit */
+function enterTenant(wid){
+  if(!(window.CLOUD&&window.CLOUD.isSuper)){toast('Super-admin only');return;}
+  if(!confirm('Manage this family? You\'ll be editing their live data. Your own data is untouched and you can Exit anytime.'))return;
+  S._superSelf={persona:S.persona,partyId:S.partyId,tripId:S.tripId};
+  toast('Loading…');
+  window.CLOUD.enterWorkspace(wid).then(function(){
+    /* act as one of their admins so permissions/UI resolve */
+    var adm=FAMILY.filter(function(p){return p.admin;})[0]||FAMILY[0];
+    if(adm){S.persona=adm.id;save('dtp_persona',adm.id);}
+    ensureActiveParty();ensureVisibleTrip();
+    closeScreen();S.tab='home';render();toast('Managing '+(window.CLOUD.partyName||'family'));
+  }).catch(function(e){toast(e.message||'Could not open');});
+}
+function exitTenant(){
+  toast('Returning…');
+  window.CLOUD.exitWorkspace().then(function(){
+    var s=S._superSelf||{};S._superSelf=null;
+    if(s.persona&&person(s.persona)){S.persona=s.persona;save('dtp_persona',s.persona);}
+    ensureActiveParty();if(s.partyId&&partyById(s.partyId)){S.partyId=s.partyId;savePartyId();}
+    ensureVisibleTrip();if(s.tripId)S.tripId=s.tripId;
+    S.tab='home';render();toast('Back to your own data');
+  }).catch(function(e){toast(e.message||'Could not exit');});
+}
+
 
 /* shared travel-detail inputs (booking metadata) — used by both the self-service
    editor and the admin person editor. `pre` is the id prefix (pd / pe). */
@@ -3923,10 +3996,17 @@ function renderNoTrip(){
   o+='</div>';
   return o;
 }
+/* super-admin impersonation bar — shown while managing another family */
+function impersonationBanner(){
+  if(!(window.CLOUD&&window.CLOUD.adminWid))return '';
+  return '<div style="background:#7C2D12;color:#fff;padding:8px 12px;display:flex;align-items:center;justify-content:space-between;font-size:13px;font-weight:600">'
+    +'<span>Managing '+esc(window.CLOUD.partyName||'a family')+' as super-admin</span>'
+    +'<button onclick="exitTenant()" style="background:#fff;color:#7C2D12;border:0;border-radius:8px;padding:5px 12px;font-weight:700">Exit</button></div>';
+}
 function render(){
   /* normalise stale/unauthorised tabs (Overview removed; Admin is admin-only) */
   if(S.tab==='overview'||(S.tab==='admin'&&!isAdmin()))S.tab='home';
-  document.getElementById('header-host').innerHTML=renderHeader();
+  document.getElementById('header-host').innerHTML=impersonationBanner()+renderHeader();
   if(noTripSelected()){
     document.getElementById('strip-host').innerHTML='';
     document.getElementById('filter-host').innerHTML='';

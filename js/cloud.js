@@ -18,7 +18,7 @@
   }
   try{ firebase.initializeApp(FIREBASE_CONFIG); }catch(e){ /* already initialized */ }
   var auth=firebase.auth();
-  var C={enabled:true,user:null,ready:false,synced:false,applyingRemote:false,wid:null,partyName:null,isSuper:false,isOwner:false};
+  var C={enabled:true,user:null,ready:false,synced:false,applyingRemote:false,wid:null,partyName:null,isSuper:false,isOwner:false,adminWid:null};
   var SUPER_EMAIL='millsi@gmail.com';   /* the one account that authorizes everyone else */
   function emailKey(e){return (e||'').trim().toLowerCase();}
 
@@ -69,7 +69,9 @@
   var LOCAL_ONLY={dtp_persona:1,dtp_tripId:1,dtp_partyId:1,dtp_chatseen:1,dtp_emailForSignIn:1,dtp_ver:1,dtp_wid:1,dtp_invite:1};
   function syncable(k){return !!k&&k.indexOf('dtp_')===0&&k.indexOf('dtp__')!==0&&!LOCAL_ONLY[k];}
   /* the active key/value collection: family workspace if joined, else personal */
-  function kvCol(){return C.wid?db().collection('workspaces/'+C.wid+'/kv'):db().collection('users/'+C.user.uid+'/kv');}
+  /* the active key/value collection. adminWid (super-admin impersonation) wins,
+     then the user's own party, else their personal space. */
+  function kvCol(){var w=C.adminWid||C.wid;return w?db().collection('workspaces/'+w+'/kv'):db().collection('users/'+C.user.uid+'/kv');}
   function profileRef(){return db().doc('users/'+C.user.uid+'/meta/profile');}
   function loadTimes(){try{return JSON.parse(localStorage.getItem('dtp__synctimes')||'{}');}catch(e){return {};}}
   function saveTimes(t){try{localStorage.setItem('dtp__synctimes',JSON.stringify(t));}catch(e){}}
@@ -153,7 +155,7 @@
     if(!C.user)return Promise.reject(new Error('Sign in first'));
     var wid=newCode(), nm=(name||'Planning Party');
     var wref=db().doc('workspaces/'+wid);
-    return wref.set({name:nm,by:C.user.uid,createdAt:Date.now()})
+    return wref.set({name:nm,by:C.user.uid,byEmail:C.user.email||null,createdAt:Date.now()})
       .then(function(){ return wref.collection('members').doc(C.user.uid).set({email:C.user.email||null,joinedAt:Date.now()}); })
       .then(function(){ setLocalWid(wid); C.partyName=nm; return profileRef().set({wid:wid},{merge:true}); })
       .then(function(){ return reconcile('merge'); })   /* push your data up into the new party */
@@ -199,6 +201,44 @@
   C.listOwners=function(){return db().collection('owners').get().then(function(s){var a=[];s.forEach(function(d){a.push(d.id);});return a.sort();});};
   C.addOwner=function(email){email=emailKey(email);if(!email)return Promise.reject(new Error('Enter an email'));return db().doc('owners/'+email).set({by:C.user.email||null,at:Date.now()}).then(function(){return email;});};
   C.removeOwner=function(email){email=emailKey(email);return db().doc('owners/'+email).delete();};
+
+  /* ── super-admin console (cross-tenant) ────────────────── */
+  /* every workspace (tenant), with owner email + member count */
+  C.listWorkspaces=function(){
+    if(!C.isSuper)return Promise.reject(new Error('Super-admin only'));
+    return db().collection('workspaces').get().then(function(snap){
+      var jobs=[];
+      snap.forEach(function(d){
+        var w=d.data()||{};
+        jobs.push(d.ref.collection('members').get().then(function(ms){
+          var owner=w.byEmail||null;
+          ms.forEach(function(m){if(m.id===w.by&&m.data().email)owner=m.data().email;});
+          return {wid:d.id,name:w.name||'(unnamed)',by:w.by||null,byEmail:owner,memberCount:ms.size,createdAt:w.createdAt||0};
+        }).catch(function(){return {wid:d.id,name:w.name||'(unnamed)',by:w.by||null,byEmail:w.byEmail||null,memberCount:0,createdAt:w.createdAt||0};}));
+      });
+      return Promise.all(jobs).then(function(list){return list.sort(function(a,b){return (b.createdAt||0)-(a.createdAt||0);});});
+    });
+  };
+  /* read-only snapshot of a tenant's data (parsed key→value map) */
+  C.readWorkspace=function(wid){
+    if(!C.isSuper)return Promise.reject(new Error('Super-admin only'));
+    return db().collection('workspaces/'+wid+'/kv').get().then(function(snap){
+      var out={};
+      snap.forEach(function(d){var v=d.data().v;try{out[d.id]=JSON.parse(v);}catch(e){out[d.id]=v;}});
+      return out;
+    });
+  };
+  /* switch INTO a tenant to manage it — no profile.wid change, no membership */
+  C.enterWorkspace=function(wid){
+    if(!C.isSuper)return Promise.reject(new Error('Super-admin only'));
+    stopListener();C.adminWid=wid;
+    return reconcile('adopt');   /* loads tenant data locally + rehydrates + restarts listener */
+  };
+  /* switch back to the super's own space */
+  C.exitWorkspace=function(){
+    stopListener();C.adminWid=null;
+    return reconcile('adopt');
+  };
 
   /* read the user's chosen party + their access level, then sync */
   function startSync(){
