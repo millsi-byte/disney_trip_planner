@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='67';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='68';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2407,6 +2407,7 @@ function scrImport(){
       +'<div class="import-step"><span class="is-n">2</span>Claude replies with JSON. Copy it.</div>'
       +'<div class="import-step"><span class="is-n">3</span>Paste it below and review.</div></div>';
     body+='<button class="btn-secondary" onclick="copyImportPrompt()">'+IC.sparkles+' Copy instructions for Claude</button>';
+    body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px">Tip: for repeated planning, set up a reusable <strong>Claude Project</strong> with these instructions — see <code>docs/claude-project-setup.md</code> in the repo. <span style="white-space:nowrap">Build '+BUILD+'</span></div>';
     body+='<div class="field" style="margin-top:14px"><label class="field-label">Paste Claude\'s JSON</label>'
       +'<textarea class="field-input" id="import-paste" rows="8" placeholder=\'{ "items": [ ... ] }\' style="font-family:monospace;font-size:13px;resize:vertical"></textarea></div>';
     body+='<button class="btn-primary" onclick="importParse()">Review items</button>';
