@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='64';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='65';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -108,7 +108,9 @@ REBOOKS = load('dtp_rebooks', REBOOKS);
 TRIPS   = load('dtp_trips', TRIPS);
 NOTIFS  = load('dtp_notifs', NOTIFS);
 S.persona = load('dtp_persona', S.persona);
+S.tripId  = load('dtp_tripId', S.tripId);   /* remember the last-selected trip across reloads */
 function saveNotifs(){save('dtp_notifs',NOTIFS);}
+function saveTripId(){save('dtp_tripId',S.tripId);}
 
 /* every planning item belongs to a trip — default seed items to jul26 */
 function tagTrip(coll){for(var i=0;i<coll.length;i++)if(!coll[i].trip)coll[i].trip='jul26';}
@@ -559,7 +561,13 @@ function sendNotif(){
 }
 
 /* recipient-side queries */
-function notifsFor(pid){pid=pid||S.persona;return NOTIFS.filter(function(n){return n.to===pid;}).sort(function(a,b){return b.time-a.time;});}
+/* newest first; tiebreak by insertion order so same-millisecond notifs are stable */
+function notifsFor(pid){pid=pid||S.persona;
+  return NOTIFS.map(function(n,i){return {n:n,i:i};})
+    .filter(function(x){return x.n.to===pid;})
+    .sort(function(a,b){return (b.n.time-a.n.time)||(b.i-a.i);})
+    .map(function(x){return x.n;});
+}
 function notifUnread(pid){pid=pid||S.persona;var n=0;for(var i=0;i<NOTIFS.length;i++)if(NOTIFS[i].to===pid&&!NOTIFS[i].read)n++;return n;}
 function markNotifsRead(pid){pid=pid||S.persona;var ch=false;for(var i=0;i<NOTIFS.length;i++)if(NOTIFS[i].to===pid&&!NOTIFS[i].read){NOTIFS[i].read=true;ch=true;}if(ch)saveNotifs();}
 function clearNotifs(){NOTIFS=NOTIFS.filter(function(n){return n.to!==S.persona;});saveNotifs();
@@ -686,7 +694,7 @@ function openSheet(def){S.sheet=def;renderOverlay();requestAnimationFrame(functi
 /* only tears down the sheet — must NOT re-render screen-host, or a screen
    opened right after (e.g. New trip) loses its slide-in and flies off */
 function closeSheet(){var host=document.getElementById('sheet-host');var b=host&&host.firstChild;if(b){b.classList.remove('in');setTimeout(function(){S.sheet=null;var hh=document.getElementById('sheet-host');if(hh)hh.innerHTML='';},240);}else{S.sheet=null;var h2=document.getElementById('sheet-host');if(h2)h2.innerHTML='';}}
-function switchTrip(id){saveLists();S.tripId=id;loadLists();S.dayIdx=0;S.tab="home";S.open=defOpen();S.fmode='all';S.filter.clear();closeSheet();toast("Switched to "+trip().name);render();}
+function switchTrip(id){saveLists();S.tripId=id;saveTripId();loadLists();S.dayIdx=0;S.tab="home";S.open=defOpen();S.fmode='all';S.filter.clear();closeSheet();toast("Switched to "+trip().name);render();}
 
 /* screens (slide-in) */
 function openScreen(def){
@@ -698,7 +706,7 @@ function openScreen(def){
   else if(def.type==='tripedit'){var _et=tripById(def.tripId);S._notify=!!(_et&&_et.status==='active');}
   if(def.type==='addflight'){S.formLegs=def.edit?((FLIGHTS.filter(function(f){return f.id===def.edit;})[0]||{legs:[0]}).legs.length):1;}
   else{S.formLegs=1;}
-  if(def.type==='import'){S.importStep=1;S._importItems=null;S._importCount=0;}
+  if(def.type==='import'){S.importStep=1;S._importItems=null;S._importCount=0;S._importEdit=null;}
   renderOverlay();requestAnimationFrame(function(){var s=document.getElementById('screen-host').firstChild;if(s)s.classList.add('in');});
 }
 function closeScreen(){var host=document.getElementById('screen-host');var s=host&&host.firstChild;if(s){s.classList.remove('in');setTimeout(function(){S.screen=null;renderOverlay();},260);}else{S.screen=null;renderOverlay();}}
@@ -751,7 +759,7 @@ function setPersona(id){
 }
 function finishLogin(id){
   var p=person(id);if(!p)return;
-  S.persona=id;save('dtp_persona',id);ensureVisibleTrip();toast("You are "+p.name);render();closeScreen();
+  S.persona=id;save('dtp_persona',id);ensureVisibleTrip();saveTripId();S.tab='home';toast("You are "+p.name);render();closeScreen();
 }
 /* change your OWN persona PIN (entering your current one). Admins reset others in Manage People. */
 function setMyPin(){
@@ -2208,56 +2216,62 @@ function parseImportText(raw){
 function impId(p){return p+Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
 function impDate(d){return (typeof d==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(d.trim()))?d.trim():'';}
 function impPark(p){p=(p||'').toLowerCase();return IMPORT_PARKS[p]?p:'';}
-/* build one real record from a loose imported item → {type,rec,summary,error} */
+function impDLabel(d){return (d&&/^\d{4}-\d{2}-\d{2}$/.test(d))?monOf(d)+' '+(+d.slice(8)):'';}
+/* one-line summary for a built record — reused by build + the inline editor */
+function importSummary(type,rec){
+  if(!rec)return '';
+  if(type==='Resort')return rec.name+(rec.room?' · '+rec.room:'')+(impDLabel(rec.checkin)?' · '+impDLabel(rec.checkin):'');
+  if(type==='Dining')return rec.name+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'')+(rec.time?' · '+rec.time:'');
+  if(type==='Lightning Lane')return rec.ride+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'')+' · '+tagShort(rec.tier);
+  if(type==='Park reservation')return (IMPORT_PARKS[rec.park]||'?')+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'');
+  if(type==='Show')return rec.name+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'')+(rec.time?' · '+rec.time:'');
+  if(type==='Flight'){var f=(rec.legs&&rec.legs[0])||{},l=(rec.legs&&rec.legs[rec.legs.length-1])||{};return rec.label+' · '+(f.depApt||'?')+' → '+(l.arrApt||'?')+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'');}
+  return '';
+}
+/* build one real record from a loose imported item → {type,rec,summary,error}.
+   A record is always built (best-effort) so it stays editable; `error` is set
+   when a required field is missing, and cleared once the user fills it in. */
+var IMPORT_REQ_LBL={name:'a name',day:'a date',ride:'a ride',park:'a park',label:'a label'};
+function finalizeImport(type,rec){
+  var miss=(IMPORT_REQ[type]||[]).filter(function(k){return !rec[k];});
+  var o={type:type,rec:rec,summary:importSummary(type,rec)};
+  if(miss.length)o.error=type+' needs '+miss.map(function(k){return IMPORT_REQ_LBL[k]||k;}).join(' & ');
+  return o;
+}
 function buildImportItem(it){
-  if(!it||typeof it!=='object')return {error:'Not a valid item'};
+  if(!it||typeof it!=='object')return {type:'?',error:'Not a valid item'};
   var t=(it.type||'').toLowerCase(),tid=S.tripId;
   function base(extra){var o={id:impId(t[0]||'x'),trip:tid,who:'all'};for(var k in extra)o[k]=extra[k];return o;}
   if(t==='resort'){
-    if(!it.name)return {type:t,error:'Resort needs a name'};
-    var rec=base({name:String(it.name),room:it.room||'',checkin:impDate(it.checkin),checkout:impDate(it.checkout),
-      inTime:it.inTime||'4:00 PM',outTime:it.outTime||'11:00 AM',conf:it.conf||'',status:it.status||'booked'});
-    return {type:'Resort',rec:rec,summary:rec.name+(rec.room?' · '+rec.room:'')+(rec.checkin?' · '+monOf(rec.checkin)+' '+(+rec.checkin.slice(8)):'')};
+    return finalizeImport('Resort',base({name:it.name?String(it.name):'',room:it.room||'',checkin:impDate(it.checkin),checkout:impDate(it.checkout),
+      inTime:it.inTime||'4:00 PM',outTime:it.outTime||'11:00 AM',conf:it.conf||'',status:it.status||'booked'}));
   }
   if(t==='dining'){
-    if(!it.name)return {type:t,error:'Dining needs a name'};
-    if(!impDate(it.day))return {type:'Dining',error:'Dining needs a valid day (YYYY-MM-DD)'};
-    var rec2=base({name:String(it.name),day:impDate(it.day),meal:it.meal||'Dinner',time:it.time||'',
-      loc:(it.loc==='off'?'off':'in'),status:it.status||'reserved',conf:it.conf||''});
-    var pk=impPark(it.park);if(pk)rec2.park=pk;
-    return {type:'Dining',rec:rec2,summary:rec2.name+' · '+monOf(rec2.day)+' '+(+rec2.day.slice(8))+(rec2.time?' · '+rec2.time:'')};
+    var rec2=base({name:it.name?String(it.name):'',day:impDate(it.day),meal:it.meal||'Dinner',time:it.time||'',
+      loc:(it.loc==='off'?'off':'in'),status:it.status||'reserved',conf:it.conf||'',park:impPark(it.park)});
+    return finalizeImport('Dining',rec2);
   }
   if(t==='lightning'||t==='ll'||t==='lightninglane'){
-    if(!it.ride)return {type:'Lightning Lane',error:'Lightning Lane needs a ride'};
-    if(!impDate(it.day))return {type:'Lightning Lane',error:'Lightning Lane needs a valid day'};
     var tier=({sp:'sp',mp1:'mp1',mp2:'mp2'})[(it.tier||'').toLowerCase()]||'mp1';
-    var rec3=base({ride:String(it.ride),day:impDate(it.day),park:impPark(it.park),tier:tier,
-      status:it.status==='booked'?'booked':'planning',window:it.window||'',bookedTime:it.bookedTime||'',conf:it.conf||'',bookDate:it.bookDate||''});
-    return {type:'Lightning Lane',rec:rec3,summary:rec3.ride+' · '+monOf(rec3.day)+' '+(+rec3.day.slice(8))+' · '+tagShort(tier)};
+    return finalizeImport('Lightning Lane',base({ride:it.ride?String(it.ride):'',day:impDate(it.day),park:impPark(it.park),tier:tier,
+      status:it.status==='booked'?'booked':'planning',window:it.window||'',bookedTime:it.bookedTime||'',conf:it.conf||'',bookDate:it.bookDate||''}));
   }
   if(t==='parkres'||t==='park reservation'){
-    var pk2=impPark(it.park);
-    if(!pk2)return {type:'Park reservation',error:'Park reservation needs a valid park (mk/ep/hs/ak)'};
-    if(!impDate(it.day))return {type:'Park reservation',error:'Park reservation needs a valid day'};
-    var rec4=base({day:impDate(it.day),park:pk2,status:it.status||'booked'});
-    return {type:'Park reservation',rec:rec4,summary:IMPORT_PARKS[pk2]+' · '+monOf(rec4.day)+' '+(+rec4.day.slice(8))};
+    return finalizeImport('Park reservation',base({day:impDate(it.day),park:impPark(it.park),status:it.status||'booked'}));
   }
   if(t==='show'){
-    if(!it.name)return {type:'Show',error:'Show needs a name'};
-    if(!impDate(it.day))return {type:'Show',error:'Show needs a valid day'};
-    var rec5=base({name:String(it.name),day:impDate(it.day),time:it.time||'',status:it.status||'attend'});
-    return {type:'Show',rec:rec5,summary:rec5.name+' · '+monOf(rec5.day)+' '+(+rec5.day.slice(8))+(rec5.time?' · '+rec5.time:'')};
+    return finalizeImport('Show',base({name:it.name?String(it.name):'',day:impDate(it.day),time:it.time||'',status:it.status||'attend'}));
   }
   if(t==='flight'){
     var legs=Array.isArray(it.legs)?it.legs:[];
-    if(!legs.length)return {type:'Flight',error:'Flight needs at least one leg'};
     var cl=legs.map(function(l){return {airline:l.airline||'',num:l.num||'',conf:l.conf||'',
       depApt:l.depApt||'',depCity:l.depCity||'',depTime:l.depTime||'',depDate:impDate(l.depDate),
       arrApt:l.arrApt||'',arrCity:l.arrCity||'',arrTime:l.arrTime||'',arrDate:impDate(l.arrDate)};});
-    var day=impDate(it.day)||cl[0].depDate;
+    var day=impDate(it.day)||(cl[0]&&cl[0].depDate)||'';
     var rec6=base({label:it.label||'Flight',day:day,status:it.status==='booked'?'booked':'planning',legs:cl});
-    var first=cl[0],last=cl[cl.length-1];
-    return {type:'Flight',rec:rec6,summary:rec6.label+' · '+(first.depApt||'?')+' → '+(last.arrApt||'?')+(day?' · '+monOf(day)+' '+(+day.slice(8)):'')};
+    var o6=finalizeImport('Flight',rec6);
+    if(!cl.length)o6.error='Flight needs at least one leg';
+    return o6;
   }
   return {type:it.type||'?',error:'Unknown type "'+(it.type||'')+'"'};
 }
@@ -2296,7 +2310,57 @@ function importSave(){
   S._importCount=added;S.importStep=3;renderScreen_inplace2();
 }
 function importRemove(i){var e=(S._importItems||[])[i];if(e)e._removed=!e._removed;renderScreen_inplace2();}
-function importReset(){S._importItems=null;S.importStep=1;renderScreen_inplace2();}
+function importReset(){S._importItems=null;S._importEdit=null;S.importStep=1;renderScreen_inplace2();}
+
+/* ── inline editing in the review screen ──────────────────── */
+/* editable fields per type: [key,label,kind]  kind: text | date | [options] */
+var IMPORT_FIELDS={
+  Resort:[['name','Name','text'],['room','Room','text'],['checkin','Check-in','date'],['checkout','Check-out','date'],['conf','Confirmation #','text'],['status','Status',['booked','planning']]],
+  Dining:[['name','Name','text'],['day','Date','date'],['time','Time','text'],['meal','Meal',['Breakfast','Lunch','Dinner','Drinks']],['loc','Location',['in','off']],['conf','Confirmation #','text'],['status','Status',['reserved','want','planned']]],
+  'Lightning Lane':[['ride','Ride','text'],['day','Date','date'],['park','Park',['mk','ep','hs','ak']],['tier','Tier',['sp','mp1','mp2']],['status','Status',['booked','planning']],['bookedTime','Booked time','text'],['conf','Confirmation #','text']],
+  'Park reservation':[['day','Date','date'],['park','Park',['mk','ep','hs','ak']],['status','Status',['booked','planning']]],
+  Show:[['name','Name','text'],['day','Date','date'],['time','Time','text'],['status','Status',['attend','scheduled']]],
+  Flight:[['label','Label','text'],['day','Date','date'],['status','Status',['booked','planning']]]
+};
+/* required fields per type (re-checked after an edit) */
+var IMPORT_REQ={Resort:['name'],Dining:['name','day'],'Lightning Lane':['ride','day'],'Park reservation':['park','day'],Show:['name','day'],Flight:['label']};
+function importEditOpen(i){S._importEdit=i;renderScreen_inplace2();}
+function importEditCancel(){S._importEdit=null;renderScreen_inplace2();}
+function importEditApply(i){
+  var e=(S._importItems||[])[i];if(!e||!e.rec){S._importEdit=null;renderScreen_inplace2();return;}
+  (IMPORT_FIELDS[e.type]||[]).forEach(function(f){
+    var k=f[0],kind=f[2],v=val('imf-'+i+'-'+k);
+    if(kind==='date')e.rec[k]=impDate(v);
+    else if(k==='park')e.rec[k]=impPark(v);
+    else e.rec[k]=v;
+  });
+  /* re-validate + recompute summary/warning the same way the builder does */
+  var fin=finalizeImport(e.type,e.rec);
+  e.summary=fin.summary;
+  if(fin.error)e.error=fin.error;else delete e.error;
+  e.warn=e.error?'':importDateWarn(e.rec,e.type);
+  S._importEdit=null;renderScreen_inplace2();
+}
+/* the edit panel for one item */
+function importEditPanel(e,i){
+  var specs=IMPORT_FIELDS[e.type]||[];
+  var h='<div class="import-edit">';
+  specs.forEach(function(f){
+    var k=f[0],lbl=f[1],kind=f[2],cur=(e.rec&&e.rec[k]!=null)?e.rec[k]:'',id='imf-'+i+'-'+k;
+    h+='<div class="field" style="margin-bottom:8px"><label class="field-label">'+lbl+'</label>';
+    if(Array.isArray(kind)){
+      h+='<select class="field-input" id="'+id+'">';
+      kind.forEach(function(o){h+='<option value="'+o+'"'+(String(cur)===o?' selected':'')+'>'+o+'</option>';});
+      h+='</select>';
+    }else{
+      h+='<input class="field-input" id="'+id+'"'+(kind==='date'?' type="date"':'')+' value="'+esc(cur)+'">';
+    }
+    h+='</div>';
+  });
+  h+='<div style="display:flex;gap:8px"><button class="btn-secondary" style="margin:0;flex:1" onclick="importEditCancel()">Cancel</button>'
+    +'<button class="btn-secondary green" style="margin:0;flex:1" onclick="importEditApply('+i+')">Done</button></div>';
+  return h+'</div>';
+}
 function scrImport(){
   if(!isAdmin())return screenShell('AI Import','<div class="body-empty" style="padding:24px 12px">This tool is admin-only.</div>',null,null,'Close');
   var step=S.importStep||1,body='';
@@ -2320,14 +2384,22 @@ function scrImport(){
     body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:15px;color:var(--ink)"><strong>Here\'s what I found.</strong> Remove anything you don\'t want before saving.</div>';
     var anyWarn=false;
     for(var i=0;i<items.length;i++){var e=items[i];
-      if(e.error){body+=reviewItem('x',e.type||'Item',e.error);continue;}
-      var warned=!!e.warn&&!e._removed;if(warned)anyWarn=true;
-      var icCls=e._removed?'x':(warned?'q':'ok'),icHtml=e._removed?'&times;':(warned?'!':IC.checkw);
-      body+='<div class="review-item'+(e._removed?' fail':(warned?' warn':''))+'">'
+      var editing=(S._importEdit===i);
+      var hasErr=!!e.error,warned=!hasErr&&!!e.warn&&!e._removed;if(warned)anyWarn=true;
+      var icCls=hasErr?'x':(e._removed?'x':(warned?'q':'ok')),icHtml=hasErr?'&times;':(e._removed?'&times;':(warned?'!':IC.checkw));
+      body+='<div class="review-item'+(hasErr?' fail':(e._removed?' fail':(warned?' warn':'')))+'">'
         +'<span class="ri-ic '+icCls+'">'+icHtml+'</span>'
-        +'<div class="ri-main"><div class="ri-type">'+esc(e.type)+'</div><div class="ri-val">'+esc(e.summary)+'</div>'
-        +(warned?'<div class="ri-q">'+esc(e.warn)+'</div>':'')
-        +'<div class="ri-actions"><button class="ri-btn rm" onclick="importRemove('+i+')">'+(e._removed?'Keep':'Remove')+'</button></div></div></div>';
+        +'<div class="ri-main"><div class="ri-type">'+esc(e.type)+'</div>'
+        +'<div class="ri-val">'+esc(e.summary||e.error||'')+'</div>'
+        +(hasErr?'<div class="ri-q">'+esc(e.error)+'</div>':(warned?'<div class="ri-q">'+esc(e.warn)+'</div>':''));
+      if(editing){
+        body+=importEditPanel(e,i);
+      }else{
+        body+='<div class="ri-actions">';
+        if(e.rec)body+='<button class="ri-btn" onclick="importEditOpen('+i+')">Edit</button>';
+        body+='<button class="ri-btn rm" onclick="importRemove('+i+')">'+(e._removed?'Keep':'Remove')+'</button></div>';
+      }
+      body+='</div></div>';
     }
     if(anyWarn)body+='<div class="body-empty" style="text-align:left;padding:2px 2px 10px;font-size:13px;color:#92400E">Items marked in amber fall outside this trip\'s dates. You can still add them, but double-check you\'re on the right trip.</div>';
     body+='<button class="btn-primary"'+(okN?'':' disabled style="opacity:.5"')+' onclick="importSave()">'+(okN?'Add '+okN+' item'+(okN===1?'':'s')+' to '+esc(trip().name):'Nothing to add')+'</button>';
@@ -2398,7 +2470,7 @@ function createTrip(){
   var optIn=S._notify;S._members=null;
   toast('Trip created'+(S.newTmpl==='mine'?' from your template':''));
   /* land on the new trip's Plan page */
-  saveLists();S.tripId=id;loadLists();S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();S.tab='plan';
+  saveLists();S.tripId=id;saveTripId();loadLists();S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();S.tab='plan';
   closeScreen();render();
   notifyMembership(tripObj,[],mem,optIn);
 }
@@ -3151,7 +3223,7 @@ function doDelTrip(id){
        silently teleport into another trip; the user purposely picks the next one */
     S.tripId=null;S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();
   }
-  ensureVisibleTrip();persist();S._members=null;toast('Trip deleted');closeScreen();render();
+  ensureVisibleTrip();saveTripId();persist();S._members=null;toast('Trip deleted');closeScreen();render();
 }
 
 /* ============================================================
