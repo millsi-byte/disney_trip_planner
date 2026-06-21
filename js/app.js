@@ -67,7 +67,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='76';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='77';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1815,8 +1815,9 @@ function renderSheet(){
   var groups=[['active','Active'],['planning','Planning'],['archived','Archived']];
   var h='<div class="sheet-backdrop" onclick="if(event.target===this)closeSheet()"><div class="sheet">';
   h+='<div class="sheet-grip"></div><div class="sheet-title">Your Trips</div>';
+  h+='<button class="btn-secondary green" style="margin:4px 0 8px" onclick="closeSheet();openScreen({type:\'newtrip\'})">'+IC.plus+' Plan a new trip</button>';
   var vis=visibleTrips();
-  if(!vis.length) h+='<div class="body-empty" style="text-align:left;padding:6px 2px 4px">No trips yet. '+(isAdmin()?'Create one below.':'Ask an admin to add you to a trip.')+'</div>';
+  if(!vis.length) h+='<div class="body-empty" style="text-align:left;padding:6px 2px 4px">No trips yet. '+(isAdmin()?'Tap “Plan a new trip” above.':'Ask an admin to add you to a trip.')+'</div>';
   for(var g=0;g<groups.length;g++){
     var list=vis.filter(function(t){return t.status===groups[g][0];});
     if(!list.length)continue;
@@ -1833,7 +1834,6 @@ function renderSheet(){
       h+='<span class="trip-status ts-'+t.status+'">'+(on?'Current':t.status)+'</span></div>';
     }
   }
-  h+='<button class="sheet-new" onclick="closeSheet();openScreen({type:\'newtrip\'})">'+IC.plus+' New trip</button>';
   h+='</div></div>';
   return h;
 }
