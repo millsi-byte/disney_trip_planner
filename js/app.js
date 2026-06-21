@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='100';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='101';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -121,13 +121,22 @@ if(!PARTIES||!PARTIES.length){
   var _pa=(FAMILY.filter(function(p){return p.admin;})[0]||FAMILY[0]||{}).id||null;
   PARTIES=[{id:'g1',name:'My Planning Party',by:_pa}];
 }
-(function(){   /* every person & trip belongs to >=1 party (migrate legacy .groups) */
+/* every person & trip belongs to >=1 party (migrate legacy .groups). Must run
+   on first load AND after every cloud pull, since synced records may predate
+   the parties field — otherwise visibleTrips would wall them all out. */
+function ensurePartyTags(){
+  if(!PARTIES||!PARTIES.length){
+    var _legacy=load('dtp_groups',null);
+    if(_legacy&&_legacy.length)PARTIES=_legacy;
+    else{var _pa=(FAMILY.filter(function(p){return p.admin;})[0]||FAMILY[0]||{}).id||null;PARTIES=[{id:'g1',name:'My Planning Party',by:_pa}];}
+  }
   var pid=PARTIES[0].id;
   for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i];
     if(!Array.isArray(p.parties)||!p.parties.length)p.parties=(Array.isArray(p.groups)&&p.groups.length)?p.groups.slice():[pid];}
   for(var j=0;j<TRIPS.length;j++){var t=TRIPS[j];
     if(!Array.isArray(t.parties)||!t.parties.length)t.parties=(Array.isArray(t.groups)&&t.groups.length)?t.groups.slice():[pid];}
-})();
+}
+ensurePartyTags();
 function saveParties(){save('dtp_parties',PARTIES);}
 S.partyId = load('dtp_partyId', PARTIES[0].id);   /* active party context */
 function savePartyId(){save('dtp_partyId',S.partyId);}
@@ -220,6 +229,7 @@ function rehydrate(){
   FLIGHTS=load('dtp_flights',FLIGHTS); RESORTS=load('dtp_resorts',RESORTS); PARKRES=load('dtp_parkres',PARKRES);
   REBOOKS=load('dtp_rebooks',REBOOKS); TRIPS=load('dtp_trips',TRIPS); NOTIFS=load('dtp_notifs',NOTIFS);
   PARTIES=load('dtp_parties',PARTIES)||PARTIES; CHAT=load('dtp_chat',CHAT);
+  try{ensurePartyTags();}catch(e){}   /* re-tag records that arrived without a party */
   try{ensureActiveParty();}catch(e){}
   try{ensureVisibleTrip();}catch(e){}
   try{loadLists();}catch(e){}
@@ -240,14 +250,16 @@ function switchParty(pid){if(pid===S.partyId){closeSheet();return;}S.partyId=pid
 function trip(){for(var i=0;i<TRIPS.length;i++)if(TRIPS[i].id===S.tripId)return TRIPS[i];return visibleTrips()[0]||TRIPS[0];}
 /* trips the current persona may see: within the active party; admins see all of
    it, others only trips they own or are a member of (owning always wins) */
+/* a trip belongs to the active party (an untagged trip shows everywhere so
+   data never silently disappears) */
+function tripInActiveParty(t){return !t.parties||!t.parties.length||t.parties.indexOf(S.partyId)>=0;}
 function visibleTrips(){
-  var pid=S.partyId;
-  if(isAdmin())return TRIPS.filter(function(t){return t.parties&&t.parties.indexOf(pid)>=0;});
+  if(isAdmin())return TRIPS.filter(tripInActiveParty);
   /* others: trips in the active party they're on, plus any trip they own
      (you never lose your own trip, even if it lives in another party) */
   return TRIPS.filter(function(t){
     if(t.by&&t.by===S.persona)return true;
-    return (t.parties&&t.parties.indexOf(pid)>=0)&&(t.members&&t.members.indexOf(S.persona)>=0);
+    return tripInActiveParty(t)&&(t.members&&t.members.indexOf(S.persona)>=0);
   });
 }
 /* does the current persona have any trip they can see? */
@@ -1566,7 +1578,26 @@ function renderAdminHub(){
   o+='<div class="hub-section-label">Data</div>';
   o+='<button class="hub-row" onclick="exportAllData()"><div class="hub-icon" style="background:#475569">'+IC.upload+'</div>'
     +'<div class="hub-main"><div class="hub-title">Export / Backup</div><div class="hub-sub">Download all data as JSON</div></div><div class="chev">'+IC.chev+'</div></button>';
+  o+='<button class="hub-row" onclick="startOver()"><div class="hub-icon" style="background:#B91C1C">'+IC.warn+'</div>'
+    +'<div class="hub-main"><div class="hub-title">Start over</div><div class="hub-sub">Wipe all trips, people & lists — leaves just you</div></div><div class="chev">'+IC.chev+'</div></button>';
   return o;
+}
+/* nuke everything (cloud + local) and re-seed a blank account with just you */
+function startOver(){
+  if(!isAdmin()){toast('Admin only');return;}
+  if(!confirm('Start over? This permanently deletes ALL trips, people and lists, leaving only you. It cannot be undone.'))return;
+  if(!confirm('Last chance — wipe everything and start fresh?'))return;
+  toast('Starting over…');
+  var finish=function(){
+    resetToBlank();
+    try{closeScreen();}catch(e){}
+    S.tab='home';S.sheet=null;
+    render();
+    toast('Fresh start — just you now');
+  };
+  if(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user&&window.CLOUD.wipe){
+    window.CLOUD.wipe().then(finish,finish);
+  }else finish();
 }
 function hubRow(r){
   var act=r[4];

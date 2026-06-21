@@ -46,6 +46,16 @@
   };
   C.signOut=function(){return auth.signOut();};
 
+  /* delete every synced data doc in the active space (a clean slate) */
+  C.wipe=function(){
+    if(!C.user)return Promise.resolve();
+    var col=kvCol();
+    return col.get().then(function(snap){
+      var dels=[];snap.forEach(function(d){dels.push(d.ref.delete());});
+      return Promise.all(dels);
+    });
+  };
+
   /* connectivity test: write a doc to your own space and read it back */
   C.ping=function(){
     if(!C.user)return Promise.reject(new Error('Sign in first'));
