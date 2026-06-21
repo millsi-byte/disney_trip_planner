@@ -67,7 +67,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='82';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='83';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2647,6 +2647,7 @@ function colorOptions(sel){
 }
 function scrPersonas(){
   if(!isAdmin())return screenShell('Manage People','<div class="body-empty" style="padding:24px 12px">Admin only — switch to an admin persona from the <strong>I am</strong> button.</div>',null,null,'Done');
+  S._newPerson=null;   /* back at the list → no pending add */
   var body='<div class="hub-section-label" style="margin-left:0">People</div>';
   for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i];
     var bits=[];if(p.admin)bits.push('Admin');
@@ -2678,6 +2679,7 @@ function setPersonaPin(id){
 /* Manage Groups — tappable list of group items (consistent with Manage People) */
 function scrGroups(){
   if(!isAdmin())return screenShell('Manage Groups','<div class="body-empty" style="padding:24px 12px">Admin only — switch to an admin persona from the <strong>I am</strong> button.</div>',null,null,'Done');
+  S._newGroup=null;   /* back at the list → no pending add */
   var body='<div class="hub-section-label" style="margin-left:0">Groups</div>';
   body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">A group is a family or household. Tap one to edit its name and members.</div>';
   for(var i=0;i<GROUPS.length;i++){var g=GROUPS[i];
@@ -2688,7 +2690,7 @@ function scrGroups(){
   }
   return screenShell('Manage Groups',body,null,null,'Done','<button class="sec-add" onclick="addGroup()">Add group</button>');
 }
-function addGroup(){var id='g'+Date.now();GROUPS.push({id:id,name:'New Group',by:S.persona});saveGroups();S._formInit=null;openScreen({type:'groupedit',gid:id});}
+function addGroup(){var id='g'+Date.now();GROUPS.push({id:id,name:'New Group',by:S.persona});saveGroups();S._newGroup=id;S._formInit=null;openScreen({type:'groupedit',gid:id});}
 /* per-group editor: name + members (with a Save button) */
 function scrGroupEdit(){
   if(!isAdmin())return screenShell('Edit Group','<div class="body-empty" style="padding:24px 12px">Admin only.</div>',null,null,'Done');
@@ -2717,6 +2719,7 @@ function saveGroupEdit(gid){
     if(want&&!has)p.groups.push(gid);
     else if(!want&&has&&p.groups.length>1)p.groups=p.groups.filter(function(x){return x!==gid;});
   });
+  S._newGroup=null;   /* committed */
   save('dtp_groups',GROUPS);save('dtp_family',FAMILY);toast('Group saved');backToGroups();
 }
 function geDelete(gid){
@@ -2792,9 +2795,20 @@ function scrPersonEdit(){
   body+='<button class="btn-danger-link" onclick="peDelete(\''+pid+'\')">Remove this person</button>';
   return screenShell('Edit '+esc(p.name),body,'Save','savePersonEdit(\''+pid+'\')','Cancel',null,'backToPeople()');
 }
-/* sub-editors return to their list, not all the way out to the Admin tab */
-function backToPeople(){S._formInit=null;openScreen({type:'personas'});}
-function backToGroups(){S._formInit=null;openScreen({type:'groups'});}
+/* sub-editors return to their list, not all the way out to the Admin tab.
+   A just-added record that was never saved (cancelled) is discarded here. */
+function backToPeople(){
+  if(S._newPerson){var nid=S._newPerson;S._newPerson=null;
+    if(person(nid)){FAMILY=FAMILY.filter(function(x){return x.id!==nid;});ALL_IDS=FAMILY.map(function(p){return p.id;});delete PACKING[nid];save('dtp_family',FAMILY);saveLists();}}
+  S._formInit=null;openScreen({type:'personas'});
+}
+function backToGroups(){
+  if(S._newGroup){var nid=S._newGroup;S._newGroup=null;
+    if(groupById(nid)){GROUPS=GROUPS.filter(function(x){return x.id!==nid;});
+      FAMILY.forEach(function(p){if(p.groups&&p.groups.indexOf(nid)>=0){p.groups=p.groups.filter(function(x){return x!==nid;});if(!p.groups.length&&GROUPS[0])p.groups=[GROUPS[0].id];}});
+      save('dtp_groups',GROUPS);save('dtp_family',FAMILY);}}
+  S._formInit=null;openScreen({type:'groups'});
+}
 function peToggleAdmin(){S._peAdmin=!S._peAdmin;renderScreen_inplace2();}
 function peToggleGroup(gid){if(!S._peGroups)S._peGroups=new Set();if(S._peGroups.has(gid))S._peGroups.delete(gid);else S._peGroups.add(gid);renderScreen_inplace2();}
 function savePersonEdit(pid){
@@ -2809,6 +2823,7 @@ function savePersonEdit(pid){
   p.groups=gs.length?gs:[GROUPS[0].id];
   captureTravel(p,'pe');
   ALL_IDS=FAMILY.map(function(x){return x.id;});
+  S._newPerson=null;   /* committed */
   save('dtp_family',FAMILY);toast('Saved');backToPeople();
 }
 function peDelete(pid){
@@ -2825,6 +2840,7 @@ function addPersona(){
   ALL_IDS=FAMILY.map(function(p){return p.id;});
   PACKING[id]=[];
   save('dtp_family',FAMILY);saveLists();
+  S._newPerson=id;   /* provisional until saved — cancelling discards it */
   S._formInit=null;openScreen({type:'personedit',pid:id});   /* jump straight into the new person's form */
 }
 function delPersona(id){
