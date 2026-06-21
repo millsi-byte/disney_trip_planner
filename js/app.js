@@ -66,7 +66,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='58';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='59';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -218,8 +218,17 @@ function visible(who){
 function esc(s){return (s==null?"":String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
 /* who display — person-initial circles everywhere something is assigned */
+/* an explicit list that already covers the whole trip is just "everyone" */
+function collapseWho(who){
+  if(!Array.isArray(who))return who;
+  var mem=tripMembers();
+  if(!mem.length||who.length<mem.length)return who;
+  for(var i=0;i<mem.length;i++)if(who.indexOf(mem[i])<0)return who;
+  return 'all';
+}
 function whoChips(who){return whoStack(who);}
 function whoStack(who){
+  who=collapseWho(who);
   if(who==="all"||!who) return '<span class="who-all">Everyone</span>';
   if(!who.length) return '';
   var h='<div class="who-stack">';
@@ -322,7 +331,7 @@ function joinMe(){
   var oldWho=it.who;
   var arr=Array.isArray(it.who)?it.who.slice():[];
   if(arr.indexOf(S.persona)<0)arr.push(S.persona);
-  it.who=arr;
+  it.who=collapseWho(arr);
   persist();
   if(cat) notifyChange({trip:it.trip,cat:cat,label:notifLabel(cat,it),item:it,oldWho:oldWho,newWho:it.who,actor:S.persona,optIn:S._notify});
   toast(isActionCat(cat)?'Added you — '+(person(creatorOf(it,it.trip))?person(creatorOf(it,it.trip)).name:'the organizer')+' will update the booking':'Added you to this');
