@@ -67,7 +67,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='83';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='84';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -129,7 +129,17 @@ function saveGroups(){save('dtp_groups',GROUPS);}
 /* every planning item belongs to a trip — default seed items to jul26 */
 function tagTrip(coll){for(var i=0;i<coll.length;i++)if(!coll[i].trip)coll[i].trip='jul26';}
 [DAYS,VISITS,PARKHOURS,DINING,LLS,SHOWS,FLIGHTS,RESORTS,PARKRES,REBOOKS].forEach(tagTrip);
-for(var _c=0;_c<CHAT.length;_c++)if(!CHAT[_c].trip)CHAT[_c].trip='jul26';
+CHAT = load('dtp_chat', CHAT);
+/* every chat message needs a trip, a stable id, and a sortable timestamp
+   (the seed uses display strings only) — backfill so sync/ordering works later */
+(function(){var base=Date.now()-CHAT.length*1000;
+  for(var i=0;i<CHAT.length;i++){var m=CHAT[i];
+    if(!m.trip)m.trip='jul26';
+    if(!m.id)m.id='c'+(base+i*1000)+'_'+i;
+    if(!m.ts)m.ts=base+i*1000;
+  }
+})();
+function saveChat(){save('dtp_chat',CHAT);}
 
 /* per-trip packing / to-do (PACKING/TODO hold the active trip's lists) */
 function listKey(base){return 'dtp_'+base+'_'+S.tripId;}
@@ -188,7 +198,7 @@ function materializeAllDays(){
 function persist(){
   save('dtp_days',DAYS);save('dtp_visits',VISITS);save('dtp_hours',PARKHOURS);save('dtp_dining',DINING);save('dtp_lls',LLS);
   save('dtp_shows',SHOWS);save('dtp_flights',FLIGHTS);save('dtp_resorts',RESORTS);
-  save('dtp_parkres',PARKRES);save('dtp_rebooks',REBOOKS);save('dtp_trips',TRIPS);save('dtp_family',FAMILY);save('dtp_groups',GROUPS);
+  save('dtp_parkres',PARKRES);save('dtp_rebooks',REBOOKS);save('dtp_trips',TRIPS);save('dtp_family',FAMILY);save('dtp_groups',GROUPS);save('dtp_chat',CHAT);
 }
 
 /* ── Helpers ───────────────────────────────────────────────── */
@@ -1438,6 +1448,9 @@ function renderAdminHub(){
     +'<div class="hub-main"><div class="hub-title">Manage People</div><div class="hub-sub">'+FAMILY.length+' people</div></div><div class="chev">'+IC.chev+'</div></button>';
   o+='<button class="hub-row" onclick="openScreen({type:\'groups\'})"><div class="hub-icon" style="background:#6B4FA0">'+IC.home+'</div>'
     +'<div class="hub-main"><div class="hub-title">Manage Groups</div><div class="hub-sub">'+GROUPS.length+' '+(GROUPS.length===1?'group':'groups')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
+  o+='<div class="hub-section-label">Data</div>';
+  o+='<button class="hub-row" onclick="exportAllData()"><div class="hub-icon" style="background:#475569">'+IC.upload+'</div>'
+    +'<div class="hub-main"><div class="hub-title">Export / Backup</div><div class="hub-sub">Download all data as JSON</div></div><div class="chev">'+IC.chev+'</div></button>';
   return o;
 }
 function hubRow(r){
@@ -1500,7 +1513,8 @@ function renderChat(){
 }
 function refIcon(t){var i=t==='dining'?IC.fork:t==='flight'?IC.planexs:t==='show'?IC.star:IC.route;return '<span style="display:flex">'+i+'</span>';}
 function sendChat(){var e=document.getElementById('chat-inp');if(!e||!e.value.trim())return;
-  CHAT.push({from:S.persona,text:e.value.trim(),time:'Now',trip:S.tripId});render();
+  CHAT.push({id:'c'+Date.now()+'_'+Math.random().toString(36).slice(2,6),from:S.persona,text:e.value.trim(),time:'Now',ts:Date.now(),trip:S.tripId});
+  saveChat();render();
   setTimeout(function(){var w=document.getElementById('chatwrap');if(w)window.scrollTo(0,document.body.scrollHeight);},30);
 }
 
@@ -2333,15 +2347,31 @@ function importCsvTemplate(){
   });
   return rows.map(function(r){return r.join(',');}).join('\n');
 }
-function downloadCSV(filename,text){
+function downloadFile(filename,text,mime,okMsg){
   try{
-    var blob=new Blob([text],{type:'text/csv;charset=utf-8'});
+    var blob=new Blob([text],{type:(mime||'text/plain')+';charset=utf-8'});
     var url=URL.createObjectURL(blob);
     var a=document.createElement('a');a.href=url;a.download=filename;
     document.body.appendChild(a);a.click();
     setTimeout(function(){if(a.parentNode)a.parentNode.removeChild(a);URL.revokeObjectURL(url);},120);
-    toast('Template downloaded');
+    toast(okMsg||'Downloaded');
   }catch(e){toast('Download not supported here');}
+}
+function downloadCSV(filename,text){downloadFile(filename,text,'text/csv','Template downloaded');}
+/* full backup of everything stored on this device — also the seed file for the
+   eventual backend migration. Dumps every dtp_* key. */
+function buildBackup(){
+  persist();saveLists();   /* flush in-memory state first */
+  var dump={app:'disney-trip-planner',dataVersion:DATA_VERSION,build:BUILD,exported:new Date().toISOString(),keys:{}};
+  try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf('dtp_')===0){
+    try{dump.keys[k]=JSON.parse(localStorage.getItem(k));}catch(e){dump.keys[k]=localStorage.getItem(k);}
+  }}}catch(e){}
+  return dump;
+}
+function exportAllData(){
+  if(!isAdmin()){toast('Admin only');return;}
+  var d=buildBackup();
+  downloadFile('disney-trip-backup-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(d,null,2),'application/json','Backup downloaded');
 }
 function importCsvDownload(){downloadCSV('trip-template.csv',importCsvTemplate());}
 /* small RFC-ish CSV parser (handles quotes, commas, CRLF) → array of rows */
