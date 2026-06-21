@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='61';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='62';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -698,6 +698,7 @@ function openScreen(def){
   else if(def.type==='tripedit'){var _et=tripById(def.tripId);S._notify=!!(_et&&_et.status==='active');}
   if(def.type==='addflight'){S.formLegs=def.edit?((FLIGHTS.filter(function(f){return f.id===def.edit;})[0]||{legs:[0]}).legs.length):1;}
   else{S.formLegs=1;}
+  if(def.type==='import'){S.importStep=1;S._importItems=null;S._importCount=0;}
   renderOverlay();requestAnimationFrame(function(){var s=document.getElementById('screen-host').firstChild;if(s)s.classList.add('in');});
 }
 function closeScreen(){var host=document.getElementById('screen-host');var s=host&&host.firstChild;if(s){s.classList.remove('in');setTimeout(function(){S.screen=null;renderOverlay();},260);}else{S.screen=null;renderOverlay();}}
@@ -1378,9 +1379,12 @@ function renderPlanHub(){
   ];
   o+='<div class="hub-section-label">Trip components</div>';
   for(var i=0;i<rows.length;i++) o+=hubRow(rows[i]);
-  o+='<div class="hub-section-label">Get started fast</div>';
-  o+='<button class="hub-row" onclick="openScreen({type:\'import\'})"><div class="hub-icon" style="background:#1E40AF">'+IC.sparkles+'</div>'
-    +'<div class="hub-main"><div class="hub-title">AI Import</div><div class="hub-sub">Pull details from emails, PDFs & spreadsheets</div></div><div class="chev">'+IC.chev+'</div></button>';
+  /* AI Import is admin-only for now — it's a power-user paste tool */
+  if(isAdmin()){
+    o+='<div class="hub-section-label">Get started fast</div>';
+    o+='<button class="hub-row" onclick="openScreen({type:\'import\'})"><div class="hub-icon" style="background:#1E40AF">'+IC.sparkles+'</div>'
+      +'<div class="hub-main"><div class="hub-title">AI Import <span class="admin-tag">Admin</span></div><div class="hub-sub">Paste structured details from Claude</div></div><div class="chev">'+IC.chev+'</div></button>';
+  }
   o+='<div class="hub-section-label">Trip & settings</div>';
   if(canEditTrip())
     o+='<button class="hub-row" onclick="openScreen({type:\'tripedit\'})"><div class="hub-icon" style="background:#6B4FA0">'+IC.pencil+'</div>'
@@ -2146,33 +2150,170 @@ function delLL(id){
   });
 }
 
-/* AI Import */
+/* ============================================================
+   AI IMPORT  (admin-only paste tool)
+   You parse a confirmation with Claude (in the Claude app), Claude returns
+   JSON in the format below, you paste it here, review, and save into the
+   current trip. No server, no API key — Claude is the brain, this is the catcher.
+   ============================================================ */
+var IMPORT_PARKS={mk:'Magic Kingdom',ep:'EPCOT',hs:'Hollywood Studios',ak:'Animal Kingdom'};
+/* the recipe we hand Claude so its JSON matches the app exactly */
+function importPromptText(){
+  return [
+'You are turning Walt Disney World reservation details into JSON for my trip planner app.',
+'Read the confirmation I paste next and reply with ONLY a JSON object (no prose, no code fence) shaped like:',
+'',
+'{ "items": [ ... ] }',
+'',
+'Each item has a "type" and these fields (use YYYY-MM-DD for all dates, omit anything you cannot find):',
+'',
+'• resort:    {"type":"resort","name":"","room":"","checkin":"","checkout":"","inTime":"4:00 PM","outTime":"11:00 AM","conf":"","status":"booked"}',
+'• dining:    {"type":"dining","name":"","day":"","meal":"Breakfast|Lunch|Dinner|Drinks","time":"7:40 PM","park":"mk|ep|hs|ak (omit if not in a park)","loc":"in|off","conf":"","status":"reserved|want|planned"}',
+'• lightning: {"type":"lightning","ride":"","day":"","park":"mk|ep|hs|ak","tier":"sp|mp1|mp2","status":"booked|planning","bookedTime":"9:45 AM","conf":""}',
+'   (tier: sp = Single/Individual Lightning Lane, mp1 = Multi Pass tier 1, mp2 = Multi Pass tier 2)',
+'• parkres:   {"type":"parkres","day":"","park":"mk|ep|hs|ak","status":"booked"}',
+'• show:      {"type":"show","name":"","day":"","time":"9:00 PM","status":"attend|scheduled"}',
+'• flight:    {"type":"flight","label":"Outbound|Return","day":"","status":"booked|planning","legs":[',
+'     {"airline":"","num":"WN 4657","conf":"","depApt":"BOS","depCity":"Boston","depTime":"5:45 AM","depDate":"","arrApt":"MCO","arrCity":"Orlando","arrTime":"11:50 AM","arrDate":""} ]}',
+'',
+'Return one item per reservation. If something is ambiguous, make your best guess and still include it.'
+  ].join('\n');
+}
+function copyImportPrompt(){
+  var t=importPromptText();
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(t).then(function(){toast('Instructions copied — paste them to Claude');},function(){toast('Copy failed — select the text manually');});
+      return;
+    }
+  }catch(e){}
+  toast('Copy not supported here');
+}
+/* tolerant JSON parse: strips code fences and grabs the first {...} block */
+function parseImportText(raw){
+  if(!raw||!raw.trim())return null;
+  var s=raw.trim().replace(/^```(json)?/i,'').replace(/```$/,'').trim();
+  try{return JSON.parse(s);}catch(e){}
+  var a=s.indexOf('{'),b=s.lastIndexOf('}');
+  if(a>=0&&b>a){try{return JSON.parse(s.slice(a,b+1));}catch(e2){}}
+  return null;
+}
+function impId(p){return p+Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
+function impDate(d){return (typeof d==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(d.trim()))?d.trim():'';}
+function impPark(p){p=(p||'').toLowerCase();return IMPORT_PARKS[p]?p:'';}
+/* build one real record from a loose imported item → {type,rec,summary,error} */
+function buildImportItem(it){
+  if(!it||typeof it!=='object')return {error:'Not a valid item'};
+  var t=(it.type||'').toLowerCase(),tid=S.tripId;
+  function base(extra){var o={id:impId(t[0]||'x'),trip:tid,who:'all'};for(var k in extra)o[k]=extra[k];return o;}
+  if(t==='resort'){
+    if(!it.name)return {type:t,error:'Resort needs a name'};
+    var rec=base({name:String(it.name),room:it.room||'',checkin:impDate(it.checkin),checkout:impDate(it.checkout),
+      inTime:it.inTime||'4:00 PM',outTime:it.outTime||'11:00 AM',conf:it.conf||'',status:it.status||'booked'});
+    return {type:'Resort',rec:rec,summary:rec.name+(rec.room?' · '+rec.room:'')+(rec.checkin?' · '+monOf(rec.checkin)+' '+(+rec.checkin.slice(8)):'')};
+  }
+  if(t==='dining'){
+    if(!it.name)return {type:t,error:'Dining needs a name'};
+    if(!impDate(it.day))return {type:'Dining',error:'Dining needs a valid day (YYYY-MM-DD)'};
+    var rec2=base({name:String(it.name),day:impDate(it.day),meal:it.meal||'Dinner',time:it.time||'',
+      loc:(it.loc==='off'?'off':'in'),status:it.status||'reserved',conf:it.conf||''});
+    var pk=impPark(it.park);if(pk)rec2.park=pk;
+    return {type:'Dining',rec:rec2,summary:rec2.name+' · '+monOf(rec2.day)+' '+(+rec2.day.slice(8))+(rec2.time?' · '+rec2.time:'')};
+  }
+  if(t==='lightning'||t==='ll'||t==='lightninglane'){
+    if(!it.ride)return {type:'Lightning Lane',error:'Lightning Lane needs a ride'};
+    if(!impDate(it.day))return {type:'Lightning Lane',error:'Lightning Lane needs a valid day'};
+    var tier=({sp:'sp',mp1:'mp1',mp2:'mp2'})[(it.tier||'').toLowerCase()]||'mp1';
+    var rec3=base({ride:String(it.ride),day:impDate(it.day),park:impPark(it.park),tier:tier,
+      status:it.status==='booked'?'booked':'planning',window:it.window||'',bookedTime:it.bookedTime||'',conf:it.conf||'',bookDate:it.bookDate||''});
+    return {type:'Lightning Lane',rec:rec3,summary:rec3.ride+' · '+monOf(rec3.day)+' '+(+rec3.day.slice(8))+' · '+tagShort(tier)};
+  }
+  if(t==='parkres'||t==='park reservation'){
+    var pk2=impPark(it.park);
+    if(!pk2)return {type:'Park reservation',error:'Park reservation needs a valid park (mk/ep/hs/ak)'};
+    if(!impDate(it.day))return {type:'Park reservation',error:'Park reservation needs a valid day'};
+    var rec4=base({day:impDate(it.day),park:pk2,status:it.status||'booked'});
+    return {type:'Park reservation',rec:rec4,summary:IMPORT_PARKS[pk2]+' · '+monOf(rec4.day)+' '+(+rec4.day.slice(8))};
+  }
+  if(t==='show'){
+    if(!it.name)return {type:'Show',error:'Show needs a name'};
+    if(!impDate(it.day))return {type:'Show',error:'Show needs a valid day'};
+    var rec5=base({name:String(it.name),day:impDate(it.day),time:it.time||'',status:it.status||'attend'});
+    return {type:'Show',rec:rec5,summary:rec5.name+' · '+monOf(rec5.day)+' '+(+rec5.day.slice(8))+(rec5.time?' · '+rec5.time:'')};
+  }
+  if(t==='flight'){
+    var legs=Array.isArray(it.legs)?it.legs:[];
+    if(!legs.length)return {type:'Flight',error:'Flight needs at least one leg'};
+    var cl=legs.map(function(l){return {airline:l.airline||'',num:l.num||'',conf:l.conf||'',
+      depApt:l.depApt||'',depCity:l.depCity||'',depTime:l.depTime||'',depDate:impDate(l.depDate),
+      arrApt:l.arrApt||'',arrCity:l.arrCity||'',arrTime:l.arrTime||'',arrDate:impDate(l.arrDate)};});
+    var day=impDate(it.day)||cl[0].depDate;
+    var rec6=base({label:it.label||'Flight',day:day,status:it.status==='booked'?'booked':'planning',legs:cl});
+    var first=cl[0],last=cl[cl.length-1];
+    return {type:'Flight',rec:rec6,summary:rec6.label+' · '+(first.depApt||'?')+' → '+(last.arrApt||'?')+(day?' · '+monOf(day)+' '+(+day.slice(8)):'')};
+  }
+  return {type:it.type||'?',error:'Unknown type "'+(it.type||'')+'"'};
+}
+/* parse + build everything from the textarea into S._importItems */
+function importParse(){
+  var raw=val('import-paste')||'';
+  var data=parseImportText(raw);
+  if(!data){toast('Couldn\'t read that — make sure it\'s the JSON Claude gave you');return;}
+  var arr=Array.isArray(data)?data:(Array.isArray(data.items)?data.items:null);
+  if(!arr||!arr.length){toast('No items found in that JSON');return;}
+  S._importItems=arr.map(buildImportItem);
+  S.importStep=2;renderScreen_inplace2();
+}
+/* commit the valid items into their collections */
+function importSave(){
+  var items=S._importItems||[],added=0;
+  var M={'Resort':RESORTS,'Dining':DINING,'Lightning Lane':LLS,'Park reservation':PARKRES,'Show':SHOWS,'Flight':FLIGHTS};
+  items.forEach(function(e){
+    if(e.error||e._removed||!e.rec)return;
+    var coll=M[e.type];if(!coll)return;coll.push(e.rec);added++;
+  });
+  persist();
+  S._importCount=added;S.importStep=3;renderScreen_inplace2();
+}
+function importRemove(i){var e=(S._importItems||[])[i];if(e)e._removed=!e._removed;renderScreen_inplace2();}
+function importReset(){S._importItems=null;S.importStep=1;renderScreen_inplace2();}
 function scrImport(){
-  var step=S.importStep;
-  var body='';
+  if(!isAdmin())return screenShell('AI Import','<div class="body-empty" style="padding:24px 12px">This tool is admin-only.</div>',null,null,'Close');
+  var step=S.importStep||1,body='';
   if(step===1){
-    body+='<div class="import-drop"><div class="id-ic">'+IC.upload+'</div><div class="id-title">Import trip details</div>';
-    body+='<div class="id-sub">Drop a file or tap to upload. We\'ll read it and pull out flights, dining, resort and more.</div>';
-    body+='<div class="import-accept"><span>Email screenshots</span><span>.xlsx / .csv</span><span>PDF confirmations</span><span>Photos</span></div></div>';
-    body+='<button class="btn-primary" onclick="S.importStep=2;renderScreen_inplace2()">Upload sample files</button>';
+    body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:15px;color:var(--ink)">'
+      +'Parse a confirmation with <strong>Claude</strong>, then paste the JSON it gives you here. Items are added to <strong>'+esc(trip().name)+'</strong>.</div>';
+    body+='<div class="import-steps">'
+      +'<div class="import-step"><span class="is-n">1</span>Copy the instructions and paste them to Claude, then add your email or screenshot.</div>'
+      +'<div class="import-step"><span class="is-n">2</span>Claude replies with JSON. Copy it.</div>'
+      +'<div class="import-step"><span class="is-n">3</span>Paste it below and review.</div></div>';
+    body+='<button class="btn-secondary" onclick="copyImportPrompt()">'+IC.sparkles+' Copy instructions for Claude</button>';
+    body+='<div class="field" style="margin-top:14px"><label class="field-label">Paste Claude\'s JSON</label>'
+      +'<textarea class="field-input" id="import-paste" rows="8" placeholder=\'{ "items": [ ... ] }\' style="font-family:monospace;font-size:13px;resize:vertical"></textarea></div>';
+    body+='<button class="btn-primary" onclick="importParse()">Review items</button>';
     body+='<button class="btn-secondary" onclick="closeScreen()">Cancel</button>';
     return screenShell('AI Import',body,null,null,'Close');
   }
   if(step===2){
-    body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:16px;color:var(--ink)"><strong>Here\'s what I found.</strong> Confirm, edit, or remove each item before saving.</div>';
-    body+=reviewItem('ok','Resort','Disney\'s BoardWalk Villas · 1-Bedroom Villa');
-    body+=reviewItem('ok','Dates','Check-in Jul 14 · Check-out Jul 19');
-    body+=reviewItem('ok','Confirmation','#619078381899');
-    body+=reviewItem('ok','Flight','SW 4657 · BOS → MCO · Jul 14 · 5:45 AM → 11:50 AM');
-    body+=reviewItem('q','Dining','"Brown Derby"',' — did you mean The Hollywood Brown Derby?');
-    body+=reviewItem('x','File','attachment.pdf',' — couldn\'t read this one');
-    body+='<button class="btn-primary" onclick="S.importStep=3;renderScreen_inplace2()">Add 5 items</button>';
+    var items=S._importItems||[];
+    var okN=items.filter(function(e){return !e.error&&!e._removed;}).length;
+    body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:15px;color:var(--ink)"><strong>Here\'s what I found.</strong> Remove anything you don\'t want before saving.</div>';
+    for(var i=0;i<items.length;i++){var e=items[i];
+      if(e.error)body+=reviewItem('x',e.type||'Item',e.error);
+      else body+='<div class="review-item'+(e._removed?' fail':'')+'">'
+        +'<span class="ri-ic '+(e._removed?'x':'ok')+'">'+(e._removed?'&times;':IC.checkw)+'</span>'
+        +'<div class="ri-main"><div class="ri-type">'+esc(e.type)+'</div><div class="ri-val">'+esc(e.summary)+'</div>'
+        +'<div class="ri-actions"><button class="ri-btn rm" onclick="importRemove('+i+')">'+(e._removed?'Keep':'Remove')+'</button></div></div></div>';
+    }
+    body+='<button class="btn-primary"'+(okN?'':' disabled style="opacity:.5"')+' onclick="importSave()">'+(okN?'Add '+okN+' item'+(okN===1?'':'s'):'Nothing to add')+'</button>';
+    body+='<button class="btn-secondary" onclick="importReset()">Back</button>';
     return screenShell('Review Import',body,null,null,'Back');
   }
+  var n=S._importCount||0;
   body+='<div style="text-align:center;padding:30px 10px"><div class="id-ic" style="margin:0 auto 14px;background:#DCFCE7;color:#15803D;width:64px;height:64px">'+IC.checks+'</div>';
-  body+='<div class="pg-title" style="text-align:center">Saved</div><div class="pg-sub" style="text-align:center">5 items added to '+esc(trip().name)+'.</div></div>';
-  body+=reviewItem('ok','Added','Resort, dates, confirmation, 1 flight & 1 dining');
-  body+='<button class="btn-primary" onclick="closeScreen();toast(\'Imported into trip\')">Done</button>';
+  body+='<div class="pg-title" style="text-align:center">Saved</div><div class="pg-sub" style="text-align:center">'+n+' item'+(n===1?'':'s')+' added to '+esc(trip().name)+'.</div></div>';
+  body+='<button class="btn-primary" onclick="S._importItems=null;closeScreen();render()">Done</button>';
+  body+='<button class="btn-secondary" onclick="importReset()">Import more</button>';
   return screenShell('Import Complete',body,null,null,'Close');
 }
 function reviewItem(kind,type,val,extra){
