@@ -18,7 +18,9 @@
   }
   try{ firebase.initializeApp(FIREBASE_CONFIG); }catch(e){ /* already initialized */ }
   var auth=firebase.auth();
-  var C={enabled:true,user:null,ready:false,synced:false,applyingRemote:false,wid:null,partyName:null};
+  var C={enabled:true,user:null,ready:false,synced:false,applyingRemote:false,wid:null,partyName:null,isSuper:false,isOwner:false};
+  var SUPER_EMAIL='millsi@gmail.com';   /* the one account that authorizes everyone else */
+  function emailKey(e){return (e||'').trim().toLowerCase();}
 
   function db(){return firebase.firestore();}
 
@@ -181,7 +183,14 @@
 
   window.CLOUD=C;
 
-  /* read the user's chosen party, then sync against it */
+  /* ── access control (invite-only) ──────────────────────── */
+  C.isSuperAdmin=function(){return emailKey(C.user&&C.user.email)===SUPER_EMAIL;};
+  /* the authorized-owner allowlist (only the super-admin can edit it) */
+  C.listOwners=function(){return db().collection('owners').get().then(function(s){var a=[];s.forEach(function(d){a.push(d.id);});return a.sort();});};
+  C.addOwner=function(email){email=emailKey(email);if(!email)return Promise.reject(new Error('Enter an email'));return db().doc('owners/'+email).set({by:C.user.email||null,at:Date.now()}).then(function(){return email;});};
+  C.removeOwner=function(email){email=emailKey(email);return db().doc('owners/'+email).delete();};
+
+  /* read the user's chosen party + their access level, then sync */
   function startSync(){
     return profileRef().get().then(function(s){
       C.wid=(s.exists&&s.data().wid)||null;
@@ -190,6 +199,11 @@
       .then(function(){
         if(!C.wid){C.partyName=null;return;}
         return db().doc('workspaces/'+C.wid).get().then(function(w){C.partyName=(w.exists&&w.data().name)||null;}).catch(function(){});
+      })
+      .then(function(){
+        C.isSuper=C.isSuperAdmin();
+        if(C.isSuper){C.isOwner=true;return;}
+        return db().doc('owners/'+emailKey(C.user.email)).get().then(function(d){C.isOwner=d.exists;}).catch(function(){C.isOwner=false;});
       })
       .then(function(){ return reconcile('merge'); });
   }

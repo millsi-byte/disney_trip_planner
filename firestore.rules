@@ -2,19 +2,35 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Personal space — your own devices only (back up + cross-device sync).
+    // The one super-admin who authorizes everyone else.
+    function isSuper() {
+      return request.auth != null && request.auth.token.email == 'millsi@gmail.com';
+    }
+    // An authorized trip owner: the super-admin, or an email on the allowlist.
+    function isOwner() {
+      return request.auth != null &&
+        (isSuper() || exists(/databases/$(database)/documents/owners/$(request.auth.token.email.lower())));
+    }
+
+    // Allowlist of trip owners. Anyone signed in can check; only super edits.
+    match /owners/{email} {
+      allow read: if request.auth != null;
+      allow write: if isSuper();
+    }
+
+    // Personal space — your own devices (backup + profile + offline cache).
     match /users/{uid}/{doc=**} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
 
-    // Shared family space — everyone who joined the code.
+    // Planning Parties (shared trips).
     match /workspaces/{wid} {
       function isMember() {
         return request.auth != null &&
           exists(/databases/$(database)/documents/workspaces/$(wid)/members/$(request.auth.uid));
       }
       allow get: if request.auth != null;        // verify a code before joining
-      allow create: if request.auth != null;     // start a new family space
+      allow create: if isOwner();                // only authorized owners start a party
       allow update, delete: if isMember();
 
       // Each member self-adds (join) and self-removes (leave).
@@ -23,7 +39,7 @@ service cloud.firestore {
         allow create, delete: if request.auth != null && request.auth.uid == uid;
       }
 
-      // The shared data — only members can read/write.
+      // The shared data — members only.
       match /kv/{key} {
         allow read, write: if isMember();
       }

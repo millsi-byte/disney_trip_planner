@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='95';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='96';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -860,16 +860,15 @@ function onCloudSynced(){
     }).catch(function(e){toast(e.message||'Invite failed');openScreen({type:'claim'});});
     return;
   }
-  /* 4. first ever sign-in on this data (nobody linked yet) → you're the owner */
-  var anyLinked=FAMILY.some(function(p){return p.uid;});
-  if(!anyLinked){
-    var seat=null;
-    for(i=0;i<FAMILY.length;i++)if(FAMILY[i].admin){seat=FAMILY[i];break;}
-    if(!seat)seat=FAMILY[0];
-    if(seat){claimPersona(seat.id);return;}   /* claimPersona also spins up your party */
+  /* 4. not linked / matched / invited → access depends on authorization */
+  if(window.CLOUD.isSuper||window.CLOUD.isOwner){
+    if(window.CLOUD.inParty&&window.CLOUD.inParty())
+      openScreen({type:'claim'});      /* returning owner whose seat isn't linked → pick */
+    else
+      openScreen({type:'wizard'});     /* authorized new owner → guided setup */
+  }else{
+    openScreen({type:'noaccess'});     /* not on the guest list */
   }
-  /* 5. established data, no match → pick who you are (or enter a code) */
-  openScreen({type:'claim'});
 }
 /* called by cloud.js when there's no signed-in cloud user */
 function onCloudSignedOut(){
@@ -1983,6 +1982,9 @@ function renderScreen(){
   if(t==='persona')   return scrPersona();
   if(t==='signin')    return scrSignIn();
   if(t==='claim')     return scrClaim();
+  if(t==='noaccess')  return scrNoAccess();
+  if(t==='owners')    return scrOwners();
+  if(t==='wizard')    return scrWizard();
   if(t==='personas')  return scrPersonas();
   if(t==='groups')    return scrGroups();
   if(t==='groupedit') return scrGroupEdit();
@@ -2787,6 +2789,166 @@ function scrClaim(){
   return screenShell('Who are you?',body,null,null,false);
 }
 
+/* ── Not on the guest list (invite-only) ─────────────────── */
+function scrNoAccess(){
+  var email=(window.CLOUD&&window.CLOUD.user)?(window.CLOUD.user.email||''):'';
+  var body='<div style="text-align:center;padding:24px 8px">';
+  body+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:24px;font-weight:700">You\'re not on the guest list</div>';
+  body+='<div class="body-empty" style="padding:12px 6px">'+(email?'Signed in as <strong>'+esc(email)+'</strong>. ':'')+'Baseline Tap is invite-only. Ask whoever invited you for your sign-in link, or have the admin add your email.</div></div>';
+  body+='<button class="btn-secondary" onclick="window.CLOUD.signOut()">Sign in with a different account</button>';
+  return screenShell('No access',body,null,null,false);
+}
+
+/* ── Authorized owners (super-admin only) ────────────────── */
+function scrOwners(){
+  if(!(window.CLOUD&&window.CLOUD.isSuper))return screenShell('Authorized Owners','<div class="body-empty" style="padding:24px 12px">Super-admin only.</div>',null,null,'Done');
+  var list=S._owners||[];
+  var body='<div class="hub-section-label" style="margin-left:0">Authorized trip owners</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 10px;font-size:13px">These emails can sign in and start their own trip. Everyone else is blocked. (You\'re always allowed.)</div>';
+  if(!list.length)body+='<div class="body-empty" style="padding:8px 2px">No owners added yet.</div>';
+  for(var i=0;i<list.length;i++){
+    body+='<div class="hub-row" style="cursor:default"><div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(list[i])+'</div></div><button class="btn-secondary" style="margin:0;width:auto;padding:6px 12px;min-height:0" onclick="ownerRemove(\''+esc(list[i])+'\')">Remove</button></div>';
+  }
+  body+='<div class="hub-section-label" style="margin-left:0">Add an owner</div>';
+  body+='<div class="field"><input class="field-input" id="owner-email" type="email" inputmode="email" placeholder="their@email.com"></div>';
+  body+='<button class="btn-secondary green" onclick="ownerAdd()">Add owner</button>';
+  return screenShell('Authorized Owners',body,null,null,'Done');
+}
+function openOwners(){
+  S._owners=[];openScreen({type:'owners'});
+  if(window.CLOUD&&window.CLOUD.listOwners)window.CLOUD.listOwners().then(function(a){S._owners=a;if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();}).catch(function(e){toast(e.message||'Could not load owners');});
+}
+function ownerAdd(){
+  var e=val('owner-email');if(!e){toast('Enter an email');return;}
+  window.CLOUD.addOwner(e).then(function(){toast('Owner added');return window.CLOUD.listOwners();}).then(function(a){S._owners=a;renderScreen_inplace2();}).catch(function(er){toast(er.message||'Could not add');});
+}
+function ownerRemove(e){
+  if(!confirm('Remove '+e+' as an authorized owner?'))return;
+  window.CLOUD.removeOwner(e).then(function(){toast('Removed');return window.CLOUD.listOwners();}).then(function(a){S._owners=a;renderScreen_inplace2();}).catch(function(er){toast(er.message||'Could not remove');});
+}
+
+/* ── First-run setup wizard (new authorized owner) ───────── */
+function wizOwnerName(){
+  var u=window.CLOUD&&window.CLOUD.user;
+  return (u&&u.displayName)||((u&&u.email)?u.email.split('@')[0]:'Me');
+}
+/* wipe the demo seed and stand up a clean account for this owner */
+function resetToBlank(){
+  FAMILY=[];TRIPS=[];DAYS=[];VISITS=[];PARKHOURS=[];DINING=[];LLS=[];SHOWS=[];FLIGHTS=[];RESORTS=[];PARKRES=[];REBOOKS=[];NOTIFS=[];CHAT=[];
+  var gid='g1';GROUPS=[{id:gid,name:'My Group',by:null}];
+  var oid='p'+Date.now();
+  var owner={id:oid,name:wizOwnerName(),color:PALETTE[0][0],admin:true,groups:[gid],email:(window.CLOUD&&window.CLOUD.user&&window.CLOUD.user.email)||'',uid:cloudUid()};
+  FAMILY.push(owner);ALL_IDS=[oid];GROUPS[0].by=oid;
+  S.persona=oid;S.groupId=gid;S.tripId=null;PACKING={};TODO=[];
+  persist();save('dtp_persona',oid);saveGroupId();saveTripId();
+}
+function startWizard(){S._wiz={step:'welcome'};openScreen({type:'wizard'});}
+function wizStart(){
+  resetToBlank();
+  if(window.CLOUD&&window.CLOUD.inParty&&!window.CLOUD.inParty()&&window.CLOUD.createParty){
+    window.CLOUD.createParty('My Trip').then(function(){S._wiz.step='party';renderScreen_inplace2();}).catch(function(e){toast(e.message||'Could not start');S._wiz.step='party';renderScreen_inplace2();});
+  }else{S._wiz.step='party';renderScreen_inplace2();}
+}
+function wizSkip(){
+  resetToBlank();
+  var done=function(){closeScreen();S.tab='home';render();};
+  if(window.CLOUD&&window.CLOUD.inParty&&!window.CLOUD.inParty()&&window.CLOUD.createParty){window.CLOUD.createParty('My Trip').then(done,done);}
+  else done();
+}
+function wizSaveParty(){
+  var nm=val('wiz-party')||'My Trip';
+  if(GROUPS[0]){GROUPS[0].name=nm;save('dtp_groups',GROUPS);}
+  if(window.CLOUD&&window.CLOUD.renameParty)window.CLOUD.renameParty(nm).catch(function(){});
+  S._wiz.step='trip';renderScreen_inplace2();
+}
+function wizSaveTrip(){
+  var nm=val('wiz-trip'),s=val('wiz-start'),e=val('wiz-end');
+  if(!nm){toast('Name your trip');return;}
+  if(s&&e&&e<s){toast('End date is before the start');return;}
+  var id='t'+Date.now();
+  TRIPS.push({id:id,name:nm,start:s||'',end:e||'',by:S.persona,members:[S.persona],groups:[GROUPS[0].id]});
+  save('dtp_trips',TRIPS);
+  if(s&&e){reconcileDays(id);save('dtp_days',DAYS);}
+  S.tripId=id;saveTripId();loadLists();
+  S._wiz.step='people';renderScreen_inplace2();
+}
+function wizAddPerson(){
+  var nm=val('wiz-pname'),em=val('wiz-pemail');
+  if(!nm){toast('Enter a name');return;}
+  var id='p'+Date.now();
+  FAMILY.push({id:id,name:nm,color:PALETTE[FAMILY.length%PALETTE.length][0],admin:false,groups:[GROUPS[0].id],email:em||''});
+  ALL_IDS=FAMILY.map(function(p){return p.id;});
+  var t=tripById(S.tripId);if(t){if(!t.members)t.members=[];if(t.members.indexOf(id)<0)t.members.push(id);}
+  save('dtp_family',FAMILY);save('dtp_trips',TRIPS);
+  renderScreen_inplace2();
+}
+function wizRemovePerson(id){
+  FAMILY=FAMILY.filter(function(p){return p.id!==id;});ALL_IDS=FAMILY.map(function(p){return p.id;});
+  var t=tripById(S.tripId);if(t&&t.members)t.members=t.members.filter(function(x){return x!==id;});
+  save('dtp_family',FAMILY);save('dtp_trips',TRIPS);renderScreen_inplace2();
+}
+function wizToInvite(){S._wiz.step='invite';renderScreen_inplace2();}
+function wizFinish(){closeScreen();S.tab='home';render();toast('All set!');}
+function emailInviteLink(pid){
+  var p=person(pid);if(!p)return;
+  if(!(window.CLOUD&&window.CLOUD.inParty&&window.CLOUD.inParty())){toast('Start a party first');return;}
+  var url=location.origin+location.pathname+'#join='+window.CLOUD.partyCode()+(pid?'&as='+encodeURIComponent(pid):'');
+  var subj=encodeURIComponent('Join our trip on Baseline Tap');
+  var bd=encodeURIComponent('Hi '+p.name+',\n\nI\'m planning our trip on Baseline Tap. Tap this link, sign in, and you\'ll be added automatically:\n\n'+url+'\n');
+  location.href='mailto:'+encodeURIComponent(p.email||'')+'?subject='+subj+'&body='+bd;
+}
+function scrWizard(){
+  var w=S._wiz||(S._wiz={step:'welcome'});
+  var body;
+  if(w.step==='welcome'){
+    body='<div style="text-align:center;padding:18px 6px 4px"><div style="font-family:\'Fraunces\',Georgia,serif;font-size:26px;font-weight:700">Welcome to Baseline Tap</div><div class="body-empty" style="padding:10px 8px 16px">Let\'s set up your trip in a few quick steps — name it, add dates, and invite your people. Prefer to do it yourself? Skip anytime.</div></div>';
+    body+='<button class="btn-secondary green" onclick="wizStart()">Start setup</button>';
+    body+='<button class="btn-secondary" onclick="wizSkip()">Skip — I\'ll do it myself</button>';
+    return screenShell('Set up',body,null,null,false);
+  }
+  if(w.step==='party'){
+    var pn=(window.CLOUD&&window.CLOUD.partyName)||'My Trip';
+    body='<div class="hub-section-label" style="margin-left:0">Step 1 · Name your party</div>';
+    body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">A name for this trip group — e.g. “Smith Family WDW”.</div>';
+    body+='<div class="field"><input class="field-input" id="wiz-party" value="'+esc(pn)+'"></div>';
+    body+='<button class="btn-secondary green" onclick="wizSaveParty()">Next</button>';
+    return screenShell('Set up',body,null,null,false);
+  }
+  if(w.step==='trip'){
+    body='<div class="hub-section-label" style="margin-left:0">Step 2 · Trip details</div>';
+    body+='<div class="field"><label class="field-label">Trip name</label><input class="field-input" id="wiz-trip" placeholder="Walt Disney World"></div>';
+    body+='<div class="field"><label class="field-label">Start date</label><input class="field-input" id="wiz-start" type="date"></div>';
+    body+='<div class="field"><label class="field-label">End date</label><input class="field-input" id="wiz-end" type="date"></div>';
+    body+='<button class="btn-secondary green" onclick="wizSaveTrip()">Next</button>';
+    return screenShell('Set up',body,null,null,false);
+  }
+  if(w.step==='people'){
+    body='<div class="hub-section-label" style="margin-left:0">Step 3 · Add your people</div>';
+    body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Add everyone on the trip. Include an email and they\'re matched automatically when they sign in.</div>';
+    for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i];
+      body+='<div class="hub-row" style="cursor:default"><div class="hub-icon" style="background:'+p.color+'">'+esc(p.name[0])+'</div><div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(p.name)+(p.admin?' · you':'')+'</div><div class="hub-sub">'+(p.email?esc(p.email):'no email')+'</div></div>'+(p.admin?'':'<button class="btn-secondary" style="margin:0;width:auto;padding:6px 12px;min-height:0" onclick="wizRemovePerson(\''+p.id+'\')">Remove</button>')+'</div>';
+    }
+    body+='<div class="field" style="margin-top:8px"><input class="field-input" id="wiz-pname" placeholder="Name"></div>';
+    body+='<div class="field"><input class="field-input" id="wiz-pemail" type="email" inputmode="email" placeholder="Email (optional)"></div>';
+    body+='<button class="btn-secondary" onclick="wizAddPerson()">Add person</button>';
+    body+='<button class="btn-secondary green" onclick="wizToInvite()">Next</button>';
+    return screenShell('Set up',body,null,null,false);
+  }
+  /* invite */
+  body='<div class="hub-section-label" style="margin-left:0">Step 4 · Invite your people</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Send each person their link now, or skip and invite later from Manage People.</div>';
+  var any=false;
+  for(var j=0;j<FAMILY.length;j++){var pp=FAMILY[j];if(pp.admin)continue;any=true;
+    body+='<div class="hub-row" style="cursor:default;flex-wrap:wrap;gap:6px"><div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(pp.name)+'</div><div class="hub-sub">'+(pp.email?esc(pp.email):'no email')+'</div></div>';
+    body+='<button class="btn-secondary" style="margin:0;width:auto;padding:6px 10px;min-height:0" onclick="copyInviteLink(\''+pp.id+'\')">Copy link</button>';
+    if(pp.email)body+='<button class="btn-secondary" style="margin:0;width:auto;padding:6px 10px;min-height:0" onclick="emailInviteLink(\''+pp.id+'\')">Email</button>';
+    body+='</div>';
+  }
+  if(!any)body+='<div class="body-empty" style="padding:8px 2px">No one to invite yet — you can add people later.</div>';
+  body+='<button class="btn-secondary green" onclick="wizFinish()">Finish</button>';
+  return screenShell('Set up',body,null,null,false);
+}
+
 /* ── Planning Party management (shown on the Account screen) ─ */
 function cloudSection(){
   if(!(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user))return '';
@@ -2808,6 +2970,10 @@ function cloudSection(){
     h+='<div class="hub-section-label" style="margin-left:0">Join a party</div>';
     h+='<button class="btn-secondary" onclick="cloudJoinParty(\'cloud-join\')">Join with a code</button>';
     h+='<div class="field" style="margin-top:6px"><input class="field-input" id="cloud-join" placeholder="Enter an invite code" style="text-transform:uppercase"></div>';
+  }
+  if(window.CLOUD.isSuper){
+    h+='<div class="hub-section-label" style="margin-left:0">Super-admin</div>';
+    h+='<button class="btn-secondary" onclick="openOwners()">Authorized owners</button>';
   }
   h+='<div class="hub-section-label" style="margin-left:0">Account</div>';
   h+='<button class="btn-secondary" onclick="switchMyPersona()">This isn\'t me — switch person</button>';
