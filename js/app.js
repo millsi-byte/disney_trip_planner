@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='65';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='66';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2300,14 +2300,30 @@ function importParse(){
 }
 /* commit the valid items into their collections */
 function importSave(){
-  var items=S._importItems||[],added=0;
+  var items=S._importItems||[],added=[];
   var M={'Resort':RESORTS,'Dining':DINING,'Lightning Lane':LLS,'Park reservation':PARKRES,'Show':SHOWS,'Flight':FLIGHTS};
   items.forEach(function(e){
     if(e.error||e._removed||!e.rec)return;
-    var coll=M[e.type];if(!coll)return;coll.push(e.rec);added++;
+    var coll=M[e.type];if(!coll)return;coll.push(e.rec);added.push(e);
   });
   persist();
-  S._importCount=added;S.importStep=3;renderScreen_inplace2();
+  S._importCount=added.length;S.importStep=3;renderScreen_inplace2();
+  importNotify(added);   /* notify the assigned people, exactly like a manual add */
+}
+/* fire notifications for a batch of just-imported items — one combined picker
+   (active trips / opted in) instead of one per item. */
+function importNotify(items){
+  if(!items||!items.length){bumpBell();return;}
+  var tid=S.tripId,plan={forced:[],optional:[]};
+  items.forEach(function(e){
+    if(!e.rec)return;
+    var p=buildNotifPlan({trip:tid,cat:e.type,label:notifLabel(e.type,e.rec),item:e.rec,oldWho:[],newWho:e.rec.who,actor:S.persona});
+    plan.forced=plan.forced.concat(p.forced);plan.optional=plan.optional.concat(p.optional);
+  });
+  if(!plan.forced.length&&!plan.optional.length){bumpBell();return;}
+  var t=tripById(tid)||trip(),active=(t&&t.status==='active');
+  if(!active&&!S._notify){if(plan.forced.length)sendNotifPlan(plan.forced);bumpBell();return;}
+  openNotifConfirm({actor:S.persona,trip:tid,cat:'Import',label:'these items',oldWho:[],newWho:[]},plan);
 }
 function importRemove(i){var e=(S._importItems||[])[i];if(e)e._removed=!e._removed;renderScreen_inplace2();}
 function importReset(){S._importItems=null;S._importEdit=null;S.importStep=1;renderScreen_inplace2();}
@@ -2324,22 +2340,30 @@ var IMPORT_FIELDS={
 };
 /* required fields per type (re-checked after an edit) */
 var IMPORT_REQ={Resort:['name'],Dining:['name','day'],'Lightning Lane':['ride','day'],'Park reservation':['park','day'],Show:['name','day'],Flight:['label']};
-function importEditOpen(i){S._importEdit=i;renderScreen_inplace2();}
-function importEditCancel(){S._importEdit=null;renderScreen_inplace2();}
+function importEditOpen(i){
+  var e=(S._importItems||[])[i];if(!e||!e.rec)return;
+  S._importEdit=i;
+  /* seed the who-select from the item's current assignment (defaults to everyone) */
+  S._who=new Set((e.rec.who==='all'||!e.rec.who)?tripMembers():e.rec.who);
+  renderScreen_inplace2();
+}
+function importEditCancel(){S._importEdit=null;S._who=null;renderScreen_inplace2();}
 function importEditApply(i){
-  var e=(S._importItems||[])[i];if(!e||!e.rec){S._importEdit=null;renderScreen_inplace2();return;}
+  var e=(S._importItems||[])[i];if(!e||!e.rec){S._importEdit=null;S._who=null;renderScreen_inplace2();return;}
   (IMPORT_FIELDS[e.type]||[]).forEach(function(f){
     var k=f[0],kind=f[2],v=val('imf-'+i+'-'+k);
     if(kind==='date')e.rec[k]=impDate(v);
     else if(k==='park')e.rec[k]=impPark(v);
     else e.rec[k]=v;
   });
+  /* assignment — same model as the manual editors (collapses a full roster to "all") */
+  if(S._who)e.rec.who=collapseWho(tripMembers().filter(function(id){return S._who.has(id);}));
   /* re-validate + recompute summary/warning the same way the builder does */
   var fin=finalizeImport(e.type,e.rec);
   e.summary=fin.summary;
   if(fin.error)e.error=fin.error;else delete e.error;
   e.warn=e.error?'':importDateWarn(e.rec,e.type);
-  S._importEdit=null;renderScreen_inplace2();
+  S._importEdit=null;S._who=null;renderScreen_inplace2();
 }
 /* the edit panel for one item */
 function importEditPanel(e,i){
@@ -2357,6 +2381,8 @@ function importEditPanel(e,i){
     }
     h+='</div>';
   });
+  /* people assignment — same who-select as the manual editors */
+  h+=whoSelectField(e.rec.who);
   h+='<div style="display:flex;gap:8px"><button class="btn-secondary" style="margin:0;flex:1" onclick="importEditCancel()">Cancel</button>'
     +'<button class="btn-secondary green" style="margin:0;flex:1" onclick="importEditApply('+i+')">Done</button></div>';
   return h+'</div>';
@@ -2391,6 +2417,7 @@ function scrImport(){
         +'<span class="ri-ic '+icCls+'">'+icHtml+'</span>'
         +'<div class="ri-main"><div class="ri-type">'+esc(e.type)+'</div>'
         +'<div class="ri-val">'+esc(e.summary||e.error||'')+'</div>'
+        +((!hasErr&&e.rec)?'<div style="margin-top:5px">'+whoStack(e.rec.who)+'</div>':'')
         +(hasErr?'<div class="ri-q">'+esc(e.error)+'</div>':(warned?'<div class="ri-q">'+esc(e.warn)+'</div>':''));
       if(editing){
         body+=importEditPanel(e,i);
@@ -2402,6 +2429,12 @@ function scrImport(){
       body+='</div></div>';
     }
     if(anyWarn)body+='<div class="body-empty" style="text-align:left;padding:2px 2px 10px;font-size:13px;color:#92400E">Items marked in amber fall outside this trip\'s dates. You can still add them, but double-check you\'re on the right trip.</div>';
+    if(okN){
+      var act=!!(trip()&&trip().status==='active'),on=!!S._notify;
+      body+='<div class="field" style="margin-top:6px"><label class="field-label">Notifications</label>';
+      body+='<div class="notify-row'+(on?' on':'')+'" onclick="notifToggle()"><span class="notify-check">'+(on?IC.checkw:'')+'</span>';
+      body+='<div><div class="notify-lbl">Notify the people I assigned</div><div class="notify-sub">'+(act?'This trip is active — you\'ll choose who to let know after saving.':'Tell the people on these items they\'ve been added.')+'</div></div></div></div>';
+    }
     body+='<button class="btn-primary"'+(okN?'':' disabled style="opacity:.5"')+' onclick="importSave()">'+(okN?'Add '+okN+' item'+(okN===1?'':'s')+' to '+esc(trip().name):'Nothing to add')+'</button>';
     body+='<button class="btn-secondary" onclick="importReset()">Back</button>';
     return screenShell('Review Import',body,null,null,'Back');
