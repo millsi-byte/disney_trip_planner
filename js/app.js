@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='63';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='64';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2261,6 +2261,18 @@ function buildImportItem(it){
   }
   return {type:it.type||'?',error:'Unknown type "'+(it.type||'')+'"'};
 }
+/* non-blocking guard: does a built item's date fall outside the selected
+   trip's range? Returns a friendly warning string, or '' if it fits / unknown. */
+function importDateWarn(rec,type){
+  var t=trip();if(!t||!t.start||!t.end||!rec)return '';
+  var lo=t.start,hi=t.end;
+  var d=(type==='Resort')?rec.checkin:rec.day;
+  var d2=(type==='Resort')?rec.checkout:d;
+  if(!d)return '';
+  var overlaps=(d<=hi)&&((d2||d)>=lo);   /* item range overlaps trip range */
+  if(overlaps)return '';
+  return monOf(d)+' '+(+d.slice(8))+' is outside '+t.name+' ('+t.dates+') — wrong trip?';
+}
 /* parse + build everything from the textarea into S._importItems */
 function importParse(){
   var raw=val('import-paste')||'';
@@ -2269,6 +2281,7 @@ function importParse(){
   var arr=Array.isArray(data)?data:(Array.isArray(data.items)?data.items:null);
   if(!arr||!arr.length){toast('No items found in that JSON');return;}
   S._importItems=arr.map(buildImportItem);
+  S._importItems.forEach(function(e){if(!e.error&&e.rec)e.warn=importDateWarn(e.rec,e.type);});
   S.importStep=2;renderScreen_inplace2();
 }
 /* commit the valid items into their collections */
@@ -2305,14 +2318,19 @@ function scrImport(){
     var items=S._importItems||[];
     var okN=items.filter(function(e){return !e.error&&!e._removed;}).length;
     body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:15px;color:var(--ink)"><strong>Here\'s what I found.</strong> Remove anything you don\'t want before saving.</div>';
+    var anyWarn=false;
     for(var i=0;i<items.length;i++){var e=items[i];
-      if(e.error)body+=reviewItem('x',e.type||'Item',e.error);
-      else body+='<div class="review-item'+(e._removed?' fail':'')+'">'
-        +'<span class="ri-ic '+(e._removed?'x':'ok')+'">'+(e._removed?'&times;':IC.checkw)+'</span>'
+      if(e.error){body+=reviewItem('x',e.type||'Item',e.error);continue;}
+      var warned=!!e.warn&&!e._removed;if(warned)anyWarn=true;
+      var icCls=e._removed?'x':(warned?'q':'ok'),icHtml=e._removed?'&times;':(warned?'!':IC.checkw);
+      body+='<div class="review-item'+(e._removed?' fail':(warned?' warn':''))+'">'
+        +'<span class="ri-ic '+icCls+'">'+icHtml+'</span>'
         +'<div class="ri-main"><div class="ri-type">'+esc(e.type)+'</div><div class="ri-val">'+esc(e.summary)+'</div>'
+        +(warned?'<div class="ri-q">'+esc(e.warn)+'</div>':'')
         +'<div class="ri-actions"><button class="ri-btn rm" onclick="importRemove('+i+')">'+(e._removed?'Keep':'Remove')+'</button></div></div></div>';
     }
-    body+='<button class="btn-primary"'+(okN?'':' disabled style="opacity:.5"')+' onclick="importSave()">'+(okN?'Add '+okN+' item'+(okN===1?'':'s'):'Nothing to add')+'</button>';
+    if(anyWarn)body+='<div class="body-empty" style="text-align:left;padding:2px 2px 10px;font-size:13px;color:#92400E">Items marked in amber fall outside this trip\'s dates. You can still add them, but double-check you\'re on the right trip.</div>';
+    body+='<button class="btn-primary"'+(okN?'':' disabled style="opacity:.5"')+' onclick="importSave()">'+(okN?'Add '+okN+' item'+(okN===1?'':'s')+' to '+esc(trip().name):'Nothing to add')+'</button>';
     body+='<button class="btn-secondary" onclick="importReset()">Back</button>';
     return screenShell('Review Import',body,null,null,'Back');
   }
