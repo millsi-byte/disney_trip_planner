@@ -18,7 +18,7 @@
   }
   try{ firebase.initializeApp(FIREBASE_CONFIG); }catch(e){ /* already initialized */ }
   var auth=firebase.auth();
-  var C={enabled:true,user:null,ready:false,synced:false,applyingRemote:false,wid:null};
+  var C={enabled:true,user:null,ready:false,synced:false,applyingRemote:false,wid:null,partyName:null};
 
   function db(){return firebase.firestore();}
 
@@ -132,53 +132,65 @@
   }
   function stopListener(){ if(unsub){ try{unsub();}catch(e){} unsub=null; } }
 
-  /* ── family space (shared workspace) ───────────────────── */
-  C.inFamily=function(){return !!C.wid;};
-  C.familyCode=function(){return C.wid||null;};
+  /* ── planning party (shared workspace) ─────────────────── */
+  C.inParty=function(){return !!C.wid;};
+  C.partyCode=function(){return C.wid||null;};
 
-  /* create a shared family space from your current data and switch onto it */
-  C.createFamily=function(name){
+  /* create a party from your current data and switch onto it */
+  C.createParty=function(name){
     if(!C.user)return Promise.reject(new Error('Sign in first'));
-    var wid=newCode();
+    var wid=newCode(), nm=(name||'Planning Party');
     var wref=db().doc('workspaces/'+wid);
-    return wref.set({name:name||'Family',by:C.user.uid,createdAt:Date.now()})
+    return wref.set({name:nm,by:C.user.uid,createdAt:Date.now()})
       .then(function(){ return wref.collection('members').doc(C.user.uid).set({email:C.user.email||null,joinedAt:Date.now()}); })
-      .then(function(){ setLocalWid(wid); return profileRef().set({wid:wid},{merge:true}); })
-      .then(function(){ return reconcile('merge'); })   /* push your data up into the new space */
+      .then(function(){ setLocalWid(wid); C.partyName=nm; return profileRef().set({wid:wid},{merge:true}); })
+      .then(function(){ return reconcile('merge'); })   /* push your data up into the new party */
       .then(function(){ return wid; });
   };
 
-  /* join an existing family space by code and adopt its data */
-  C.joinFamily=function(code){
+  /* join an existing party by code and adopt its data */
+  C.joinParty=function(code){
     if(!C.user)return Promise.reject(new Error('Sign in first'));
     code=(code||'').trim().toUpperCase();
     if(!code)return Promise.reject(new Error('Enter a code'));
     var wref=db().doc('workspaces/'+code);
     return wref.get().then(function(s){
-      if(!s.exists)throw new Error('No family space with that code');
+      if(!s.exists)throw new Error('No party with that code');
+      C.partyName=s.data().name||null;
       return wref.collection('members').doc(C.user.uid).set({email:C.user.email||null,joinedAt:Date.now()});
     }).then(function(){ setLocalWid(code); return profileRef().set({wid:code},{merge:true}); })
-      .then(function(){ return reconcile('adopt'); })   /* take on the family's data */
+      .then(function(){ return reconcile('adopt'); })   /* take on the party's data */
       .then(function(){ return code; });
   };
 
-  /* leave the family space; your device returns to your personal copy */
-  C.leaveFamily=function(){
+  /* rename the party you're in */
+  C.renameParty=function(name){
+    if(!C.user||!C.wid)return Promise.reject(new Error('Not in a party'));
+    name=(name||'').trim();if(!name)return Promise.reject(new Error('Enter a name'));
+    return db().doc('workspaces/'+C.wid).set({name:name},{merge:true}).then(function(){ C.partyName=name; return name; });
+  };
+
+  /* leave the party; your device returns to your personal copy */
+  C.leaveParty=function(){
     if(!C.user||!C.wid)return Promise.resolve();
     var wid=C.wid;
     return db().doc('workspaces/'+wid).collection('members').doc(C.user.uid).delete().catch(function(){})
-      .then(function(){ setLocalWid(null); return profileRef().set({wid:null},{merge:true}); })
+      .then(function(){ setLocalWid(null); C.partyName=null; return profileRef().set({wid:null},{merge:true}); })
       .then(function(){ return reconcile('adopt'); });   /* re-adopt personal space */
   };
 
   window.CLOUD=C;
 
-  /* read the user's chosen workspace, then sync against it */
+  /* read the user's chosen party, then sync against it */
   function startSync(){
     return profileRef().get().then(function(s){
       C.wid=(s.exists&&s.data().wid)||null;
       setLocalWid(C.wid);
     }).catch(function(){ C.wid=null; })
+      .then(function(){
+        if(!C.wid){C.partyName=null;return;}
+        return db().doc('workspaces/'+C.wid).get().then(function(w){C.partyName=(w.exists&&w.data().name)||null;}).catch(function(){});
+      })
       .then(function(){ return reconcile('merge'); });
   }
 
@@ -187,15 +199,15 @@
     C.user=u; C.ready=true;
     if(u){
       startSync().then(function(){
-        try{ if(typeof toast==='function')toast('Cloud sync on'); }catch(e){}
+        try{ if(typeof onCloudSynced==='function')onCloudSynced(); }catch(e){}
         try{ if(window.S&&S.screen&&typeof renderScreen_inplace2==='function')renderScreen_inplace2(); }catch(e){}
       }).catch(function(e){ console.warn('cloud sync',e&&e.message); });
     }else{
       stopListener(); C.synced=false; C.wid=null;
+      try{ if(typeof onCloudSignedOut==='function')onCloudSignedOut(); }catch(e){}
     }
     try{ if(typeof render==='function')render(); }catch(e){}
     try{ if(window.S&&S.screen&&typeof renderScreen_inplace2==='function')renderScreen_inplace2(); }catch(e){}
-    try{ if(u&&typeof toast==='function')toast('Signed in as '+(u.email||'cloud')); }catch(e){}
   });
   /* finish an email-link sign-in if the page was opened from one */
   C.completeEmailLink().then(function(r){

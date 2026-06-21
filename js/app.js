@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='91';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='92';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -800,50 +800,73 @@ function askPin(opts,cb){
 }
 function _pinSubmit(){var inp=document.getElementById('pin-input');var v=inp?inp.value:'';if(window._pinDone)window._pinDone(v);}
 
-/* persona */
+/* persona — local picker (offline / no-cloud fallback). No PINs: who you are
+   is just personalization on this device, or your claimed cloud identity. */
 function setPersona(id){
   var p=person(id);if(!p){closeScreen();return;}
-  if(p.pin){
-    /* logging in always verifies the PIN — even back into the persona you just logged out of */
-    askPin({title:'Enter '+p.name+'’s PIN'},function(e){
-      if(e==null)return;
-      if(String(e).trim()!==String(p.pin)){toast('Incorrect PIN');return;}
-      finishLogin(id);
-    });
-    return;
-  }
-  /* first login for this person (no PIN yet): force them to create one */
-  askPin({title:'Welcome, '+p.name+'!',sub:'Create a PIN so only you can log in as you.',confirmLabel:'Next'},function(np){
-    if(np==null||!String(np).trim()){toast('A PIN is required to continue');return;}
-    np=String(np).trim();
-    askPin({title:'Confirm your PIN',sub:'Enter it once more.'},function(cf){
-      if(cf==null||String(cf).trim()!==np){toast('PINs didn’t match — try again');return;}
-      p.pin=np;save('dtp_family',FAMILY);finishLogin(id);
-    });
-  });
+  finishLogin(id);
 }
 function finishLogin(id){
   var p=person(id);if(!p)return;
   S.persona=id;save('dtp_persona',id);ensureVisibleGroup();saveGroupId();ensureVisibleTrip();saveTripId();S.tab='home';toast("You are "+p.name);render();closeScreen();
 }
-/* change your OWN persona PIN (entering your current one). Admins reset others in Manage People. */
-function setMyPin(){
-  var me=person(S.persona);if(!me)return;
-  var setNew=function(){
-    askPin({title:'Set a new PIN'},function(np){
-      if(np==null||!String(np).trim()){toast('A PIN is required');return;}
-      np=String(np).trim();
-      askPin({title:'Confirm new PIN'},function(cf){
-        if(cf==null||String(cf).trim()!==np){toast('PINs didn’t match');return;}
-        me.pin=np;save('dtp_family',FAMILY);toast('Your PIN is updated');renderScreen_inplace2();
-      });
-    });
-  };
-  if(me.pin){askPin({title:'Enter your current PIN'},function(c){if(c==null)return;if(String(c).trim()!==String(me.pin)){toast('Incorrect PIN');return;}setNew();});}
-  else setNew();
+
+/* ── single sign-on via the cloud ──────────────────────────
+   When a cloud user is signed in, the person they ARE is whichever persona
+   carries their uid. First time, they claim one; after that it's automatic
+   on every device. No PINs anywhere. */
+function cloudUid(){return (window.CLOUD&&window.CLOUD.user)?window.CLOUD.user.uid:null;}
+function personaForUid(uid){if(!uid)return null;for(var i=0;i<FAMILY.length;i++)if(FAMILY[i].uid===uid)return FAMILY[i];return null;}
+/* called by cloud.js once sign-in + data sync have completed */
+function onCloudSynced(){
+  var uid=cloudUid();if(!uid)return;
+  var mine=personaForUid(uid);
+  if(mine){
+    S.persona=mine.id;save('dtp_persona',mine.id);
+    ensureVisibleGroup();ensureVisibleTrip();
+    if(S.screen&&(S.screen.type==='signin'||S.screen.type==='claim'))closeScreen();
+    render();
+  }else{
+    openScreen({type:'claim'});   /* who are you? */
+  }
 }
-/* sign out — forget who you are on this device and return to the chooser */
+/* called by cloud.js when there's no signed-in cloud user */
+function onCloudSignedOut(){
+  try{localStorage.removeItem('dtp_persona');}catch(e){}
+  openScreen({type:'signin'});   /* the gate covers the app until they sign in again */
+}
+/* bind the signed-in cloud account to a chosen persona */
+function claimPersona(id){
+  var p=person(id);if(!p)return;
+  var uid=cloudUid();
+  if(!uid){toast('Sign in first');return;}
+  var prev=personaForUid(uid);if(prev&&prev.id!==id)prev.uid=null;   /* one persona per account */
+  p.uid=uid;
+  if(window.CLOUD&&window.CLOUD.user&&window.CLOUD.user.email&&!p.email)p.email=window.CLOUD.user.email;
+  save('dtp_family',FAMILY);
+  S.persona=id;save('dtp_persona',id);
+  ensureVisibleGroup();ensureVisibleTrip();
+  closeScreen();
+  /* if you brought your own data and aren't sharing yet, spin up a party so
+     you get a code to invite others — no separate "create" step needed */
+  if(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user&&window.CLOUD.inParty&&!window.CLOUD.inParty()){
+    window.CLOUD.createParty('Planning Party').then(function(){toast('You are '+p.name);render();}).catch(function(){toast('You are '+p.name);render();});
+  }else{
+    toast('You are '+p.name);render();
+  }
+}
+/* admin: free a persona so a different account can claim it */
+function unclaimPersona(id){
+  var p=person(id);if(!p)return;
+  if(!confirm('Unlink '+p.name+' from their sign-in? They\'ll claim it again next time they sign in.'))return;
+  p.uid=null;save('dtp_family',FAMILY);toast(p.name+' unlinked');renderScreen_inplace2();
+}
+/* sign out — cloud sign-out when available, else just forget the local persona */
 function logoutPersona(){
+  if(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user){
+    window.CLOUD.signOut();   /* triggers onCloudSignedOut → sign-in screen */
+    return;
+  }
   try{localStorage.removeItem('dtp_persona');}catch(e){}
   S.screen={type:'persona'};renderOverlay();
   requestAnimationFrame(function(){var s=document.getElementById('screen-host').firstChild;if(s)s.classList.add('in');});
@@ -1903,6 +1926,8 @@ function renderScreen(){
   if(t==='csvimport') return scrCsvImport();
   if(t==='newtrip')   return scrNewTrip();
   if(t==='persona')   return scrPersona();
+  if(t==='signin')    return scrSignIn();
+  if(t==='claim')     return scrClaim();
   if(t==='personas')  return scrPersonas();
   if(t==='groups')    return scrGroups();
   if(t==='groupedit') return scrGroupEdit();
@@ -2670,55 +2695,87 @@ function createTrip(){
 }
 
 
-/* cloud sign-in section (only shows when the Firebase layer loaded) — slice 1 test surface */
-function cloudSection(){
-  if(!(window.CLOUD&&window.CLOUD.enabled))return '';
-  var h='<div class="hub-section-label" style="margin-left:0">Cloud sync <span style="font-size:11px;font-weight:600;color:#92400E">· beta</span></div>';
-  if(window.CLOUD.user){
-    var st=window.CLOUD.synced?'<span style="color:#16A34A;font-weight:600">syncing</span>':'connecting…';
-    h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Signed in as <strong>'+esc(window.CLOUD.user.email||window.CLOUD.user.uid)+'</strong> · '+st+'.</div>';
-    if(window.CLOUD.inFamily&&window.CLOUD.inFamily()){
-      var code=window.CLOUD.familyCode();
-      h+='<div class="hub-section-label" style="margin-left:0">Family space</div>';
-      h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Sharing with everyone who joined this code. Send it to family so they can join.</div>';
-      h+='<div class="field" style="margin-top:2px"><div style="font-family:monospace;font-size:22px;font-weight:700;letter-spacing:2px;padding:10px 12px;background:#F1F5F9;border-radius:10px;text-align:center">'+esc(code)+'</div></div>';
-      h+='<button class="btn-secondary" onclick="cloudLeaveFamily()">Leave family space</button>';
-    }else{
-      h+='<div class="hub-section-label" style="margin-left:0">Family space</div>';
-      h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Right now your data only syncs to your own devices. Start a family space to share it with others, or join one with a code.</div>';
-      h+='<button class="btn-secondary green" onclick="cloudCreateFamily()">Start a family space</button>';
-      h+='<div class="field" style="margin-top:8px"><input class="field-input" id="cloud-join" placeholder="Enter a family code" style="text-transform:uppercase"></div>';
-      h+='<button class="btn-secondary" onclick="cloudJoinFamily()">Join with a code</button>';
-    }
-    h+='<div class="hub-section-label" style="margin-left:0">Account</div>';
-    h+='<button class="btn-secondary" onclick="window.CLOUD.signOut()">Sign out of cloud</button>';
-  }else{
-    h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Not signed in. Sign in to back up your data and sync it across your devices.</div>';
-    h+='<button class="btn-secondary" onclick="window.CLOUD.signInGoogle().catch(function(e){toast(e.message||\'Sign-in failed\')})">Sign in with Google</button>';
-    h+='<div class="field" style="margin-top:8px"><input class="field-input" id="cloud-email" type="email" inputmode="email" placeholder="you@email.com"></div>';
-    h+='<button class="btn-secondary" onclick="cloudEmailLink()">Email me a sign-in link</button>';
-  }
-  return h;
+/* ── Sign-in front door ──────────────────────────────────── */
+function scrSignIn(){
+  var body='<div style="text-align:center;padding:20px 6px 4px">';
+  body+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:28px;font-weight:700;color:var(--ink)">Baseline Tap</div>';
+  body+='<div class="body-empty" style="padding:10px 8px 20px">Sign in to load your trips. Use the same account on every device and everything stays in sync.</div></div>';
+  body+='<button class="btn-secondary green" onclick="window.CLOUD.signInGoogle().catch(function(e){toast(e.message||\'Sign-in failed\')})">Sign in with Google</button>';
+  body+='<div class="hub-section-label" style="margin-left:0">Or use your email</div>';
+  body+='<div class="field"><input class="field-input" id="cloud-email" type="email" inputmode="email" placeholder="you@email.com"></div>';
+  body+='<button class="btn-secondary" onclick="cloudEmailLink()">Email me a sign-in link</button>';
+  return screenShell('Sign in',body,null,null,false);
 }
 function cloudEmailLink(){
   var v=val('cloud-email');if(!v){toast('Enter your email');return;}
   window.CLOUD.sendEmailLink(v).then(function(){toast('Link sent — check your email');}).catch(function(e){toast(e.message||'Could not send link');});
 }
-function cloudCreateFamily(){
-  if(!confirm('Start a family space and share your current trips with whoever joins it?'))return;
+
+/* ── Claim your persona (one time per account) ───────────── */
+function scrClaim(){
+  var email=(window.CLOUD&&window.CLOUD.user)?(window.CLOUD.user.email||''):'';
+  var body='<div class="body-empty" style="text-align:left;padding:2px 2px 12px">Signed in'+(email?' as <strong>'+esc(email)+'</strong>':'')+'.</div>';
+  body+='<div class="hub-section-label" style="margin-left:0">Joining someone\'s plan?</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Enter the invite code they gave you.</div>';
+  body+='<div class="field"><input class="field-input" id="claim-code" placeholder="Invite code" style="text-transform:uppercase"></div>';
+  body+='<button class="btn-secondary" onclick="cloudJoinParty(\'claim-code\')">Join with a code</button>';
+  body+='<div class="hub-section-label" style="margin-left:0">Or pick who you are</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 10px;font-size:13px">This links your sign-in to your name, so you go straight in next time.</div>';
+  body+='<div class="whoselect" style="margin-bottom:16px">';
+  for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i];
+    var taken=p.uid&&p.uid!==cloudUid();
+    body+='<div class="who-opt'+(taken?' disabled" style="opacity:.45':'" onclick="claimPersona(\''+p.id+'\')')+'"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+(p.admin?' · Admin':'')+(taken?' · taken':'')+'</div>';
+  }
+  body+='</div>';
+  body+='<div class="hub-section-label" style="margin-left:0">Account</div>';
+  body+='<button class="btn-secondary" onclick="window.CLOUD.signOut()">Sign in as someone else</button>';
+  return screenShell('Who are you?',body,null,null,false);
+}
+
+/* ── Planning Party management (shown on the Account screen) ─ */
+function cloudSection(){
+  if(!(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user))return '';
+  var st=window.CLOUD.synced?'<span style="color:#16A34A;font-weight:600">syncing</span>':'connecting…';
+  var h='<div class="hub-section-label" style="margin-left:0">Sync</div>';
+  h+='<div class="body-empty" style="text-align:left;padding:0 2px 10px;font-size:13px">Signed in as <strong>'+esc(window.CLOUD.user.email||window.CLOUD.user.uid)+'</strong> · '+st+'.</div>';
+  if(window.CLOUD.inParty&&window.CLOUD.inParty()){
+    var code=window.CLOUD.partyCode(), nm=window.CLOUD.partyName||'Planning Party';
+    h+='<div class="hub-section-label" style="margin-left:0">Your Planning Party</div>';
+    h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px"><strong>'+esc(nm)+'</strong> — share this code so others can join and plan with you.</div>';
+    h+='<div class="field" style="margin-top:2px"><div style="font-family:monospace;font-size:24px;font-weight:700;letter-spacing:3px;padding:12px;background:#F1F5F9;border-radius:10px;text-align:center">'+esc(code)+'</div></div>';
+    h+='<div class="field" style="margin-top:6px"><input class="field-input" id="party-rename" placeholder="Rename party" value="'+esc(nm)+'"></div>';
+    h+='<button class="btn-secondary" onclick="cloudRenameParty()">Rename party</button>';
+    h+='<button class="btn-secondary" onclick="cloudLeaveParty()">Leave party</button>';
+  }else{
+    h+='<div class="hub-section-label" style="margin-left:0">Planning Party</div>';
+    h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Start a Planning Party to invite others, or join one with a code.</div>';
+    h+='<button class="btn-secondary green" onclick="cloudCreateParty()">Start a Planning Party</button>';
+    h+='<div class="hub-section-label" style="margin-left:0">Join a party</div>';
+    h+='<button class="btn-secondary" onclick="cloudJoinParty(\'cloud-join\')">Join with a code</button>';
+    h+='<div class="field" style="margin-top:6px"><input class="field-input" id="cloud-join" placeholder="Enter an invite code" style="text-transform:uppercase"></div>';
+  }
+  h+='<div class="hub-section-label" style="margin-left:0">Account</div>';
+  h+='<button class="btn-secondary" onclick="logoutPersona()">Sign out</button>';
+  return h;
+}
+function cloudCreateParty(){
+  var nm=val('party-name')||'Planning Party';
   toast('Creating…');
-  window.CLOUD.createFamily('Family').then(function(code){toast('Family space ready — code '+code);if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();}).catch(function(e){toast(e.message||'Could not create');});
+  window.CLOUD.createParty(nm).then(function(){toast('Planning Party ready');if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();}).catch(function(e){toast(e.message||'Could not create');});
 }
-function cloudJoinFamily(){
-  var code=val('cloud-join');if(!code){toast('Enter a code');return;}
-  if(!confirm('Join this family space? This device will switch to the shared data.'))return;
+function cloudJoinParty(inputId){
+  var code=val(inputId||'cloud-join');if(!code){toast('Enter a code');return;}
   toast('Joining…');
-  window.CLOUD.joinFamily(code).then(function(){toast('Joined the family space');if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();}).catch(function(e){toast(e.message||'Could not join');});
+  window.CLOUD.joinParty(code).then(function(){toast('Joined the party');if(typeof onCloudSynced==='function')onCloudSynced();else if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();}).catch(function(e){toast(e.message||'Could not join');});
 }
-function cloudLeaveFamily(){
-  if(!confirm('Leave the family space? Your device goes back to your personal copy. The shared data stays for everyone else.'))return;
+function cloudRenameParty(){
+  var nm=val('party-rename');if(!nm){toast('Enter a name');return;}
+  window.CLOUD.renameParty(nm).then(function(){toast('Renamed');if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();}).catch(function(e){toast(e.message||'Could not rename');});
+}
+function cloudLeaveParty(){
+  if(!confirm('Leave this Planning Party? Your device goes back to your own copy. The shared plan stays for everyone else.'))return;
   toast('Leaving…');
-  window.CLOUD.leaveFamily().then(function(){toast('Left the family space');if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();}).catch(function(e){toast(e.message||'Could not leave');});
+  window.CLOUD.leaveParty().then(function(){toast('Left the party');if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();}).catch(function(e){toast(e.message||'Could not leave');});
 }
 
 /* Persona switch (from the header). Two modes:
@@ -2730,14 +2787,14 @@ function scrPersona(){
     /* account menu — no persona switching here; log out to become someone else */
     var me=person(S.persona);
     var body='<div class="hub-section-label" style="margin-left:0">Your account</div>';
-    body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px">You\'re signed in as <strong>'+esc(me?me.name:'')+'</strong>'+(isAdmin()?' · Admin':'')+'. To use the app as someone else, log out and choose a persona.</div>';
+    body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px">You\'re '+esc(me?me.name:'')+(isAdmin()?' · Admin':'')+'.</div>';
     body+='<button class="btn-secondary green" onclick="openScreen({type:\'newtrip\'})">Plan a new trip</button>';
     body+='<button class="btn-secondary" onclick="openScreen({type:\'persondetails\',pid:\''+S.persona+'\'})">My travel details</button>';
-    body+='<div class="hub-section-label" style="margin-left:0">Security</div>';
-    body+='<button class="btn-secondary" onclick="setMyPin()">Change my PIN</button>';
-    body+='<button class="btn-secondary" onclick="logoutPersona()">Log out</button>';
-    body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px">'+(isAdmin()?'Manage the roster in <strong>Plan → Manage People</strong>.':'Forgot your PIN? An admin can reset it in <strong>Plan → Manage People</strong>.')+'</div>';
     body+=cloudSection();
+    if(!(window.CLOUD&&window.CLOUD.enabled)){
+      body+='<div class="hub-section-label" style="margin-left:0">Account</div>';
+      body+='<button class="btn-secondary" onclick="logoutPersona()">Switch persona</button>';
+    }
     body+='<div class="hub-section-label" style="margin-left:0">Device</div>';
     body+='<button class="btn-secondary" onclick="forceUpdate()">Force app update</button>';
     body+='<div class="body-empty" style="text-align:center;padding:14px 2px 0;font-size:12px">Baseline Tap · Build '+BUILD+'</div>';
@@ -2748,10 +2805,10 @@ function scrPersona(){
   var body='<div class="hub-section-label" style="margin-left:0">Choose your persona</div>';
   body+='<div class="whoselect" style="margin-bottom:16px">';
   for(var i=0;i<mem.length;i++){var p=person(mem[i]);if(!p)continue;
-    body+='<div class="who-opt" onclick="setPersona(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+(p.admin?' · Admin':'')+(p.pin?' '+IC.lock:'')+'</div>';
+    body+='<div class="who-opt" onclick="setPersona(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+(p.admin?' · Admin':'')+'</div>';
   }
   body+='</div>';
-  body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px">Your choice is stored on this device only — it personalises your packing list, to-dos and assignments. The first time as someone you\'ll set a PIN; after that a '+IC.lock+' persona needs that PIN.</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px">Your choice is stored on this device only — it personalises your packing list, to-dos and assignments.</div>';
   /* device recovery — reachable any time via Log out */
   body+='<div class="hub-section-label" style="margin-left:0">Device</div>';
   body+='<button class="btn-secondary" onclick="forceUpdate()">Force app update</button>';
@@ -2771,28 +2828,13 @@ function scrPersonas(){
   for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i];
     var bits=[];if(p.admin)bits.push('Admin');
     var gn=(p.groups||[]).length;bits.push(gn+' '+(gn===1?'group':'groups'));
-    if(p.email)bits.push(esc(p.email));
+    bits.push(p.uid?'signed in':'not joined');
     body+='<button class="hub-row" onclick="openScreen({type:\'personedit\',pid:\''+p.id+'\'})">'
       +'<div class="hub-icon" style="background:'+p.color+'">'+esc(p.name[0])+'</div>'
-      +'<div class="hub-main"><div class="hub-title">'+esc(p.name)+(p.pin?' '+IC.lock:'')+'</div><div class="hub-sub">'+bits.join(' · ')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
+      +'<div class="hub-main"><div class="hub-title">'+esc(p.name)+'</div><div class="hub-sub">'+bits.join(' · ')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
   }
-  body+='<div class="body-empty" style="text-align:left;padding:10px 2px 0;font-size:12px">Tap a person to edit their name, role, groups, PIN and travel details. People are global — assign them to trips from the trip editor.</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:10px 2px 0;font-size:12px">Tap a person to edit their name, role, groups and travel details. People are global — assign them to trips from the trip editor.</div>';
   return screenShell('Manage People',body,null,null,'Done','<button class="sec-add" onclick="addPersona()">Add person</button>');
-}
-/* admin PIN management: reset (clear → they choose next login) or set a specific one.
-   Text/transient edits in the open form survive via renderScreen_inplace2's snapshot. */
-function resetPersonaPin(id){
-  var p=person(id);if(!p)return;
-  if(!confirm('Reset '+p.name+'\'s PIN? They\'ll choose a new one next time they log in.'))return;
-  p.pin='';save('dtp_family',FAMILY);toast(p.name+'\'s PIN was reset');renderScreen_inplace2();
-}
-function setPersonaPin(id){
-  var p=person(id);if(!p)return;
-  askPin({title:'Set a PIN for '+p.name},function(np){
-    if(np==null)return;np=String(np).trim();
-    if(!np){toast('PIN cannot be blank');return;}
-    p.pin=np;save('dtp_family',FAMILY);toast(p.name+'’s PIN set');renderScreen_inplace2();
-  });
 }
 
 /* Manage Groups — tappable list of group items (consistent with Manage People) */
@@ -2902,11 +2944,11 @@ function scrPersonEdit(){
   for(var gi=0;gi<GROUPS.length;gi++){var g=GROUPS[gi],on=S._peGroups.has(g.id);
     body+='<button class="gchip'+(on?' on':'')+'" onclick="peToggleGroup(\''+g.id+'\')">'+esc(g.name)+'</button>';}
   body+='</div></div>';
-  /* security */
-  body+='<div class="field"><label class="field-label">Security</label>';
+  /* sign-in link */
+  body+='<div class="field"><label class="field-label">Sign-in</label>';
   body+='<div style="display:flex;align-items:center;justify-content:space-between;font-size:14px">';
-  body+='<span style="color:#6B7280;display:flex;align-items:center;gap:5px">'+(p.pin?IC.lock+' PIN set':'No PIN — set on first login')+'</span>';
-  body+='<button class="btn-secondary" style="margin:0;width:auto;padding:8px 14px;min-height:0" onclick="'+(p.pin?'resetPersonaPin':'setPersonaPin')+'(\''+pid+'\')">'+(p.pin?'Reset PIN':'Set PIN')+'</button>';
+  body+='<span style="color:#6B7280">'+(p.uid?'Linked'+(p.email?' · '+esc(p.email):''):'Not yet claimed')+'</span>';
+  if(p.uid)body+='<button class="btn-secondary" style="margin:0;width:auto;padding:8px 14px;min-height:0" onclick="unclaimPersona(\''+pid+'\')">Unlink</button>';
   body+='</div></div>';
   /* travel details */
   body+='<div class="hub-section-label" style="margin-left:0">Travel details</div>';
@@ -3631,5 +3673,16 @@ ensureVisibleTrip();
 loadLists();
 S.open=defOpen();
 render();
-/* first launch on this device: ask who you are (don't default silently to Scott) */
-try{ if(!localStorage.getItem('dtp_persona')) openScreen({type:'persona'}); }catch(e){}
+/* front door. Deferred a tick so cloud.js (loaded after this file) has set
+   window.CLOUD. With cloud: sign-in/claim is driven by the auth callbacks;
+   show Sign in until auth resolves. Without cloud: the local persona chooser. */
+setTimeout(function(){
+  try{
+    if(window.CLOUD&&window.CLOUD.enabled){
+      if(!window.CLOUD.user&&!(S.screen&&(S.screen.type==='signin'||S.screen.type==='claim')))
+        openScreen({type:'signin'});
+    }else if(!localStorage.getItem('dtp_persona')){
+      openScreen({type:'persona'});
+    }
+  }catch(e){}
+},0);
