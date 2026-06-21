@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='71';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='72';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -652,6 +652,13 @@ function setPlan(p){S.plan=p;render();}
 function setOv(v){S.ov=v;render();}
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('in');clearTimeout(window._tt);window._tt=setTimeout(function(){t.classList.remove('in');},1900);}
 /* unregister the service worker + drop caches, then reload — escapes a stale cache */
+/* full device wipe — kept available (callable, e.g. from the console) but
+   intentionally NOT surfaced anywhere in the UI. */
+function resetLocalData(){
+  if(confirm('Reset all saved data on this device? This wipes everything and starts fresh.')){
+    try{localStorage.clear();}catch(e){}location.reload();
+  }
+}
 function forceUpdate(){
   toast('Updating…');
   var done=function(){location.reload();};
@@ -2645,6 +2652,7 @@ function scrPersona(){
     body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px">'+(isAdmin()?'Manage the roster in <strong>Plan → Manage People</strong>.':'Forgot your PIN? An admin can reset it in <strong>Plan → Manage People</strong>.')+'</div>';
     body+='<div class="hub-section-label" style="margin-left:0">Device</div>';
     body+='<button class="btn-secondary" onclick="forceUpdate()">Force app update</button>';
+    body+='<div class="body-empty" style="text-align:center;padding:14px 2px 0;font-size:12px">Build '+BUILD+'</div>';
     return screenShell('Account',body,null,null,'Done');
   }
   /* first run / after logout — choose who you are */
@@ -2656,10 +2664,9 @@ function scrPersona(){
   }
   body+='</div>';
   body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px">Your choice is stored on this device only — it personalises your packing list, to-dos and assignments. The first time as someone you\'ll set a PIN; after that a '+IC.lock+' persona needs that PIN.</div>';
-  /* device recovery tools live here (reachable any time via Log out) */
+  /* device recovery — reachable any time via Log out */
   body+='<div class="hub-section-label" style="margin-left:0">Device</div>';
   body+='<button class="btn-secondary" onclick="forceUpdate()">Force app update</button>';
-  body+='<button class="btn-secondary" onclick="if(confirm(\'Reset all saved data on this device? This wipes everything and starts fresh.\')){localStorage.clear();location.reload();}">Reset local data</button>';
   return screenShell('Choose Persona',body,null,null,false);
 }
 
@@ -2691,10 +2698,6 @@ function scrPersonas(){
   }
   body+='<button class="sheet-new" style="margin:6px 0 0;width:100%" onclick="addPersona()">'+IC.plus+' Add person</button>';
   body+='<div class="body-empty" style="text-align:left;padding:10px 2px 0">Personas are global — assign them to any trip from the trip editor (tap the trip name in the header). <strong>Admins</strong> can manage people, see every trip, and delete any item or booking. To reset a forgotten PIN, tap <strong>Reset PIN</strong> — the person picks a new one next time they log in.</div>';
-  body+='<div class="hub-section-label" style="margin-left:0">Device</div>';
-  body+='<button class="btn-secondary" onclick="if(confirm(\'Reset all saved data on this device?\')){localStorage.clear();location.reload();}">Reset local data</button>';
-  body+='<button class="btn-secondary" onclick="forceUpdate()">Force app update</button>';
-  body+='<div class="body-empty" style="text-align:center;padding:14px 2px 0;font-size:12px">Build '+BUILD+'</div>';
   return screenShell('Manage People',body,'Save','savePersonas()');
 }
 function capturePersonas(){
