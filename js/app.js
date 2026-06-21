@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='97';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='98';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1519,12 +1519,10 @@ function renderAdminHub(){
     +'<div class="hub-main"><div class="hub-title">AI Import</div><div class="hub-sub">Paste structured details from Claude</div></div><div class="chev">'+IC.chev+'</div></button>';
   o+='<button class="hub-row" onclick="openScreen({type:\'csvimport\'})"><div class="hub-icon" style="background:#0F766E">'+IC.upload+'</div>'
     +'<div class="hub-main"><div class="hub-title">CSV Import</div><div class="hub-sub">Seed a trip from a spreadsheet</div></div><div class="chev">'+IC.chev+'</div></button>';
-  o+='<div class="hub-section-label">People</div>';
-  o+='<button class="hub-row" onclick="openScreen({type:\'personas\'})"><div class="hub-icon" style="background:#1C3A5E">'+IC.users+'</div>'
-    +'<div class="hub-main"><div class="hub-title">Manage People</div><div class="hub-sub">'+FAMILY.length+' people</div></div><div class="chev">'+IC.chev+'</div></button>';
-  if(window.CLOUD&&window.CLOUD.isSuper)
-    o+='<button class="hub-row" onclick="openOwners()"><div class="hub-icon" style="background:#6B4FA0">'+IC.users+'</div>'
-      +'<div class="hub-main"><div class="hub-title">Authorized Owners</div><div class="hub-sub">Who can start their own trip</div></div><div class="chev">'+IC.chev+'</div></button>';
+  o+='<div class="hub-section-label">Planning Party</div>';
+  var psub=(window.CLOUD&&window.CLOUD.partyName?esc(window.CLOUD.partyName)+' · ':'')+FAMILY.length+' '+(FAMILY.length===1?'person':'people');
+  o+='<button class="hub-row" onclick="openParty()"><div class="hub-icon" style="background:#6B4FA0">'+IC.users+'</div>'
+    +'<div class="hub-main"><div class="hub-title">Planning Party</div><div class="hub-sub">'+psub+'</div></div><div class="chev">'+IC.chev+'</div></button>';
   o+='<div class="hub-section-label">Data</div>';
   o+='<button class="hub-row" onclick="exportAllData()"><div class="hub-icon" style="background:#475569">'+IC.upload+'</div>'
     +'<div class="hub-main"><div class="hub-title">Export / Backup</div><div class="hub-sub">Download all data as JSON</div></div><div class="chev">'+IC.chev+'</div></button>';
@@ -1543,7 +1541,7 @@ function openSection(section){
   if(section==='todo'){openScreen({type:'todolist'});return;}
   if(section==='packing'){openScreen({type:'packlist'});return;}
   if(section==='needbuy'){openScreen({type:'needbuy'});return;}
-  if(section==='personas'){if(!adminGate())return;openScreen({type:'personas'});return;}
+  if(section==='personas'){if(!adminGate())return;openParty();return;}
   openScreen({type:'section',section:section});
 }
 
@@ -1946,9 +1944,8 @@ function renderScreen(){
   if(t==='signin')    return scrSignIn();
   if(t==='claim')     return scrClaim();
   if(t==='noaccess')  return scrNoAccess();
-  if(t==='owners')    return scrOwners();
   if(t==='wizard')    return scrWizard();
-  if(t==='personas')  return scrPersonas();
+  if(t==='party'||t==='personas')  return scrParty();
   if(t==='personedit') return scrPersonEdit();
   if(t==='persondetails') return scrPersonDetails();
   if(t==='dayedit')   return scrDayEdit();
@@ -2759,31 +2756,13 @@ function scrNoAccess(){
   return screenShell('No access',body,null,null,false);
 }
 
-/* ── Authorized owners (super-admin only) ────────────────── */
-function scrOwners(){
-  if(!(window.CLOUD&&window.CLOUD.isSuper))return screenShell('Authorized Owners','<div class="body-empty" style="padding:24px 12px">Super-admin only.</div>',null,null,'Done');
-  var list=S._owners||[];
-  var body='<div class="hub-section-label" style="margin-left:0">Authorized trip owners</div>';
-  body+='<div class="body-empty" style="text-align:left;padding:0 2px 10px;font-size:13px">These emails can sign in and start their own trip. Everyone else is blocked. (You\'re always allowed.)</div>';
-  if(!list.length)body+='<div class="body-empty" style="padding:8px 2px">No owners added yet.</div>';
-  for(var i=0;i<list.length;i++){
-    body+='<div class="hub-row" style="cursor:default"><div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(list[i])+'</div></div><button class="btn-secondary" style="margin:0;width:auto;padding:6px 12px;min-height:0" onclick="ownerRemove(\''+esc(list[i])+'\')">Remove</button></div>';
-  }
-  body+='<div class="hub-section-label" style="margin-left:0">Add an owner</div>';
-  body+='<div class="field"><input class="field-input" id="owner-email" type="email" inputmode="email" placeholder="their@email.com"></div>';
-  body+='<button class="btn-secondary green" onclick="ownerAdd()">Add owner</button>';
-  return screenShell('Authorized Owners',body,null,null,'Done');
-}
-function openOwners(){
-  S._owners=[];openScreen({type:'owners'});
-  if(window.CLOUD&&window.CLOUD.listOwners)window.CLOUD.listOwners().then(function(a){S._owners=a;if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();}).catch(function(e){toast(e.message||'Could not load owners');});
-}
+/* authorized-accounts allowlist (managed inside the Planning Party module) */
 function ownerAdd(){
   var e=val('owner-email');if(!e){toast('Enter an email');return;}
-  window.CLOUD.addOwner(e).then(function(){toast('Owner added');return window.CLOUD.listOwners();}).then(function(a){S._owners=a;renderScreen_inplace2();}).catch(function(er){toast(er.message||'Could not add');});
+  window.CLOUD.addOwner(e).then(function(){toast('Account authorized');return window.CLOUD.listOwners();}).then(function(a){S._owners=a;renderScreen_inplace2();}).catch(function(er){toast(er.message||'Could not add');});
 }
 function ownerRemove(e){
-  if(!confirm('Remove '+e+' as an authorized owner?'))return;
+  if(!confirm('Remove access for '+e+'?'))return;
   window.CLOUD.removeOwner(e).then(function(){toast('Removed');return window.CLOUD.listOwners();}).then(function(a){S._owners=a;renderScreen_inplace2();}).catch(function(er){toast(er.message||'Could not remove');});
 }
 
@@ -2894,7 +2873,7 @@ function scrWizard(){
   }
   /* invite */
   body='<div class="hub-section-label" style="margin-left:0">Step 4 · Invite your people</div>';
-  body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Send each person their link now, or skip and invite later from Manage People.</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Send each person their link now, or skip and invite later from Admin → Planning Party.</div>';
   var any=false;
   for(var j=0;j<FAMILY.length;j++){var pp=FAMILY[j];if(pp.admin)continue;any=true;
     body+='<div class="hub-row" style="cursor:default;flex-wrap:wrap;gap:6px"><div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(pp.name)+'</div><div class="hub-sub">'+(pp.email?esc(pp.email):'no email')+'</div></div>';
@@ -2914,13 +2893,7 @@ function cloudSection(){
   var h='<div class="hub-section-label" style="margin-left:0">Sync</div>';
   h+='<div class="body-empty" style="text-align:left;padding:0 2px 10px;font-size:13px">Signed in as <strong>'+esc(window.CLOUD.user.email||window.CLOUD.user.uid)+'</strong> · '+st+'.</div>';
   if(window.CLOUD.inParty&&window.CLOUD.inParty()){
-    var code=window.CLOUD.partyCode(), nm=window.CLOUD.partyName||'Planning Party';
-    h+='<div class="hub-section-label" style="margin-left:0">Your Planning Party</div>';
-    h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px"><strong>'+esc(nm)+'</strong> — share this code so others can join and plan with you.</div>';
-    h+='<div class="field" style="margin-top:2px"><div style="font-family:monospace;font-size:24px;font-weight:700;letter-spacing:3px;padding:12px;background:#F1F5F9;border-radius:10px;text-align:center">'+esc(code)+'</div></div>';
-    h+='<div class="field" style="margin-top:6px"><input class="field-input" id="party-rename" placeholder="Rename party" value="'+esc(nm)+'"></div>';
-    h+='<button class="btn-secondary" onclick="cloudRenameParty()">Rename party</button>';
-    h+='<button class="btn-secondary" onclick="cloudLeaveParty()">Leave party</button>';
+    h+='<div class="body-empty" style="text-align:left;padding:0 2px 10px;font-size:13px">In <strong>'+esc(window.CLOUD.partyName||'Planning Party')+'</strong>.'+(isAdmin()?' Manage it in <strong>Admin → Planning Party</strong>.':'')+'</div>';
   }else{
     h+='<div class="hub-section-label" style="margin-left:0">Planning Party</div>';
     h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Start a Planning Party to invite others, or join one with a code.</div>';
@@ -3007,10 +2980,46 @@ function colorOptions(sel){
   for(var i=0;i<PALETTE.length;i++)h+='<option value="'+PALETTE[i][0]+'"'+(PALETTE[i][0]===sel?' selected':'')+'>'+PALETTE[i][1]+'</option>';
   return h;
 }
-function scrPersonas(){
-  if(!isAdmin())return screenShell('Manage People','<div class="body-empty" style="padding:24px 12px">Admin only — switch to an admin persona from the <strong>I am</strong> button.</div>',null,null,'Done');
+/* Planning Party module — the single home for this party: its name + invite
+   code, the people in it, and (super-admin) the authorized owners. Replaces the
+   old Groups module. */
+function openParty(){
+  if(window.CLOUD&&window.CLOUD.isSuper&&window.CLOUD.listOwners){
+    S._owners=S._owners||[];
+    window.CLOUD.listOwners().then(function(a){S._owners=a;if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();}).catch(function(){});
+  }
+  openScreen({type:'party'});
+}
+function scrPartyName(){return (window.CLOUD&&window.CLOUD.partyName)||'Planning Party';}
+function scrParty(){
+  if(!isAdmin())return screenShell('Planning Party','<div class="body-empty" style="padding:24px 12px">Admin only — switch to an admin persona from the <strong>I am</strong> button.</div>',null,null,'Done');
   S._newPerson=null;   /* back at the list → no pending add */
-  var body='<div class="hub-section-label" style="margin-left:0">People</div>';
+  var cloud=window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user;
+  var inParty=cloud&&window.CLOUD.inParty&&window.CLOUD.inParty();
+  var body='';
+  /* identity */
+  if(inParty){
+    body+='<div class="hub-section-label" style="margin-left:0">Party name & invite code</div>';
+    body+='<div class="field"><input class="field-input" id="party-rename" value="'+esc(scrPartyName())+'"></div>';
+    body+='<button class="btn-secondary" onclick="cloudRenameParty()">Rename party</button>';
+    body+='<div class="field" style="margin-top:6px"><div style="font-family:monospace;font-size:22px;font-weight:700;letter-spacing:3px;padding:12px;background:#F1F5F9;border-radius:10px;text-align:center">'+esc(window.CLOUD.partyCode())+'</div></div>';
+    body+='<div class="body-empty" style="text-align:left;padding:0 2px 6px;font-size:12px">Share this code (or a person\'s invite link) so people can join.</div>';
+    body+='<button class="btn-secondary" onclick="cloudLeaveParty()">Leave party</button>';
+  }else if(cloud){
+    body+='<div class="body-empty" style="text-align:left;padding:2px 2px 10px;font-size:13px">You\'re not in a Planning Party yet. Start one from <strong>Account → Sync</strong>.</div>';
+  }
+  /* authorized accounts — super-admin only (who's allowed in the app at all) */
+  if(cloud&&window.CLOUD.isSuper){
+    body+='<div class="hub-section-label" style="margin-left:0">Authorized accounts</div>';
+    body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">Emails allowed to sign in. Anyone here (your kids included) can start their own trips. Everyone else in the world is blocked. You\'re always allowed.</div>';
+    var owners=S._owners||[];
+    for(var k=0;k<owners.length;k++)
+      body+='<div class="hub-row" style="cursor:default"><div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(owners[k])+'</div></div><button class="btn-secondary" style="margin:0;width:auto;padding:6px 12px;min-height:0" onclick="ownerRemove(\''+esc(owners[k])+'\')">Remove</button></div>';
+    body+='<div class="field" style="margin-top:6px"><input class="field-input" id="owner-email" type="email" inputmode="email" placeholder="their@email.com"></div>';
+    body+='<button class="btn-secondary" onclick="ownerAdd()">Add owner</button>';
+  }
+  /* people in the party */
+  body+='<div class="hub-section-label" style="margin-left:0">People</div>';
   for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i];
     var bits=[];if(p.admin)bits.push('Admin');
     if(p.email)bits.push(esc(p.email));
@@ -3019,8 +3028,8 @@ function scrPersonas(){
       +'<div class="hub-icon" style="background:'+p.color+'">'+esc(p.name[0])+'</div>'
       +'<div class="hub-main"><div class="hub-title">'+esc(p.name)+'</div><div class="hub-sub">'+bits.join(' · ')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
   }
-  body+='<div class="body-empty" style="text-align:left;padding:10px 2px 0;font-size:12px">Tap a person to edit their name, role, groups and travel details. People are global — assign them to trips from the trip editor.</div>';
-  return screenShell('Manage People',body,null,null,'Done','<button class="sec-add" onclick="addPersona()">Add person</button>');
+  body+='<div class="body-empty" style="text-align:left;padding:10px 2px 0;font-size:12px">Tap a person to edit their details or copy their invite link. Assign people to trips from the trip editor.</div>';
+  return screenShell('Planning Party',body,null,null,'Done','<button class="sec-add" onclick="addPersona()">Add person</button>');
 }
 
 
@@ -3093,7 +3102,7 @@ function scrPersonEdit(){
 function backToPeople(){
   if(S._newPerson){var nid=S._newPerson;S._newPerson=null;
     if(person(nid)){FAMILY=FAMILY.filter(function(x){return x.id!==nid;});ALL_IDS=FAMILY.map(function(p){return p.id;});delete PACKING[nid];save('dtp_family',FAMILY);saveLists();}}
-  S._formInit=null;openScreen({type:'personas'});
+  S._formInit=null;openParty();
 }
 function peToggleAdmin(){S._peAdmin=!S._peAdmin;renderScreen_inplace2();}
 function savePersonEdit(pid){
