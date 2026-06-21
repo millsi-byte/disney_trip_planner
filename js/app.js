@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='68';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='69';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2337,6 +2337,88 @@ function importNotify(items){
 function importRemove(i){var e=(S._importItems||[])[i];if(e)e._removed=!e._removed;renderScreen_inplace2();}
 function importReset(){S._importItems=null;S._importEdit=null;S.importStep=1;renderScreen_inplace2();}
 
+/* ── CSV template (download → fill in Excel/Sheets → upload) ──
+   Reuses the same builder + review screen as the JSON path. */
+var IMPORT_CSV_COLS=['type','name','room','checkin','checkout','inTime','outTime','day','meal','time','park','loc','ride','tier','bookedTime','label','airline','num','depApt','depCity','depTime','depDate','arrApt','arrCity','arrTime','arrDate','conf','status'];
+function csvEsc(v){v=(v==null?'':String(v));return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}
+function importCsvTemplate(){
+  var rows=[IMPORT_CSV_COLS];
+  /* example rows — replace or delete these before importing */
+  var ex={
+    resort:{type:'resort',name:"Disney's Pop Century",room:'Standard Room',checkin:'2026-07-14',checkout:'2026-07-16',conf:'A10293847',status:'booked'},
+    dining:{type:'dining',name:'Space 220',day:'2026-07-15',meal:'Dinner',time:'6:45 PM',park:'ep',loc:'in',status:'reserved'},
+    lightning:{type:'lightning',ride:'Rise of the Resistance',day:'2026-07-17',park:'hs',tier:'sp',status:'planning'},
+    flight:{type:'flight',label:'Outbound',status:'booked',airline:'Southwest',num:'WN 4657',depApt:'BOS',depCity:'Boston',depTime:'5:45 AM',depDate:'2026-07-14',arrApt:'MCO',arrCity:'Orlando',arrTime:'11:50 AM',arrDate:'2026-07-14'}
+  };
+  ['resort','dining','lightning','flight'].forEach(function(k){
+    rows.push(IMPORT_CSV_COLS.map(function(c){return csvEsc(ex[k][c]||'');}));
+  });
+  return rows.map(function(r){return r.join(',');}).join('\n');
+}
+function downloadCSV(filename,text){
+  try{
+    var blob=new Blob([text],{type:'text/csv;charset=utf-8'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');a.href=url;a.download=filename;
+    document.body.appendChild(a);a.click();
+    setTimeout(function(){if(a.parentNode)a.parentNode.removeChild(a);URL.revokeObjectURL(url);},120);
+    toast('Template downloaded');
+  }catch(e){toast('Download not supported here');}
+}
+function importCsvDownload(){downloadCSV('trip-template.csv',importCsvTemplate());}
+/* small RFC-ish CSV parser (handles quotes, commas, CRLF) → array of rows */
+function parseCSV(text){
+  var rows=[],row=[],cur='',q=false;
+  text=String(text).replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  for(var i=0;i<text.length;i++){var c=text[i];
+    if(q){ if(c==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=c; }
+    else{ if(c==='"')q=true; else if(c===','){row.push(cur);cur='';} else if(c==='\n'){row.push(cur);rows.push(row);row=[];cur='';} else cur+=c; }
+  }
+  if(cur!==''||row.length){row.push(cur);rows.push(row);}
+  return rows;
+}
+/* forgive common spreadsheet date formats → YYYY-MM-DD (impDate rejects the rest) */
+function csvDate(v){
+  if(!v)return '';v=String(v).trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(v))return v;
+  var m=v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);if(m)return m[3]+'-'+('0'+m[1]).slice(-2)+'-'+('0'+m[2]).slice(-2);
+  var m2=v.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);if(m2)return m2[1]+'-'+('0'+m2[2]).slice(-2)+'-'+('0'+m2[3]).slice(-2);
+  return v;
+}
+/* a CSV row object → the loose shape buildImportItem expects */
+function csvRowToItem(row){
+  var t=(row.type||'').toLowerCase().trim();
+  ['checkin','checkout','day','depDate','arrDate'].forEach(function(k){if(row[k])row[k]=csvDate(row[k]);});
+  if(t==='flight'){
+    return {type:'flight',label:row.label,day:row.day,status:row.status,legs:[{
+      airline:row.airline,num:row.num,conf:row.conf,
+      depApt:row.depApt,depCity:row.depCity,depTime:row.depTime,depDate:row.depDate,
+      arrApt:row.arrApt,arrCity:row.arrCity,arrTime:row.arrTime,arrDate:row.arrDate}]};
+  }
+  row.type=t;return row;
+}
+function importCsvText(text){
+  var rows=parseCSV(text);
+  if(!rows.length){toast('That file looks empty');return;}
+  var headers=rows[0].map(function(h){return h.trim();});
+  var items=[];
+  for(var i=1;i<rows.length;i++){
+    var r=rows[i],obj={},blank=true;
+    for(var j=0;j<headers.length;j++){var v=(r[j]==null?'':r[j]).trim();obj[headers[j]]=v;if(v)blank=false;}
+    if(blank||!obj.type)continue;     /* skip empty / type-less rows */
+    items.push(buildImportItem(csvRowToItem(obj)));
+  }
+  if(!items.length){toast('No rows with a type found');return;}
+  S._importItems=items;
+  S._importItems.forEach(function(e){if(!e.error&&e.rec)e.warn=importDateWarn(e.rec,e.type);});
+  S.importStep=2;renderScreen_inplace2();
+}
+function importCsvPick(){var el=document.getElementById('import-csv');if(el)el.click();}
+function importCsvFile(ev){
+  var f=ev&&ev.target&&ev.target.files&&ev.target.files[0];if(!f)return;
+  var r=new FileReader();r.onload=function(){importCsvText(r.result);};r.readAsText(f);
+}
+
 /* ── inline editing in the review screen ──────────────────── */
 /* editable fields per type: [key,label,kind]  kind: text | date | [options] */
 var IMPORT_FIELDS={
@@ -2411,6 +2493,11 @@ function scrImport(){
     body+='<div class="field" style="margin-top:14px"><label class="field-label">Paste Claude\'s JSON</label>'
       +'<textarea class="field-input" id="import-paste" rows="8" placeholder=\'{ "items": [ ... ] }\' style="font-family:monospace;font-size:13px;resize:vertical"></textarea></div>';
     body+='<button class="btn-primary" onclick="importParse()">Review items</button>';
+    body+='<div class="import-or">or use a spreadsheet</div>';
+    body+='<button class="btn-secondary" onclick="importCsvDownload()">'+IC.upload+' Download CSV template</button>';
+    body+='<button class="btn-secondary" onclick="importCsvPick()">'+IC.upload+' Upload filled CSV</button>';
+    body+='<input type="file" id="import-csv" accept=".csv,text/csv" style="display:none" onchange="importCsvFile(event)">';
+    body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0;font-size:12px">Fill the template in Excel or Google Sheets — one row per item, dates as YYYY-MM-DD. Replace the example rows. You\'ll review everything before it saves.</div>';
     body+='<button class="btn-secondary" onclick="closeScreen()">Cancel</button>';
     return screenShell('AI Import',body,null,null,'Close');
   }
