@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='72';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='73';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1510,8 +1510,14 @@ function ovFlights(){
 /* ============================================================
    CHAT
    ============================================================ */
+/* chat unread — per trip + persona, tracked by message count seen */
+function chatSeenKey(){return 'dtp_chatseen_'+S.tripId+'_'+S.persona;}
+function chatMsgCount(){var n=0;for(var i=0;i<CHAT.length;i++)if(CHAT[i].trip===S.tripId)n++;return n;}
+function chatUnread(){return Math.max(0,chatMsgCount()-load(chatSeenKey(),0));}
+function markChatSeen(){save(chatSeenKey(),chatMsgCount());}
 function renderChat(){
   var me=S.persona;
+  markChatSeen();           /* opening the thread clears its unread badge */
   var h='<div id="chatwrap">';
   h+='<div class="chat-asof">Family thread · '+esc(trip().name)+'</div>';
   var lastDay=null;
@@ -1810,7 +1816,8 @@ function renderNav(){
   var tabs=[['home',IC.home,'Agenda'],['overview',IC.grid,'Overview'],['plan',IC.plan,'Plan'],['lists',IC.list,'Lists'],['chat',IC.chat,'Chat']];
   var h='';
   for(var i=0;i<tabs.length;i++){var on=S.tab===tabs[i][0];
-    var badge=tabs[i][0]==='chat'?'<span class="nbadge">2</span>':'';
+    var cu=chatUnread();
+    var badge=(tabs[i][0]==='chat'&&cu>0)?'<span class="nbadge">'+(cu>9?'9+':cu)+'</span>':'';
     h+='<button class="nbtn'+(on?' on':'')+'" onclick="go(\''+tabs[i][0]+'\')">'+tabs[i][1]+badge+'<span>'+tabs[i][2]+'</span>'+(on?'<div class="nbtn-dot"></div>':'')+'</button>';
   }
   document.getElementById('bnav').innerHTML=h;
