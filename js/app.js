@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='102';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='103';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -3158,6 +3158,7 @@ function scrOwners(){
   if(!owners.length)body+='<div class="body-empty" style="padding:8px 2px">No one added yet.</div>';
   for(var k=0;k<owners.length;k++)
     body+='<div class="hub-row" style="cursor:default;flex-wrap:wrap;gap:6px"><div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(owners[k])+'</div></div>'
+      +'<button class="btn-secondary" style="margin:0;width:auto;padding:6px 10px;min-height:0" onclick="copyOwnerLink()">Copy link</button>'
       +'<button class="btn-secondary" style="margin:0;width:auto;padding:6px 10px;min-height:0" onclick="emailOwnerInvite(\''+esc(owners[k])+'\')">Email invite</button>'
       +'<button class="btn-secondary" style="margin:0;width:auto;padding:6px 10px;min-height:0" onclick="ownerRemove(\''+esc(owners[k])+'\')">Remove</button></div>';
   body+='<div class="hub-section-label" style="margin-left:0">Authorize a new user</div>';
@@ -3165,6 +3166,13 @@ function scrOwners(){
   body+='<button class="btn-secondary green" onclick="ownerAdd()">Authorize</button>';
   body+='<div class="body-empty" style="text-align:left;padding:10px 2px 0;font-size:12px">They just open the app and sign in with this Google account — the setup wizard starts automatically. No invite code needed for owners.</div>';
   return screenShell('Authorized Users',body,null,null,'Done');
+}
+/* copy the plain app link to share any way you like (text, chat, etc.) */
+function copyOwnerLink(){
+  var url=location.origin+location.pathname;
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(function(){toast('App link copied');},function(){window.prompt('Copy this link:',url);});
+  }else window.prompt('Copy this link:',url);
 }
 /* email a new trip owner the app link + how to get in (they just sign in) */
 function emailOwnerInvite(email){
