@@ -558,17 +558,37 @@ function notifToggle(){S._notify=!S._notify;renderScreen_inplace2();}
 function notifyField(cat){
   var active=!!(trip()&&trip().status==='active'),on=!!S._notify;
   var h='<div class="field"><label class="field-label">Notifications</label>';
+  h+='<div class="notify-row'+(on?' on':'')+'" onclick="notifToggle()"><span class="notify-check">'+(on?IC.checkw:'')+'</span>';
   if(active){
-    h+='<div class="notify-note">'+IC.bell+' This trip is active — when you save, you’ll be asked who to notify about changes to who’s on this.</div>';
+    h+='<div><div class="notify-lbl">Notify people when I save</div><div class="notify-sub">This trip is active — tick to choose who to let know when you save.</div></div></div>';
   }else{
-    h+='<div class="notify-row'+(on?' on':'')+'" onclick="notifToggle()"><span class="notify-check">'+(on?IC.checkw:'')+'</span>';
     h+='<div><div class="notify-lbl">Notify people of this change</div><div class="notify-sub">This trip is still planning, so changes stay silent unless you switch this on.</div></div></div>';
   }
   if(isActionCat(cat))h+='<div class="notify-note amber">'+IC.warn+' Whoever booked this is always told when people join or leave — it may need a real reservation change.</div>';
   return h+'</div>';
 }
+/* open the picker for a general heads-up when who didn't change but notify is on */
+function openNotifAll(cat,rec){
+  var actor=S.persona,tid=rec.trip||S.tripId,label=notifLabel(cat,rec);
+  var members=whoArrFor(rec.who,tid).filter(function(id){return id!==actor&&person(id);});
+  if(isActionCat(cat)){
+    var creator=creatorOf(rec,tid);
+    if(creator&&creator!==actor&&members.indexOf(creator)<0&&person(creator))members.push(creator);
+  }
+  if(!members.length){bumpBell();return;}
+  var who=pname(actor),plan={forced:[],optional:[]};
+  members.forEach(function(id){
+    plan.optional.push({to:id,from:actor,trip:tid,cat:cat,label:label,kind:'change',text:who+' updated "'+label+'" ('+cat+')'});
+  });
+  openNotifConfirm({actor:actor,trip:tid,cat:cat,label:label,oldWho:rec.who,newWho:rec.who},plan);
+}
 function afterWhoSave(cat,rec,oldWho){
-  notifyChange({trip:rec.trip||S.tripId,cat:cat,label:notifLabel(cat,rec),item:rec,oldWho:oldWho,newWho:rec.who,actor:S.persona,optIn:S._notify});
+  var tid=rec.trip||S.tripId;
+  if(S._notify){
+    var oldA=whoArrFor(oldWho,tid),newA=whoArrFor(rec.who,tid);
+    if(oldA.slice().sort().join()===newA.slice().sort().join()){openNotifAll(cat,rec);return;}
+  }
+  notifyChange({trip:tid,cat:cat,label:notifLabel(cat,rec),item:rec,oldWho:oldWho,newWho:rec.who,actor:S.persona,optIn:S._notify});
 }
 
 /* queries — all scoped to the current trip */
@@ -869,10 +889,15 @@ function tdSaveAsTemplate(){
 function renderHeader(){
   var t=trip();
   var me=person(S.persona)||FAMILY[0];
+  var noTrips=!visibleTrips().length&&!isAdmin();
   var h='<header class="hdr">';
-  h+='<button class="hdr-trip left" onclick="openSheet({type:\'trips\'})">';
-  h+='<div class="hdr-trip-name">'+esc(t.name)+' '+IC.chevd+'</div>';
-  h+='<div class="hdr-trip-sub">'+esc(t.dates)+'</div></button>';
+  if(noTrips){
+    h+='<div class="hdr-trip left"><div class="hdr-trip-name" style="opacity:.55">No trips yet</div></div>';
+  }else{
+    h+='<button class="hdr-trip left" onclick="openSheet({type:\'trips\'})">';
+    h+='<div class="hdr-trip-name">'+esc(t.name)+' '+IC.chevd+'</div>';
+    h+='<div class="hdr-trip-sub">'+esc(t.dates)+'</div></button>';
+  }
   var nb=notifUnread();
   h+='<button class="hdr-bell" onclick="openScreen({type:\'notifs\'})" aria-label="Notifications">'+IC.bell+(nb?'<span class="bell-badge">'+(nb>9?'9+':nb)+'</span>':'')+'</button>';
   h+='<button class="hdr-iam" onclick="openScreen({type:\'persona\'})">';
@@ -968,6 +993,7 @@ function dayBadges(d){
   return out;
 }
 function renderAgenda(){
+  if(!visibleTrips().length&&!isAdmin()) return '<div class="body-empty" style="margin-top:48px;text-align:center">You haven’t been added to any trips yet.<br><br>Ask an admin to invite you to a trip.</div>';
   var d=day();
   if(!d) return '<div class="body-empty" style="margin-top:30px">No days for this trip yet.<br><br>Set the trip\'s start and end dates (tap the trip name in the header → edit) and days will be generated automatically.</div>';
   var vs=visitsFor(d.date).filter(function(v){return visible(v.who);});
