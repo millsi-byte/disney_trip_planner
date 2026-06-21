@@ -66,7 +66,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='59';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='60';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -116,13 +116,14 @@ for(var _c=0;_c<CHAT.length;_c++)if(!CHAT[_c].trip)CHAT[_c].trip='jul26';
 /* per-trip packing / to-do (PACKING/TODO hold the active trip's lists) */
 function listKey(base){return 'dtp_'+base+'_'+S.tripId;}
 function loadLists(){
+  if(!S.tripId){PACKING={};TODO=[];return;}   /* no trip selected — nothing to load */
   PACKING=load(listKey('packing'),null)||(S.tripId==='jul26'?PACKING_SEED:{});
   TODO=load(listKey('todo'),null)||(S.tripId==='jul26'?JSON.parse(JSON.stringify(TODO_SEED)):[]);
   if(!Array.isArray(TODO))TODO=[];   /* guard against old per-person shape */
   ensureLists();
 }
 function ensureLists(){tripMembers().forEach(function(id){if(!PACKING[id])PACKING[id]=[];});}
-function saveLists(){save(listKey('packing'),PACKING);save(listKey('todo'),TODO);}
+function saveLists(){if(!S.tripId)return;save(listKey('packing'),PACKING);save(listKey('todo'),TODO);}
 function saveTODO(){save(listKey('todo'),TODO);}
 function saveTmpl(){save('dtp_todo_tmpl',TODO_TMPL);}
 
@@ -181,12 +182,20 @@ function visibleTrips(){
   if(isAdmin())return TRIPS.slice();
   return TRIPS.filter(function(t){return (t.by&&t.by===S.persona)||(t.members&&t.members.indexOf(S.persona)>=0);});
 }
-/* keep the active trip pointed at one this persona can actually see */
-function ensureVisibleTrip(){
-  var vt=visibleTrips();if(!vt.length)return;
-  for(var i=0;i<vt.length;i++)if(vt[i].id===S.tripId)return;
-  S.tripId=vt[0].id;
+/* does the current persona have any trip they can see? */
+function hasVisibleTrip(){return !!visibleTrips().length;}
+/* is the current selection empty or pointing at a trip this persona can't see?
+   "no trip selected" is a deliberate state — you only leave it by picking a trip */
+function noTripSelected(){
+  if(!S.tripId)return true;
+  var vt=visibleTrips();
+  for(var i=0;i<vt.length;i++)if(vt[i].id===S.tripId)return false;
+  return true;
 }
+/* validate the active selection without auto-jumping into another trip. A valid,
+   visible selection is kept; anything else is blanked so render() shows the
+   no-trip landing and the user purposely picks the trip they want. */
+function ensureVisibleTrip(){ if(noTripSelected())S.tripId=null; }
 /* who may edit a trip's details: admins or the person who created it */
 function canEditTrip(t){t=t||trip();return isAdmin()||!!(t&&t.by&&t.by===S.persona);}
 /* personas assigned to the current trip (drives filters + who-select) */
@@ -887,13 +896,18 @@ function tdSaveAsTemplate(){
    HEADER + STRIP + FILTER
    ============================================================ */
 function renderHeader(){
-  var t=trip();
   var me=person(S.persona)||FAMILY[0];
-  var noTrips=!visibleTrips().length&&!isAdmin();
   var h='<header class="hdr">';
-  if(noTrips){
-    h+='<div class="hdr-trip left"><div class="hdr-trip-name" style="opacity:.55">No trips yet</div></div>';
+  if(noTripSelected()){
+    /* nothing selected — let them open the picker (or show "no trips" if they have none) */
+    if(hasVisibleTrip()){
+      h+='<button class="hdr-trip left" onclick="openSheet({type:\'trips\'})">';
+      h+='<div class="hdr-trip-name">Select a trip '+IC.chevd+'</div></button>';
+    }else{
+      h+='<div class="hdr-trip left"><div class="hdr-trip-name" style="opacity:.55">No trips yet</div></div>';
+    }
   }else{
+    var t=trip();
     h+='<button class="hdr-trip left" onclick="openSheet({type:\'trips\'})">';
     h+='<div class="hdr-trip-name">'+esc(t.name)+' '+IC.chevd+'</div>';
     h+='<div class="hdr-trip-sub">'+esc(t.dates)+'</div></button>';
@@ -993,7 +1007,6 @@ function dayBadges(d){
   return out;
 }
 function renderAgenda(){
-  if(!visibleTrips().length&&!isAdmin()) return '<div class="body-empty" style="margin-top:48px;text-align:center">You haven’t been added to any trips yet.<br><br>Ask an admin to invite you to a trip.</div>';
   var d=day();
   if(!d) return '<div class="body-empty" style="margin-top:30px">No days for this trip yet.<br><br>Set the trip\'s start and end dates (tap the trip name in the header → edit) and days will be generated automatically.</div>';
   var vs=visitsFor(d.date).filter(function(v){return visible(v.who);});
@@ -2913,15 +2926,42 @@ function doDelTrip(id){
   [DAYS,VISITS,PARKHOURS,DINING,LLS,SHOWS,FLIGHTS,RESORTS,PARKRES,REBOOKS].forEach(drop);
   for(var c=CHAT.length-1;c>=0;c--)if(CHAT[c].trip===id)CHAT.splice(c,1);
   try{localStorage.removeItem('dtp_packing_'+id);localStorage.removeItem('dtp_todo_'+id);}catch(e){}
-  if(S.tripId===id){S.tripId=TRIPS[0].id;loadLists();S.dayIdx=0;S.open=defOpen();S.filter.clear();}
+  if(S.tripId===id){
+    /* deleting the trip you're viewing drops you to the no-trip landing — don't
+       silently teleport into another trip; the user purposely picks the next one */
+    S.tripId=null;S.dayIdx=0;S.open=defOpen();S.filter.clear();
+  }
   ensureVisibleTrip();persist();S._members=null;toast('Trip deleted');closeScreen();render();
 }
 
 /* ============================================================
    MAIN RENDER
    ============================================================ */
+/* no-trip landing — shown when nothing is selected (new persona, or just
+   deleted the trip you were viewing). You leave it by picking/creating a trip. */
+function renderNoTrip(){
+  var has=hasVisibleTrip();
+  var o='<div class="notrip"><div class="notrip-art">'+IC.map+'</div>';
+  o+='<div class="notrip-title">'+(has?'No trip selected':'No trips yet')+'</div>';
+  o+='<div class="notrip-sub">'+(has
+    ? 'Pick the trip you want to view, or start planning a new one.'
+    : 'You\'re not part of any trips yet. Plan one to get started.')+'</div>';
+  if(has)
+    o+='<button class="btn-primary" onclick="openSheet({type:\'trips\'})">Choose a trip</button>';
+  o+='<button class="btn-secondary'+(has?'':' green')+'" onclick="openScreen({type:\'newtrip\'})">'+IC.plus+' Plan a new trip</button>';
+  o+='</div>';
+  return o;
+}
 function render(){
   document.getElementById('header-host').innerHTML=renderHeader();
+  if(noTripSelected()){
+    document.getElementById('strip-host').innerHTML='';
+    document.getElementById('filter-host').innerHTML='';
+    document.getElementById('app').innerHTML=renderNoTrip();
+    document.getElementById('app').style.padding='';
+    renderNav();
+    return;
+  }
   document.getElementById('strip-host').innerHTML=renderStrip();
   document.getElementById('filter-host').innerHTML=(S.tab==='home'||S.tab==='overview')?renderFilter():'';
   var o='';
