@@ -37,7 +37,8 @@ var IC = {
   back:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>',
   send:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
   upload:'<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
-  bell:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>'
+  bell:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
+  users:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
 };
 
 /* ── State ─────────────────────────────────────────────────── */
@@ -45,7 +46,8 @@ var S = {
   tripId:"jul26",
   tab:"home",
   dayIdx:1,            // default to first real park day
-  filter:new Set(),    // empty = All
+  fmode:"all",         // primary person filter: all | mine | notme
+  filter:new Set(),    // specific-person filter (rare); non-empty overrides fmode
   open:{},             // collapsible card state per key
   plan:"packing",      // packing | todo
   ov:"dining",         // overview sub-view
@@ -66,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='60';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='61';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -217,13 +219,23 @@ function hoursFor(park,ds){var l=parkHoursFor(ds);for(var i=0;i<l.length;i++)if(
 var TIMING={morning:'Morning',day:'Day',evening:'Evening',late:'Late'};
 function timingLbl(t){return TIMING[t]||'Day';}
 
-/* person-filter visibility */
+/* person-filter visibility.
+   A non-empty S.filter (specific people picked) always wins; otherwise the
+   primary mode applies: all = everything, mine = items I'm on (incl. everyone-
+   items), notme = items I'm NOT on (the ones I could ask to join). */
 function visible(who){
-  if(S.filter.size===0) return true;       // All
-  if(who==="all") return true;             // everyone-items always show
-  for(var i=0;i<who.length;i++) if(S.filter.has(who[i])) return true;
-  return false;
+  if(S.filter&&S.filter.size){
+    if(who==="all") return true;           // everyone-items always show
+    for(var i=0;i<who.length;i++) if(S.filter.has(who[i])) return true;
+    return false;
+  }
+  var mode=S.fmode||'all';
+  if(mode==='all') return true;
+  var meIn=(who==="all")||(Array.isArray(who)&&who.indexOf(S.persona)>=0);
+  return mode==='mine'?meIn:!meIn;         // 'notme'
 }
+/* is any person filter currently narrowing the view? */
+function filterActive(){return !!((S.filter&&S.filter.size)||(S.fmode&&S.fmode!=='all'));}
 function esc(s){return (s==null?"":String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
 /* who display — person-initial circles everywhere something is assigned */
@@ -647,20 +659,34 @@ function forceUpdate(){
   }catch(e){done();}
 }
 
-function toggleFilter(id){
-  if(id==="all"){S.filter.clear();}
-  else{if(S.filter.has(id))S.filter.delete(id);else S.filter.add(id);}
+/* re-render whatever surface the filter affects */
+function applyFilterChange(){
   if(S.screen&&(S.screen.type==='lists'||S.screen.type==='packlist'))refreshLists();
   else if(S.screen&&S.screen.type==='todolist')refreshTodo();
   else render();
 }
+/* primary filter: Mine / Everyone / Not mine — clears any specific-person pick */
+function setFilterMode(m){S.fmode=m;S.filter.clear();applyFilterChange();}
+/* rare: pick specific people. A non-empty set overrides the primary mode. */
+function togglePersonFilter(id){
+  if(S.filter.has(id))S.filter.delete(id);else S.filter.add(id);
+  var host=document.getElementById('sheet-host');
+  if(host&&S.sheet){host.innerHTML=renderSheet();var b=host.firstChild;if(b)b.classList.add('in');}
+  applyFilterChange();
+}
+function clearPersonFilter(){S.filter.clear();applyFilterChange();
+  var host=document.getElementById('sheet-host');
+  if(host&&S.sheet){host.innerHTML=renderSheet();var b=host.firstChild;if(b)b.classList.add('in');}
+}
+/* keep toggleFilter as a thin alias (legacy callers) */
+function toggleFilter(id){if(id==="all")setFilterMode('all');else togglePersonFilter(id);}
 
 /* sheets */
 function openSheet(def){S.sheet=def;renderOverlay();requestAnimationFrame(function(){var b=document.getElementById('sheet-host').firstChild;if(b)b.classList.add('in');});}
 /* only tears down the sheet — must NOT re-render screen-host, or a screen
    opened right after (e.g. New trip) loses its slide-in and flies off */
 function closeSheet(){var host=document.getElementById('sheet-host');var b=host&&host.firstChild;if(b){b.classList.remove('in');setTimeout(function(){S.sheet=null;var hh=document.getElementById('sheet-host');if(hh)hh.innerHTML='';},240);}else{S.sheet=null;var h2=document.getElementById('sheet-host');if(h2)h2.innerHTML='';}}
-function switchTrip(id){saveLists();S.tripId=id;loadLists();S.dayIdx=0;S.tab="home";S.open=defOpen();S.filter.clear();closeSheet();toast("Switched to "+trip().name);render();}
+function switchTrip(id){saveLists();S.tripId=id;loadLists();S.dayIdx=0;S.tab="home";S.open=defOpen();S.fmode='all';S.filter.clear();closeSheet();toast("Switched to "+trip().name);render();}
 
 /* screens (slide-in) */
 function openScreen(def){
@@ -750,7 +776,14 @@ function logoutPersona(){
 }
 
 /* packing / todo */
-function pkPersons(){var mem=tripMembers();if(S.filter.size===0)return mem.slice();return mem.filter(function(id){return S.filter.has(id);});}
+function pkPersons(){
+  var mem=tripMembers();
+  if(S.filter&&S.filter.size)return mem.filter(function(id){return S.filter.has(id);});
+  var mode=S.fmode||'all';
+  if(mode==='mine')return mem.filter(function(id){return id===S.persona;});
+  if(mode==='notme')return mem.filter(function(id){return id!==S.persona;});
+  return mem.slice();
+}
 function refreshLists(){
   var b=document.getElementById('lists-body');
   if(b&&S.screen&&S.screen.type==='packlist'){b.innerHTML=packingBody();return;}
@@ -941,14 +974,15 @@ function renderStrip(){
   return h+'</div></div>';
 }
 function renderFilter(){
-  var h='<div class="pfilter-wrap"><div class="pfilter">';
-  h+='<span class="pfilter-lbl">Filter by:</span>';
-  h+='<div class="ppill all'+(S.filter.size===0?' on':'')+'" onclick="toggleFilter(\'all\')">All</div>';
-  var mem=tripMembers();
-  for(var i=0;i<mem.length;i++){var p=person(mem[i]);if(!p)continue;var on=S.filter.has(p.id);
-    h+='<div class="ppill'+(on?' on':'')+'" onclick="toggleFilter(\''+p.id+'\')">'
-      +'<span class="pdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+'</div>';
+  var byPerson=!!(S.filter&&S.filter.size), mode=S.fmode||'all';
+  function seg(m,label){
+    var on=!byPerson&&mode===m;
+    return '<button class="fseg'+(on?' on':'')+'" onclick="setFilterMode(\''+m+'\')">'+label+'</button>';
   }
+  var h='<div class="pfilter-wrap"><div class="pfilter">';
+  h+='<div class="fseg-group">'+seg('mine','Mine')+seg('all','Everyone')+seg('notme','Not mine')+'</div>';
+  h+='<button class="fbyperson'+(byPerson?' on':'')+'" onclick="openSheet({type:\'pfilter\'})" aria-label="Filter by person">'
+    +IC.users+(byPerson?'<span class="fcount">'+S.filter.size+'</span>':'')+'</button>';
   return h+'</div></div>';
 }
 
@@ -1089,7 +1123,7 @@ function flightCard(flts,d){
   if(S.open[key]){
     o+='<div class="card-body">';
     if(!flts.length){
-      o+='<div class="body-empty">No flights for this day'+(S.filter.size?' for the selected people':'')+'.</div>';
+      o+='<div class="body-empty">No flights for this day'+(filterActive()?' for the current filter':'')+'.</div>';
     }
     for(var i=0;i<flts.length;i++) o+=flightJourney(flts[i],d);
     o+='<button class="add-link" onclick="openScreen({type:\'addflight\',day:\''+d.date+'\'})">'+IC.plus+' Add flight</button>';
@@ -1253,7 +1287,7 @@ function diningCard(din,pk,date){
   o+=cardHead(key,'var(--hd-din)',pk.color,IC.fork,'Dining',din.length?(din.length+' in plan'):'Nothing yet',anyPlan);
   if(S.open[key]){
     o+='<div class="card-body">';
-    if(!din.length) o+='<div class="body-empty">No dining'+(S.filter.size?' for the selected people':'')+' on this day.</div>';
+    if(!din.length) o+='<div class="body-empty">No dining'+(filterActive()?' for the current filter':'')+' on this day.</div>';
     for(var i=0;i<din.length;i++) o+=diningRow(din[i]);
     o+='<button class="add-link" onclick="openScreen({type:\'adddining\',day:\''+date+'\'})">'+IC.plus+' Add dining</button>';
     o+='</div>';
@@ -1280,7 +1314,7 @@ function showsCard(sh,pk,date){
   o+=cardHead(key,'var(--hd-show)',pk.color,IC.star,'Night Shows',sh.length?(sh.length+' show'+(sh.length>1?'s':'')):'Nothing yet');
   if(S.open[key]){
     o+='<div class="card-body">';
-    if(!sh.length) o+='<div class="body-empty">No shows'+(S.filter.size?' for the selected people':'')+' on this day.</div>';
+    if(!sh.length) o+='<div class="body-empty">No shows'+(filterActive()?' for the current filter':'')+' on this day.</div>';
     for(var i=0;i<sh.length;i++){var x=sh[i];
       o+='<div class="show-row"><div style="flex:1"><div class="show-name">'+esc(x.name)+'</div><div style="display:flex;align-items:center;gap:6px;margin-top:4px">'+statusBadge(x.status||'attend')+whoChips(x.who)+'</div></div><div class="show-time">'+esc(x.time)+'</div>';
       o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;margin-left:8px" onclick="openScreen({type:\'showedit\',edit:\''+x.id+'\',day:\''+x.day+'\'})">'+IC.pencil+'</button></div>';
@@ -1415,11 +1449,11 @@ function ovParkRes(){
       o+='<div class="ov-card'+(isPlanningStatus(pr.status)?' planning':'')+'"><div class="din-row"><span style="width:12px;height:12px;border-radius:50%;background:'+(ppk?ppk.color:'#999')+';flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name">'+(ppk?esc(ppk.name):esc(pr.park))+'</div>'+whoChips(pr.who)+'</div>'+statusBadge(pr.status)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'predit\',edit:\''+pr.id+'\',day:\''+pr.day+'\'})">'+IC.pencil+'</button></div></div>';
     }
   }
-  return any?o:'<div class="body-empty">No park reservations'+(S.filter.size?' for the selected people':'')+'. These days are Park Hopper.</div>';
+  return any?o:'<div class="body-empty">No park reservations'+(filterActive()?' for the current filter':'')+'. These days are Park Hopper.</div>';
 }
 function ovResort(){
   var rs=RESORTS.filter(function(r){return r.trip===S.tripId&&visible(r.who);});
-  if(!rs.length)return '<div class="body-empty">No resort stays'+(S.filter.size?' for the selected people':'')+' yet.</div>';
+  if(!rs.length)return '<div class="body-empty">No resort stays'+(filterActive()?' for the current filter':'')+' yet.</div>';
   rs.sort(function(a,b){return a.checkin<b.checkin?-1:1;});
   var o='';
   for(var i=0;i<rs.length;i++){var r=rs[i];
@@ -1768,8 +1802,28 @@ function renderOverlay(){
   document.getElementById('screen-host').innerHTML = S.screen?renderScreen():'';
 }
 
+/* person-filter sheet — the rare "show only these specific people" picker */
+function renderPfilterSheet(){
+  var mem=tripMembers();
+  var h='<div class="sheet-backdrop" onclick="if(event.target===this)closeSheet()"><div class="sheet">';
+  h+='<div class="sheet-grip"></div><div class="sheet-title">Filter by person</div>';
+  h+='<div class="body-empty" style="text-align:left;padding:0 2px 10px">Pick specific people to see only their items. Leave empty to use Mine / Everyone / Not&nbsp;mine.</div>';
+  h+='<div class="whoselect" style="margin:2px 0">';
+  for(var i=0;i<mem.length;i++){var p=person(mem[i]);if(!p)continue;var on=S.filter.has(p.id);
+    h+='<div class="who-opt'+(on?' on':'')+'" onclick="togglePersonFilter(\''+p.id+'\')">'
+      +'<span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)
+      +'<span class="wcheck">'+IC.checkw.replace('currentColor','#15803D')+'</span></div>';
+  }
+  h+='</div>';
+  h+='<div style="display:flex;gap:8px;margin-top:14px">';
+  h+='<button class="btn-secondary" style="margin:0;flex:1" onclick="clearPersonFilter()">Clear</button>';
+  h+='<button class="btn-secondary green" style="margin:0;flex:1" onclick="closeSheet()">Done</button>';
+  h+='</div></div></div>';
+  return h;
+}
 /* trip switcher */
 function renderSheet(){
+  if(S.sheet.type==='pfilter')return renderPfilterSheet();
   if(S.sheet.type!=='trips')return '';
   var groups=[['active','Active'],['planning','Planning'],['archived','Archived']];
   var h='<div class="sheet-backdrop" onclick="if(event.target===this)closeSheet()"><div class="sheet">';
@@ -2178,7 +2232,7 @@ function createTrip(){
   var optIn=S._notify;S._members=null;
   toast('Trip created'+(S.newTmpl==='mine'?' from your template':''));
   /* land on the new trip's Plan page */
-  saveLists();S.tripId=id;loadLists();S.dayIdx=0;S.open=defOpen();S.filter.clear();S.tab='plan';
+  saveLists();S.tripId=id;loadLists();S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();S.tab='plan';
   closeScreen();render();
   notifyMembership(tripObj,[],mem,optIn);
 }
@@ -2909,7 +2963,7 @@ function saveTrip(){
   t.members=S._members?ALL_IDS.filter(function(id){return S._members.has(id);}):t.members;
   if(!t.members||!t.members.length)t.members=ALL_IDS.slice();
   if(t.status==='active')for(var j=0;j<TRIPS.length;j++)if(TRIPS[j].id!==t.id&&TRIPS[j].status==='active')TRIPS[j].status='planning';
-  if(t.id===S.tripId)S.filter.clear();
+  if(t.id===S.tripId){S.fmode='all';S.filter.clear();}
   save('dtp_trips',TRIPS);var optIn=S._notify;var newMem=t.members.slice();S._members=null;toast('Trip updated');closeScreen();render();
   notifyMembership(t,oldMem,newMem,optIn);
 }
@@ -2929,7 +2983,7 @@ function doDelTrip(id){
   if(S.tripId===id){
     /* deleting the trip you're viewing drops you to the no-trip landing — don't
        silently teleport into another trip; the user purposely picks the next one */
-    S.tripId=null;S.dayIdx=0;S.open=defOpen();S.filter.clear();
+    S.tripId=null;S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();
   }
   ensureVisibleTrip();persist();S._members=null;toast('Trip deleted');closeScreen();render();
 }
