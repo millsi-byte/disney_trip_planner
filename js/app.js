@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='99';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='100';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -111,6 +111,26 @@ S.persona = load('dtp_persona', S.persona);
 S.tripId  = load('dtp_tripId', S.tripId);   /* remember the last-selected trip across reloads */
 function saveNotifs(){save('dtp_notifs',NOTIFS);}
 function saveTripId(){save('dtp_tripId',S.tripId);}
+
+/* ── Planning Parties (tenancy: a family/household above people & trips) ──
+   A person carries party membership as metadata; a trip belongs to one or more
+   parties; the active party scopes what you see. Synced like everything else. */
+var PARTIES = load('dtp_parties', null);
+if(!PARTIES){ var _legacy=load('dtp_groups',null); if(_legacy&&_legacy.length)PARTIES=_legacy; }
+if(!PARTIES||!PARTIES.length){
+  var _pa=(FAMILY.filter(function(p){return p.admin;})[0]||FAMILY[0]||{}).id||null;
+  PARTIES=[{id:'g1',name:'My Planning Party',by:_pa}];
+}
+(function(){   /* every person & trip belongs to >=1 party (migrate legacy .groups) */
+  var pid=PARTIES[0].id;
+  for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i];
+    if(!Array.isArray(p.parties)||!p.parties.length)p.parties=(Array.isArray(p.groups)&&p.groups.length)?p.groups.slice():[pid];}
+  for(var j=0;j<TRIPS.length;j++){var t=TRIPS[j];
+    if(!Array.isArray(t.parties)||!t.parties.length)t.parties=(Array.isArray(t.groups)&&t.groups.length)?t.groups.slice():[pid];}
+})();
+function saveParties(){save('dtp_parties',PARTIES);}
+S.partyId = load('dtp_partyId', PARTIES[0].id);   /* active party context */
+function savePartyId(){save('dtp_partyId',S.partyId);}
 
 /* every planning item belongs to a trip — default seed items to jul26 */
 function tagTrip(coll){for(var i=0;i<coll.length;i++)if(!coll[i].trip)coll[i].trip='jul26';}
@@ -184,7 +204,7 @@ function materializeAllDays(){
 function persist(){
   save('dtp_days',DAYS);save('dtp_visits',VISITS);save('dtp_hours',PARKHOURS);save('dtp_dining',DINING);save('dtp_lls',LLS);
   save('dtp_shows',SHOWS);save('dtp_flights',FLIGHTS);save('dtp_resorts',RESORTS);
-  save('dtp_parkres',PARKRES);save('dtp_rebooks',REBOOKS);save('dtp_trips',TRIPS);save('dtp_family',FAMILY);save('dtp_chat',CHAT);
+  save('dtp_parkres',PARKRES);save('dtp_rebooks',REBOOKS);save('dtp_trips',TRIPS);save('dtp_family',FAMILY);save('dtp_parties',PARTIES);save('dtp_chat',CHAT);
 }
 
 /* re-read every synced collection from localStorage into the in-memory globals.
@@ -199,7 +219,8 @@ function rehydrate(){
   DINING=load('dtp_dining',DINING); LLS=load('dtp_lls',LLS); SHOWS=load('dtp_shows',SHOWS);
   FLIGHTS=load('dtp_flights',FLIGHTS); RESORTS=load('dtp_resorts',RESORTS); PARKRES=load('dtp_parkres',PARKRES);
   REBOOKS=load('dtp_rebooks',REBOOKS); TRIPS=load('dtp_trips',TRIPS); NOTIFS=load('dtp_notifs',NOTIFS);
-  CHAT=load('dtp_chat',CHAT);
+  PARTIES=load('dtp_parties',PARTIES)||PARTIES; CHAT=load('dtp_chat',CHAT);
+  try{ensureActiveParty();}catch(e){}
   try{ensureVisibleTrip();}catch(e){}
   try{loadLists();}catch(e){}
   try{render();}catch(e){}
@@ -207,12 +228,27 @@ function rehydrate(){
 
 /* ── Helpers ───────────────────────────────────────────────── */
 function person(id){for(var i=0;i<FAMILY.length;i++)if(FAMILY[i].id===id)return FAMILY[i];return null;}
+/* ── Planning Parties ── (active-party context scopes what you see) */
+function partyById(id){for(var i=0;i<PARTIES.length;i++)if(PARTIES[i].id===id)return PARTIES[i];return null;}
+function personInParty(p,pid){return !!(p&&p.parties&&p.parties.indexOf(pid)>=0);}
+function partyPeople(pid){pid=pid||S.partyId;return FAMILY.filter(function(p){return personInParty(p,pid);});}
+function tripsInParty(pid){return TRIPS.filter(function(t){return t.parties&&t.parties.indexOf(pid)>=0;});}
+function visibleParties(){if(isAdmin())return PARTIES.slice();var me=person(S.persona);return PARTIES.filter(function(g){return personInParty(me,g.id);});}
+function activeParty(){return partyById(S.partyId)||visibleParties()[0]||PARTIES[0]||null;}
+function ensureActiveParty(){var vg=visibleParties();if(!vg.length){S.partyId=(PARTIES[0]||{}).id||null;return;}for(var i=0;i<vg.length;i++)if(vg[i].id===S.partyId)return;S.partyId=vg[0].id;}
+function switchParty(pid){if(pid===S.partyId){closeSheet();return;}S.partyId=pid;savePartyId();ensureVisibleTrip();S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();closeSheet();toast('Party: '+((partyById(pid)||{}).name||''));render();}
 function trip(){for(var i=0;i<TRIPS.length;i++)if(TRIPS[i].id===S.tripId)return TRIPS[i];return visibleTrips()[0]||TRIPS[0];}
-/* trips the current persona may see: admins see all; others see trips they
-   own or are a member of (owning always wins, so you never lose your own trip) */
+/* trips the current persona may see: within the active party; admins see all of
+   it, others only trips they own or are a member of (owning always wins) */
 function visibleTrips(){
-  if(isAdmin())return TRIPS.slice();
-  return TRIPS.filter(function(t){return (t.by&&t.by===S.persona)||(t.members&&t.members.indexOf(S.persona)>=0);});
+  var pid=S.partyId;
+  if(isAdmin())return TRIPS.filter(function(t){return t.parties&&t.parties.indexOf(pid)>=0;});
+  /* others: trips in the active party they're on, plus any trip they own
+     (you never lose your own trip, even if it lives in another party) */
+  return TRIPS.filter(function(t){
+    if(t.by&&t.by===S.persona)return true;
+    return (t.parties&&t.parties.indexOf(pid)>=0)&&(t.members&&t.members.indexOf(S.persona)>=0);
+  });
 }
 /* does the current persona have any trip they can see? */
 function hasVisibleTrip(){return !!visibleTrips().length;}
@@ -231,7 +267,7 @@ function ensureVisibleTrip(){ if(noTripSelected())S.tripId=null; }
 /* who may edit a trip's details: admins or the person who created it */
 function canEditTrip(t){t=t||trip();return isAdmin()||!!(t&&t.by&&t.by===S.persona);}
 /* personas assigned to the current trip (drives filters + who-select) */
-function tripMembers(){var t=trip();return (t&&t.members&&t.members.length)?t.members.filter(function(id){return !!person(id);}):FAMILY.map(function(p){return p.id;});}
+function tripMembers(){var t=trip();return (t&&t.members&&t.members.length)?t.members.filter(function(id){return !!person(id);}):partyPeople(S.partyId).map(function(p){return p.id;});}
 function whoArr(who){return who==="all"?tripMembers():who;}
 var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function monOf(ds){return MON[parseInt(ds.slice(5,7),10)-1]||'';}
@@ -778,7 +814,7 @@ function setPersona(id){
 }
 function finishLogin(id){
   var p=person(id);if(!p)return;
-  S.persona=id;save('dtp_persona',id);ensureVisibleTrip();saveTripId();S.tab='home';toast("You are "+p.name);render();closeScreen();
+  S.persona=id;save('dtp_persona',id);ensureActiveParty();savePartyId();ensureVisibleTrip();saveTripId();S.tab='home';toast("You are "+p.name);render();closeScreen();
 }
 
 /* ── single sign-on via the cloud ──────────────────────────
@@ -810,7 +846,7 @@ function onCloudSynced(){
   var mine=personaForUid(uid);
   if(mine){
     S.persona=mine.id;save('dtp_persona',mine.id);
-    ensureVisibleTrip();
+    ensureActiveParty();ensureVisibleTrip();
     if(S.screen&&(S.screen.type==='signin'||S.screen.type==='claim'))closeScreen();
     render();return;
   }
@@ -861,7 +897,7 @@ function claimPersona(id){
   if(window.CLOUD&&window.CLOUD.user&&window.CLOUD.user.email&&!p.email)p.email=window.CLOUD.user.email;
   save('dtp_family',FAMILY);
   S.persona=id;save('dtp_persona',id);
-  ensureVisibleTrip();
+  ensureActiveParty();ensureVisibleTrip();
   closeScreen();
   /* if you brought your own data and aren't sharing yet, spin up a party so
      you get a code to invite others — no separate "create" step needed */
@@ -1520,8 +1556,8 @@ function renderAdminHub(){
   o+='<button class="hub-row" onclick="openScreen({type:\'csvimport\'})"><div class="hub-icon" style="background:#0F766E">'+IC.upload+'</div>'
     +'<div class="hub-main"><div class="hub-title">CSV Import</div><div class="hub-sub">Seed a trip from a spreadsheet</div></div><div class="chev">'+IC.chev+'</div></button>';
   o+='<div class="hub-section-label">People & Parties</div>';
-  o+='<button class="hub-row" onclick="openScreen({type:\'party\'})"><div class="hub-icon" style="background:#6B4FA0">'+IC.home+'</div>'
-    +'<div class="hub-main"><div class="hub-title">Planning Party</div><div class="hub-sub">'+(window.CLOUD&&window.CLOUD.partyName?esc(window.CLOUD.partyName):'Name & invite code')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
+  o+='<button class="hub-row" onclick="openScreen({type:\'parties\'})"><div class="hub-icon" style="background:#6B4FA0">'+IC.home+'</div>'
+    +'<div class="hub-main"><div class="hub-title">Planning Parties</div><div class="hub-sub">'+PARTIES.length+' '+(PARTIES.length===1?'party':'parties')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
   o+='<button class="hub-row" onclick="openScreen({type:\'personas\'})"><div class="hub-icon" style="background:#1C3A5E">'+IC.users+'</div>'
     +'<div class="hub-main"><div class="hub-title">People</div><div class="hub-sub">'+FAMILY.length+' '+(FAMILY.length===1?'person':'people')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
   if(window.CLOUD&&window.CLOUD.isSuper)
@@ -1908,6 +1944,14 @@ function renderSheet(){
   var groups=[['active','Active'],['planning','Planning'],['archived','Archived']];
   var h='<div class="sheet-backdrop" onclick="if(event.target===this)closeSheet()"><div class="sheet">';
   h+='<div class="sheet-grip"></div><div class="sheet-title">Your Trips</div>';
+  /* party switcher — when this persona can see more than one party */
+  var vg=visibleParties();
+  if(vg.length>1){
+    h+='<div style="padding:0 18px 8px"><div class="field-label" style="margin-bottom:5px">Planning Party</div><div class="gchips">';
+    for(var gi=0;gi<vg.length;gi++){var gobj=vg[gi];
+      h+='<button class="gchip'+(gobj.id===S.partyId?' on':'')+'" onclick="switchParty(\''+gobj.id+'\')">'+esc(gobj.name)+'</button>';}
+    h+='</div></div>';
+  }
   h+='<button class="btn-secondary green" style="margin:4px 18px 8px;width:calc(100% - 36px)" onclick="closeSheet();openScreen({type:\'newtrip\'})">'+IC.plus+' Plan a new trip</button>';
   var vis=visibleTrips();
   if(!vis.length) h+='<div class="body-empty" style="text-align:left;padding:6px 2px 4px">No trips yet. '+(isAdmin()?'Tap “Plan a new trip” above.':'Ask an admin to add you to a trip.')+'</div>';
@@ -1949,7 +1993,8 @@ function renderScreen(){
   if(t==='claim')     return scrClaim();
   if(t==='noaccess')  return scrNoAccess();
   if(t==='wizard')    return scrWizard();
-  if(t==='party')     return scrParty();
+  if(t==='parties')   return scrParties();
+  if(t==='partyedit') return scrPartyEdit();
   if(t==='personas')  return scrPersonas();
   if(t==='owners')    return scrOwners();
   if(t==='personedit') return scrPersonEdit();
@@ -2687,14 +2732,14 @@ function tmplCard(id,title,sub,people){
 function createTrip(){
   var nm=val('nt-name')||'New Trip';
   var start=val('nt-start'),end=val('nt-end');
-  var pool=FAMILY.map(function(p){return p.id;});
+  var pool=partyPeople(S.partyId).map(function(p){return p.id;});
   var mem=S._members?pool.filter(function(id){return S._members.has(id);}):pool.slice();
   if(!mem.length)mem=pool.slice();
   if(mem.indexOf(S.persona)<0)mem.push(S.persona); /* creator is always on their own trip */
   var col=PALETTE[TRIPS.length%PALETTE.length][0];
   var id='t'+Date.now();
   var dates=(start&&end)?(monOf(start)+' '+(+start.slice(8))+' – '+monOf(end)+' '+(+end.slice(8))+', '+start.slice(0,4)):'Dates TBD';
-  var tripObj={id:id,name:nm,sub:'Walt Disney World',status:'planning',start:start||'',end:end||'',dates:dates,color:col,members:mem,by:S.persona};
+  var tripObj={id:id,name:nm,sub:'Walt Disney World',status:'planning',start:start||'',end:end||'',dates:dates,color:col,members:mem,by:S.persona,parties:[S.partyId||(PARTIES[0]||{}).id]};
   TRIPS.push(tripObj);
   genDays(id);
   var np={},nt=[];
@@ -2780,11 +2825,12 @@ function wizOwnerName(){
 /* wipe the demo seed and stand up a clean account for this owner */
 function resetToBlank(){
   FAMILY=[];TRIPS=[];DAYS=[];VISITS=[];PARKHOURS=[];DINING=[];LLS=[];SHOWS=[];FLIGHTS=[];RESORTS=[];PARKRES=[];REBOOKS=[];NOTIFS=[];CHAT=[];
+  var gid='g1';PARTIES=[{id:gid,name:'My Planning Party',by:null}];
   var oid='p'+Date.now();
-  var owner={id:oid,name:wizOwnerName(),color:PALETTE[0][0],admin:true,email:(window.CLOUD&&window.CLOUD.user&&window.CLOUD.user.email)||'',uid:cloudUid()};
-  FAMILY.push(owner);ALL_IDS=[oid];
-  S.persona=oid;S.tripId=null;PACKING={};TODO=[];
-  persist();save('dtp_persona',oid);saveTripId();
+  var owner={id:oid,name:wizOwnerName(),color:PALETTE[0][0],admin:true,parties:[gid],email:(window.CLOUD&&window.CLOUD.user&&window.CLOUD.user.email)||'',uid:cloudUid()};
+  FAMILY.push(owner);ALL_IDS=[oid];PARTIES[0].by=oid;
+  S.persona=oid;S.partyId=gid;S.tripId=null;PACKING={};TODO=[];
+  persist();save('dtp_persona',oid);savePartyId();saveTripId();
 }
 function startWizard(){S._wiz={step:'welcome'};openScreen({type:'wizard'});}
 function wizStart(){
@@ -2809,7 +2855,7 @@ function wizSaveTrip(){
   if(!nm){toast('Name your trip');return;}
   if(s&&e&&e<s){toast('End date is before the start');return;}
   var id='t'+Date.now();
-  TRIPS.push({id:id,name:nm,start:s||'',end:e||'',by:S.persona,members:[S.persona]});
+  TRIPS.push({id:id,name:nm,start:s||'',end:e||'',by:S.persona,members:[S.persona],parties:[S.partyId||(PARTIES[0]||{}).id]});
   save('dtp_trips',TRIPS);
   if(s&&e){reconcileDays(id);save('dtp_days',DAYS);}
   S.tripId=id;saveTripId();loadLists();
@@ -2819,7 +2865,7 @@ function wizAddPerson(){
   var nm=val('wiz-pname'),em=val('wiz-pemail');
   if(!nm){toast('Enter a name');return;}
   var id='p'+Date.now();
-  FAMILY.push({id:id,name:nm,color:PALETTE[FAMILY.length%PALETTE.length][0],admin:false,email:em||''});
+  FAMILY.push({id:id,name:nm,color:PALETTE[FAMILY.length%PALETTE.length][0],admin:false,parties:[S.partyId||(PARTIES[0]||{}).id],email:em||''});
   ALL_IDS=FAMILY.map(function(p){return p.id;});
   var t=tripById(S.tripId);if(t){if(!t.members)t.members=[];if(t.members.indexOf(id)<0)t.members.push(id);}
   save('dtp_family',FAMILY);save('dtp_trips',TRIPS);
@@ -2986,26 +3032,69 @@ function colorOptions(sel){
   for(var i=0;i<PALETTE.length;i++)h+='<option value="'+PALETTE[i][0]+'"'+(PALETTE[i][0]===sel?' selected':'')+'>'+PALETTE[i][1]+'</option>';
   return h;
 }
-/* ── Planning Party module — the party itself: name + invite code ── */
-function scrPartyName(){return (window.CLOUD&&window.CLOUD.partyName)||'Planning Party';}
-function scrParty(){
-  if(!isAdmin())return screenShell('Planning Party','<div class="body-empty" style="padding:24px 12px">Admin only — switch to an admin persona from the <strong>I am</strong> button.</div>',null,null,'Done');
-  var cloud=window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user;
-  var inParty=cloud&&window.CLOUD.inParty&&window.CLOUD.inParty();
-  var body='';
-  if(inParty){
-    body+='<div class="hub-section-label" style="margin-left:0">Party name & invite code</div>';
-    body+='<div class="field"><input class="field-input" id="party-rename" value="'+esc(scrPartyName())+'"></div>';
-    body+='<button class="btn-secondary" onclick="cloudRenameParty()">Rename party</button>';
-    body+='<div class="field" style="margin-top:6px"><div style="font-family:monospace;font-size:22px;font-weight:700;letter-spacing:3px;padding:12px;background:#F1F5F9;border-radius:10px;text-align:center">'+esc(window.CLOUD.partyCode())+'</div></div>';
-    body+='<div class="body-empty" style="text-align:left;padding:0 2px 6px;font-size:12px">Share this code (or a person\'s invite link from the People module) so people can join. '+FAMILY.length+' '+(FAMILY.length===1?'person':'people')+' so far.</div>';
-    body+='<button class="btn-secondary" onclick="cloudLeaveParty()">Leave party</button>';
-  }else if(cloud){
-    body+='<div class="body-empty" style="text-align:left;padding:2px 2px 10px;font-size:13px">You\'re not in a Planning Party yet. Start or join one from <strong>Account → Sync</strong>.</div>';
-  }else{
-    body+='<div class="body-empty" style="text-align:left;padding:2px 2px 10px;font-size:13px">Cloud sync isn\'t available, so there\'s no shared party on this device.</div>';
+/* ── Planning Parties module — list of parties; tap to edit name + members ── */
+function scrParties(){
+  if(!isAdmin())return screenShell('Planning Parties','<div class="body-empty" style="padding:24px 12px">Admin only — switch to an admin persona from the <strong>I am</strong> button.</div>',null,null,'Done');
+  S._newParty=null;   /* back at the list → no pending add */
+  var body='<div class="hub-section-label" style="margin-left:0">Planning Parties</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">A party is a family or household that plans together. Tap one to edit its name and members.</div>';
+  for(var i=0;i<PARTIES.length;i++){var g=PARTIES[i];
+    var np=partyPeople(g.id).length,nt=tripsInParty(g.id).length;
+    body+='<button class="hub-row" onclick="openScreen({type:\'partyedit\',gid:\''+g.id+'\'})">'
+      +'<div class="hub-icon" style="background:#6B4FA0">'+IC.home+'</div>'
+      +'<div class="hub-main"><div class="hub-title">'+esc(g.name)+(g.id===S.partyId?' · active':'')+'</div><div class="hub-sub">'+np+' '+(np===1?'person':'people')+' · '+nt+' '+(nt===1?'trip':'trips')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
   }
-  return screenShell('Planning Party',body,null,null,'Done');
+  return screenShell('Planning Parties',body,null,null,'Done','<button class="sec-add" onclick="addParty()">Add party</button>');
+}
+function addParty(){var id='g'+Date.now();PARTIES.push({id:id,name:'New Party',by:S.persona});saveParties();S._newParty=id;S._formInit=null;openScreen({type:'partyedit',gid:id});}
+/* per-party editor: name + members */
+function scrPartyEdit(){
+  if(!isAdmin())return screenShell('Edit Party','<div class="body-empty" style="padding:24px 12px">Admin only.</div>',null,null,'Done');
+  var gid=(S.screen&&S.screen.gid),g=partyById(gid);
+  if(!g)return screenShell('Edit Party','<div class="body-empty" style="padding:24px 12px">Party not found.</div>',null,null,'Done');
+  if(S._formInit!=='party:'+gid){S._ptMembers=new Set(partyPeople(gid).map(function(p){return p.id;}));S._formInit='party:'+gid;}
+  var body='<div class="field"><label class="field-label">Party name</label><input class="field-input" id="pt-name" value="'+esc(g.name)+'"></div>';
+  body+='<div class="field"><label class="field-label">Members</label><div class="whoselect">';
+  for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i],on=S._ptMembers.has(p.id);
+    body+='<div class="who-opt'+(on?' on':'')+'" onclick="ptToggleMember(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+'<span class="wcheck">'+IC.checkw.replace('currentColor','#15803D')+'</span></div>';
+  }
+  body+='</div></div>';
+  var nt=tripsInParty(gid).length;
+  body+='<div class="body-empty" style="text-align:left;padding:2px 2px 0;font-size:12px">'+nt+' '+(nt===1?'trip belongs':'trips belong')+' to this party. Assign trips to parties in the trip editor.</div>';
+  body+='<button class="btn-danger-link" onclick="partyDelete(\''+gid+'\')">Remove this party</button>';
+  return screenShell('Edit '+esc(g.name),body,'Save','savePartyEdit(\''+gid+'\')','Cancel',null,'backToParties()');
+}
+function ptToggleMember(pid){if(!S._ptMembers)S._ptMembers=new Set();if(S._ptMembers.has(pid))S._ptMembers.delete(pid);else S._ptMembers.add(pid);renderScreen_inplace2();}
+function savePartyEdit(gid){
+  var g=partyById(gid);if(!g){backToParties();return;}
+  var nm=val('pt-name');if(nm)g.name=nm;
+  FAMILY.forEach(function(p){
+    if(!Array.isArray(p.parties))p.parties=[];
+    var has=p.parties.indexOf(gid)>=0,want=S._ptMembers.has(p.id);
+    if(want&&!has)p.parties.push(gid);
+    else if(!want&&has&&p.parties.length>1)p.parties=p.parties.filter(function(x){return x!==gid;});
+  });
+  S._newParty=null;
+  save('dtp_parties',PARTIES);save('dtp_family',FAMILY);toast('Party saved');backToParties();
+}
+function partyDelete(gid){
+  if(PARTIES.length<=1){toast('Keep at least one party');return;}
+  var nt=tripsInParty(gid).length;
+  if(nt){toast('Move its '+nt+' '+(nt===1?'trip':'trips')+' to another party first (trip editor)');return;}
+  var g=partyById(gid);
+  if(!confirm('Remove party “'+(g?g.name:'')+'”? People stay, just not in this party.'))return;
+  var fallback=PARTIES.filter(function(x){return x.id!==gid;})[0].id;
+  FAMILY.forEach(function(p){if(p.parties&&p.parties.indexOf(gid)>=0){p.parties=p.parties.filter(function(x){return x!==gid;});if(!p.parties.length)p.parties=[fallback];}});
+  PARTIES=PARTIES.filter(function(x){return x.id!==gid;});
+  if(S.partyId===gid)ensureActiveParty();
+  save('dtp_parties',PARTIES);save('dtp_family',FAMILY);savePartyId();backToParties();
+}
+function backToParties(){
+  if(S._newParty){var nid=S._newParty;S._newParty=null;
+    if(partyById(nid)){PARTIES=PARTIES.filter(function(x){return x.id!==nid;});
+      FAMILY.forEach(function(p){if(p.parties&&p.parties.indexOf(nid)>=0){p.parties=p.parties.filter(function(x){return x!==nid;});if(!p.parties.length&&PARTIES[0])p.parties=[PARTIES[0].id];}});
+      save('dtp_parties',PARTIES);save('dtp_family',FAMILY);}}
+  S._formInit=null;openScreen({type:'parties'});
 }
 
 /* ── People module — the roster of everyone on the trips ── */
@@ -3015,7 +3104,7 @@ function scrPersonas(){
   var body='<div class="hub-section-label" style="margin-left:0">People</div>';
   for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i];
     var bits=[];if(p.admin)bits.push('Admin');
-    if(p.email)bits.push(esc(p.email));
+    var pn=(p.parties||[]).length;bits.push(pn+' '+(pn===1?'party':'parties'));
     bits.push(p.uid?'signed in':'not joined');
     body+='<button class="hub-row" onclick="openScreen({type:\'personedit\',pid:\''+p.id+'\'})">'
       +'<div class="hub-icon" style="background:'+p.color+'">'+esc(p.name[0])+'</div>'
@@ -3083,12 +3172,17 @@ function scrPersonEdit(){
   if(!isAdmin())return screenShell('Edit Person','<div class="body-empty" style="padding:24px 12px">Admin only.</div>',null,null,'Done');
   var pid=(S.screen&&S.screen.pid),p=person(pid);
   if(!p)return screenShell('Edit Person','<div class="body-empty" style="padding:24px 12px">Person not found.</div>',null,null,'Done');
-  if(S._formInit!=='person:'+pid){S._peAdmin=!!p.admin;S._formInit='person:'+pid;}
+  if(S._formInit!=='person:'+pid){S._peAdmin=!!p.admin;S._peParties=new Set(p.parties||[]);S._formInit='person:'+pid;}
   var body='<div class="field"><label class="field-label">Name</label><input class="field-input" id="pe-name" value="'+esc(p.name)+'"></div>';
   body+='<div class="field"><label class="field-label">Color</label><select class="field-select" id="pe-color">'+colorOptions(p.color)+'</select></div>';
   /* role */
   body+='<div class="field"><label class="field-label">Role</label>';
   body+='<div class="notify-row'+(S._peAdmin?' on':'')+'" onclick="peToggleAdmin()"><span class="notify-check">'+(S._peAdmin?IC.checkw:'')+'</span><div><div class="notify-lbl">Admin</div><div class="notify-sub">Can manage people and every trip, and delete anything.</div></div></div></div>';
+  /* planning parties this person belongs to */
+  body+='<div class="field"><label class="field-label">Planning Parties</label><div class="gchips">';
+  for(var gi=0;gi<PARTIES.length;gi++){var g=PARTIES[gi],on=S._peParties.has(g.id);
+    body+='<button class="gchip'+(on?' on':'')+'" onclick="peToggleParty(\''+g.id+'\')">'+esc(g.name)+'</button>';}
+  body+='</div></div>';
   /* sign-in link */
   body+='<div class="field"><label class="field-label">Sign-in</label>';
   body+='<div style="display:flex;align-items:center;justify-content:space-between;font-size:14px">';
@@ -3117,6 +3211,7 @@ function backToPeople(){
   S._formInit=null;openScreen({type:'personas'});
 }
 function peToggleAdmin(){S._peAdmin=!S._peAdmin;renderScreen_inplace2();}
+function peToggleParty(gid){if(!S._peParties)S._peParties=new Set();if(S._peParties.has(gid))S._peParties.delete(gid);else S._peParties.add(gid);renderScreen_inplace2();}
 function savePersonEdit(pid){
   var p=person(pid);if(!p){closeScreen();return;}
   var nm=val('pe-name');if(nm)p.name=nm;
@@ -3124,6 +3219,9 @@ function savePersonEdit(pid){
   /* admin — keep at least one admin */
   if(!S._peAdmin&&p.admin&&!FAMILY.filter(function(x){return x.admin&&x.id!==pid;}).length){toast('Keep at least one admin');return;}
   p.admin=!!S._peAdmin;
+  /* parties — keep at least one */
+  var gs=[];if(S._peParties)S._peParties.forEach(function(x){gs.push(x);});
+  p.parties=gs.length?gs:[PARTIES[0].id];
   captureTravel(p,'pe');
   ALL_IDS=FAMILY.map(function(x){return x.id;});
   S._newPerson=null;   /* committed */
@@ -3139,7 +3237,7 @@ function addPersona(){
   var col=PALETTE[FAMILY.length%PALETTE.length][0];
   for(var i=0;i<PALETTE.length;i++)if(!used[PALETTE[i][0]]){col=PALETTE[i][0];break;}
   var id='p'+Date.now();
-  FAMILY.push({id:id,name:'New Person',color:col});
+  FAMILY.push({id:id,name:'New Person',color:col,parties:[S.partyId||(PARTIES[0]||{}).id]});
   ALL_IDS=FAMILY.map(function(p){return p.id;});
   PACKING[id]=[];
   save('dtp_family',FAMILY);saveLists();
@@ -3173,8 +3271,9 @@ function delPersona(id){
 
 /* Trip member picker (assign global personas to a trip) */
 function memberSelectField(pre){
-  if(!S._members){S._members=new Set(pre&&pre.length?pre:FAMILY.map(function(p){return p.id;}));}
-  var pool=FAMILY.map(function(p){return p.id;});
+  if(!S._members){S._members=new Set(pre&&pre.length?pre:partyPeople(S.partyId).map(function(p){return p.id;}));}
+  /* offer the active party's people, plus anyone already selected */
+  var pool=partyPeople(S.partyId).map(function(p){return p.id;});
   S._members.forEach(function(id){if(pool.indexOf(id)<0&&person(id))pool.push(id);});
   var h='<div class="field"><label class="field-label">People on this trip <span class="opt">(drives filters & assignments)</span></label><div class="whoselect">';
   for(var i=0;i<pool.length;i++){var p=person(pool[i]);if(!p)continue;var on=S._members.has(p.id);
@@ -3183,6 +3282,7 @@ function memberSelectField(pre){
   return h+'</div></div>';
 }
 function toggleMember(id){if(!S._members)S._members=new Set();if(S._members.has(id))S._members.delete(id);else S._members.add(id);renderScreen_inplace2();}
+function toggleTripParty(gid){if(!S._tparties)S._tparties=new Set();if(S._tparties.has(gid))S._tparties.delete(gid);else S._tparties.add(gid);renderScreen_inplace2();}
 
 /* legacy packing list (kept for the old combined route, now unused) */
 function listScreenBody(which){return renderFilter()+renderLists(which);}
@@ -3689,7 +3789,7 @@ function scrTripEdit(){
     var who=(t.by&&person(t.by))?person(t.by).name:'an admin';
     return screenShell('Trip','<div class="body-empty" style="text-align:left;padding:6px 2px">Only '+esc(who)+' or an admin can change this trip’s name, dates and members.</div>',null,null,'Done');
   }
-  if(S._formInit!=='trip'){S._formStatus.tr=t.status;S._formColor=t.color;S._formInit='trip';}
+  if(S._formInit!=='trip'){S._formStatus.tr=t.status;S._formColor=t.color;S._formInit='trip';S._tparties=new Set((t.parties&&t.parties.length)?t.parties:[S.partyId||(PARTIES[0]||{}).id]);}
   var body='<div class="field"><label class="field-label">Trip name</label><input class="field-input" id="tr-name" value="'+esc(t.name)+'"></div>';
   body+='<div class="field"><label class="field-label">Destination <span class="opt">(optional)</span></label><input class="field-input" id="tr-sub" value="'+esc(t.sub||'')+'"></div>';
   body+='<div class="field-row"><div class="field"><label class="field-label">Start date</label><input class="field-input" type="date" id="tr-start" value="'+esc(t.start||'')+'"></div>';
@@ -3699,6 +3799,12 @@ function scrTripEdit(){
   body+='<button class="seg-btn'+(S._formStatus.tr==='planning'?' on':'')+'" onclick="pickStatus(\'tr\',\'planning\')">Planning</button>';
   body+='<button class="seg-btn'+(S._formStatus.tr==='archived'?' on':'')+'" onclick="pickStatus(\'tr\',\'archived\')">Archived</button></div></div>';
   body+='<div class="field"><label class="field-label">Color</label><select class="field-select" id="tr-color">'+colorOptions(S._formColor)+'</select></div>';
+  if(isAdmin()){
+    body+='<div class="field"><label class="field-label">Planning Parties <span class="opt">(who this trip is walled to)</span></label><div class="gchips">';
+    for(var gi=0;gi<PARTIES.length;gi++){var gg=PARTIES[gi],gon=S._tparties&&S._tparties.has(gg.id);
+      body+='<button class="gchip'+(gon?' on':'')+'" onclick="toggleTripParty(\''+gg.id+'\')">'+esc(gg.name)+'</button>';}
+    body+='</div></div>';
+  }
   body+=memberSelectField(t.members);
   body+='<div class="field"><label class="field-label">Notifications</label>';
   body+='<div class="notify-row'+(S._notify?' on':'')+'" onclick="notifToggle()"><span class="notify-check">'+(S._notify?IC.checkw:'')+'</span><div><div class="notify-lbl">Notify members of changes</div><div class="notify-sub">'+(t.status==='active'?'You’ll choose who to tell about anyone added or removed.':'This trip is still planning — switch on to notify people you add or remove.')+'</div></div></div></div>';
@@ -3728,9 +3834,10 @@ function saveTrip(){
   }
   t.status=S._formStatus.tr||t.status;
   var c=val('tr-color');if(c)t.color=c;
+  if(isAdmin()&&S._tparties){var gs=[];S._tparties.forEach(function(x){gs.push(x);});t.parties=gs.length?gs:[S.partyId||(PARTIES[0]||{}).id];}
   var oldMem=(t.members||[]).slice();
   t.members=S._members?FAMILY.map(function(p){return p.id;}).filter(function(id){return S._members.has(id);}):t.members;
-  if(!t.members||!t.members.length)t.members=FAMILY.map(function(p){return p.id;});
+  if(!t.members||!t.members.length)t.members=partyPeople(S.partyId).map(function(p){return p.id;});
   if(t.status==='active')for(var j=0;j<TRIPS.length;j++)if(TRIPS[j].id!==t.id&&TRIPS[j].status==='active')TRIPS[j].status='planning';
   if(t.id===S.tripId){S.fmode='all';S.filter.clear();}
   save('dtp_trips',TRIPS);var optIn=S._notify;var newMem=t.members.slice();S._members=null;toast('Trip updated');closeScreen();render();
@@ -3801,6 +3908,7 @@ function render(){
   renderNav();
 }
 materializeAllDays();
+ensureActiveParty();
 ensureVisibleTrip();
 loadLists();
 S.open=defOpen();
