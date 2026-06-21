@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='103';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='104';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -924,14 +924,6 @@ function unclaimPersona(id){
   var p=person(id);if(!p)return;
   if(!confirm('Unlink '+p.name+' from their sign-in? They\'ll claim it again next time they sign in.'))return;
   p.uid=null;save('dtp_family',FAMILY);toast(p.name+' unlinked');renderScreen_inplace2();
-}
-/* self-service fix for an honest mistake: release my own seat and re-pick */
-function switchMyPersona(){
-  if(!confirm('Not you? Release this seat and pick the right person next.'))return;
-  var uid=cloudUid(), me=personaForUid(uid);
-  if(me){me.uid=null;save('dtp_family',FAMILY);}
-  try{localStorage.removeItem('dtp_persona');}catch(e){}
-  openScreen({type:'claim'});   /* pick again — no auto-seating here */
 }
 /* sign out — cloud sign-out when available, else just forget the local persona */
 function logoutPersona(){
@@ -2877,7 +2869,8 @@ function wizSkip(){
   else done();
 }
 function wizSaveParty(){
-  var nm=val('wiz-party')||'My Trip';
+  var nm=val('wiz-party');if(!nm){toast('Name your party');return;}
+  var g=activeParty();if(g){g.name=nm;saveParties();}
   if(window.CLOUD&&window.CLOUD.renameParty)window.CLOUD.renameParty(nm).catch(function(){});
   S._wiz.step='trip';renderScreen_inplace2();
 }
@@ -2927,7 +2920,7 @@ function scrWizard(){
     return screenShell('Set up',body,null,null,false);
   }
   if(w.step==='party'){
-    var pn=(window.CLOUD&&window.CLOUD.partyName)||'My Trip';
+    var pn=(activeParty()||{}).name||'My Planning Party';
     body='<div class="hub-section-label" style="margin-left:0">Step 1 · Name your party</div>';
     body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">A name for this trip group — e.g. “Smith Family WDW”.</div>';
     body+='<div class="field"><input class="field-input" id="wiz-party" value="'+esc(pn)+'"></div>';
@@ -2986,7 +2979,6 @@ function cloudSection(){
     h+='<div class="field" style="margin-top:6px"><input class="field-input" id="cloud-join" placeholder="Enter an invite code" style="text-transform:uppercase"></div>';
   }
   h+='<div class="hub-section-label" style="margin-left:0">Account</div>';
-  h+='<button class="btn-secondary" onclick="switchMyPersona()">This isn\'t me — switch person</button>';
   h+='<button class="btn-secondary" onclick="logoutPersona()">Sign out</button>';
   return h;
 }
