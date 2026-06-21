@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='66';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='67';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2181,12 +2181,21 @@ function importPromptText(){
 '• dining:    {"type":"dining","name":"","day":"","meal":"Breakfast|Lunch|Dinner|Drinks","time":"7:40 PM","park":"mk|ep|hs|ak (omit if not in a park)","loc":"in|off","conf":"","status":"reserved|want|planned"}',
 '• lightning: {"type":"lightning","ride":"","day":"","park":"mk|ep|hs|ak","tier":"sp|mp1|mp2","status":"booked|planning","bookedTime":"9:45 AM","conf":""}',
 '   (tier: sp = Single/Individual Lightning Lane, mp1 = Multi Pass tier 1, mp2 = Multi Pass tier 2)',
-'• parkres:   {"type":"parkres","day":"","park":"mk|ep|hs|ak","status":"booked"}',
+'• parkres:   {"type":"parkres","day":"","park":"mk|ep|hs|ak","status":"booked|planning"}',
 '• show:      {"type":"show","name":"","day":"","time":"9:00 PM","status":"attend|scheduled"}',
 '• flight:    {"type":"flight","label":"Outbound|Return","day":"","status":"booked|planning","legs":[',
 '     {"airline":"","num":"WN 4657","conf":"","depApt":"BOS","depCity":"Boston","depTime":"5:45 AM","depDate":"","arrApt":"MCO","arrCity":"Orlando","arrTime":"11:50 AM","arrDate":""} ]}',
 '',
-'Return one item per reservation. If something is ambiguous, make your best guess and still include it.'
+'Status — default to "not booked yet" unless I clearly have it confirmed:',
+'• Lightning Lane: "planning" until actually booked; "booked" only with a real return time/confirmation (omit bookedTime and conf until then).',
+'• Flight: "planning" until ticketed; "booked" when confirmed.',
+'• Resort / Park reservation: "booked" if there is a confirmation #/it is made; otherwise "planning".',
+'• Dining: "reserved" ONLY with a confirmation #; "planned" = intend to book; "want" = wishlist.',
+'• Show: "attend" = committed; "scheduled" = tentative.',
+'',
+'For dining, use loc:"in" with a park if it is inside a park, or loc:"off" (omit park) for resort / Disney Springs / Dolphin / Swan restaurants.',
+'',
+'Return one item per reservation (a Lightning Lane plan = many lightning items). If something is ambiguous, make your best guess and still include it.'
   ].join('\n');
 }
 function copyImportPrompt(){
