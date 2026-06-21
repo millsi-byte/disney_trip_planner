@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='96';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='97';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -111,23 +111,6 @@ S.persona = load('dtp_persona', S.persona);
 S.tripId  = load('dtp_tripId', S.tripId);   /* remember the last-selected trip across reloads */
 function saveNotifs(){save('dtp_notifs',NOTIFS);}
 function saveTripId(){save('dtp_tripId',S.tripId);}
-
-/* ── Groups (tenancy: a family/household sits above people & trips) ──
-   On this local build groups organise data into walled sections on one device;
-   they become real cross-device walls once a backend is added. */
-var GROUPS = load('dtp_groups', null);
-if(!GROUPS||!GROUPS.length){
-  var _ga=(FAMILY.filter(function(p){return p.admin;})[0]||FAMILY[0]||{}).id||null;
-  GROUPS=[{id:'g1',name:'My Group',by:_ga}];
-}
-(function(){   /* every person is in >=1 group; every trip belongs to >=1 group */
-  var gid=GROUPS[0].id;
-  for(var i=0;i<FAMILY.length;i++){if(!Array.isArray(FAMILY[i].groups)||!FAMILY[i].groups.length)FAMILY[i].groups=[gid];}
-  for(var j=0;j<TRIPS.length;j++){if(!Array.isArray(TRIPS[j].groups)||!TRIPS[j].groups.length)TRIPS[j].groups=[gid];}
-})();
-function saveGroups(){save('dtp_groups',GROUPS);}
-S.groupId = load('dtp_groupId', GROUPS[0].id);   /* active group context */
-function saveGroupId(){save('dtp_groupId',S.groupId);}
 
 /* every planning item belongs to a trip — default seed items to jul26 */
 function tagTrip(coll){for(var i=0;i<coll.length;i++)if(!coll[i].trip)coll[i].trip='jul26';}
@@ -201,13 +184,13 @@ function materializeAllDays(){
 function persist(){
   save('dtp_days',DAYS);save('dtp_visits',VISITS);save('dtp_hours',PARKHOURS);save('dtp_dining',DINING);save('dtp_lls',LLS);
   save('dtp_shows',SHOWS);save('dtp_flights',FLIGHTS);save('dtp_resorts',RESORTS);
-  save('dtp_parkres',PARKRES);save('dtp_rebooks',REBOOKS);save('dtp_trips',TRIPS);save('dtp_family',FAMILY);save('dtp_groups',GROUPS);save('dtp_chat',CHAT);
+  save('dtp_parkres',PARKRES);save('dtp_rebooks',REBOOKS);save('dtp_trips',TRIPS);save('dtp_family',FAMILY);save('dtp_chat',CHAT);
 }
 
 /* re-read every synced collection from localStorage into the in-memory globals.
    Called after a cloud pull (sign-in reconcile or a realtime update) so the UI
    reflects data that arrived from another device. Identity/selection keys
-   (persona, tripId, groupId) stay device-local and are intentionally not touched. */
+   (persona, tripId) stay device-local and are intentionally not touched. */
 function rehydrate(){
   TODO_TMPL=load('dtp_todo_tmpl',TODO_TMPL);
   PACKING_TMPL=load('dtp_pack_tmpl',PACKING_TMPL);
@@ -216,8 +199,7 @@ function rehydrate(){
   DINING=load('dtp_dining',DINING); LLS=load('dtp_lls',LLS); SHOWS=load('dtp_shows',SHOWS);
   FLIGHTS=load('dtp_flights',FLIGHTS); RESORTS=load('dtp_resorts',RESORTS); PARKRES=load('dtp_parkres',PARKRES);
   REBOOKS=load('dtp_rebooks',REBOOKS); TRIPS=load('dtp_trips',TRIPS); NOTIFS=load('dtp_notifs',NOTIFS);
-  GROUPS=load('dtp_groups',GROUPS)||GROUPS; CHAT=load('dtp_chat',CHAT);
-  try{ensureVisibleGroup();}catch(e){}
+  CHAT=load('dtp_chat',CHAT);
   try{ensureVisibleTrip();}catch(e){}
   try{loadLists();}catch(e){}
   try{render();}catch(e){}
@@ -225,24 +207,12 @@ function rehydrate(){
 
 /* ── Helpers ───────────────────────────────────────────────── */
 function person(id){for(var i=0;i<FAMILY.length;i++)if(FAMILY[i].id===id)return FAMILY[i];return null;}
-/* ── Groups ── (active-group context scopes what you see) */
-function groupById(id){for(var i=0;i<GROUPS.length;i++)if(GROUPS[i].id===id)return GROUPS[i];return null;}
-function inGroup(p,gid){return !!(p&&p.groups&&p.groups.indexOf(gid)>=0);}
-function groupPeople(gid){gid=gid||S.groupId;return FAMILY.filter(function(p){return inGroup(p,gid);});}
-function tripsInGroup(gid){return TRIPS.filter(function(t){return t.groups&&t.groups.indexOf(gid)>=0;});}
-/* groups this persona may see: admins see all; others only groups they're in */
-function visibleGroups(){if(isAdmin())return GROUPS.slice();var me=person(S.persona);return GROUPS.filter(function(g){return inGroup(me,g.id);});}
-function group(){return groupById(S.groupId)||visibleGroups()[0]||GROUPS[0]||null;}
-/* keep the active group valid for this persona (else fall back to their first) */
-function ensureVisibleGroup(){var vg=visibleGroups();if(!vg.length){S.groupId=(GROUPS[0]||{}).id||null;return;}for(var i=0;i<vg.length;i++)if(vg[i].id===S.groupId)return;S.groupId=vg[0].id;}
-function switchGroup(gid){if(gid===S.groupId){closeSheet();return;}S.groupId=gid;saveGroupId();ensureVisibleTrip();S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();closeSheet();toast('Group: '+((groupById(gid)||{}).name||''));render();}
 function trip(){for(var i=0;i<TRIPS.length;i++)if(TRIPS[i].id===S.tripId)return TRIPS[i];return visibleTrips()[0]||TRIPS[0];}
 /* trips the current persona may see: admins see all; others see trips they
    own or are a member of (owning always wins, so you never lose your own trip) */
 function visibleTrips(){
-  var inG=TRIPS.filter(function(t){return t.groups&&t.groups.indexOf(S.groupId)>=0;});   /* active group only */
-  if(isAdmin())return inG;
-  return inG.filter(function(t){return (t.by&&t.by===S.persona)||(t.members&&t.members.indexOf(S.persona)>=0);});
+  if(isAdmin())return TRIPS.slice();
+  return TRIPS.filter(function(t){return (t.by&&t.by===S.persona)||(t.members&&t.members.indexOf(S.persona)>=0);});
 }
 /* does the current persona have any trip they can see? */
 function hasVisibleTrip(){return !!visibleTrips().length;}
@@ -261,7 +231,7 @@ function ensureVisibleTrip(){ if(noTripSelected())S.tripId=null; }
 /* who may edit a trip's details: admins or the person who created it */
 function canEditTrip(t){t=t||trip();return isAdmin()||!!(t&&t.by&&t.by===S.persona);}
 /* personas assigned to the current trip (drives filters + who-select) */
-function tripMembers(){var t=trip();return (t&&t.members&&t.members.length)?t.members.filter(function(id){return !!person(id);}):groupPeople(S.groupId).map(function(p){return p.id;});}
+function tripMembers(){var t=trip();return (t&&t.members&&t.members.length)?t.members.filter(function(id){return !!person(id);}):FAMILY.map(function(p){return p.id;});}
 function whoArr(who){return who==="all"?tripMembers():who;}
 var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function monOf(ds){return MON[parseInt(ds.slice(5,7),10)-1]||'';}
@@ -808,7 +778,7 @@ function setPersona(id){
 }
 function finishLogin(id){
   var p=person(id);if(!p)return;
-  S.persona=id;save('dtp_persona',id);ensureVisibleGroup();saveGroupId();ensureVisibleTrip();saveTripId();S.tab='home';toast("You are "+p.name);render();closeScreen();
+  S.persona=id;save('dtp_persona',id);ensureVisibleTrip();saveTripId();S.tab='home';toast("You are "+p.name);render();closeScreen();
 }
 
 /* ── single sign-on via the cloud ──────────────────────────
@@ -840,7 +810,7 @@ function onCloudSynced(){
   var mine=personaForUid(uid);
   if(mine){
     S.persona=mine.id;save('dtp_persona',mine.id);
-    ensureVisibleGroup();ensureVisibleTrip();
+    ensureVisibleTrip();
     if(S.screen&&(S.screen.type==='signin'||S.screen.type==='claim'))closeScreen();
     render();return;
   }
@@ -891,7 +861,7 @@ function claimPersona(id){
   if(window.CLOUD&&window.CLOUD.user&&window.CLOUD.user.email&&!p.email)p.email=window.CLOUD.user.email;
   save('dtp_family',FAMILY);
   S.persona=id;save('dtp_persona',id);
-  ensureVisibleGroup();ensureVisibleTrip();
+  ensureVisibleTrip();
   closeScreen();
   /* if you brought your own data and aren't sharing yet, spin up a party so
      you get a code to invite others — no separate "create" step needed */
@@ -1552,8 +1522,9 @@ function renderAdminHub(){
   o+='<div class="hub-section-label">People</div>';
   o+='<button class="hub-row" onclick="openScreen({type:\'personas\'})"><div class="hub-icon" style="background:#1C3A5E">'+IC.users+'</div>'
     +'<div class="hub-main"><div class="hub-title">Manage People</div><div class="hub-sub">'+FAMILY.length+' people</div></div><div class="chev">'+IC.chev+'</div></button>';
-  o+='<button class="hub-row" onclick="openScreen({type:\'groups\'})"><div class="hub-icon" style="background:#6B4FA0">'+IC.home+'</div>'
-    +'<div class="hub-main"><div class="hub-title">Manage Groups</div><div class="hub-sub">'+GROUPS.length+' '+(GROUPS.length===1?'group':'groups')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
+  if(window.CLOUD&&window.CLOUD.isSuper)
+    o+='<button class="hub-row" onclick="openOwners()"><div class="hub-icon" style="background:#6B4FA0">'+IC.users+'</div>'
+      +'<div class="hub-main"><div class="hub-title">Authorized Owners</div><div class="hub-sub">Who can start their own trip</div></div><div class="chev">'+IC.chev+'</div></button>';
   o+='<div class="hub-section-label">Data</div>';
   o+='<button class="hub-row" onclick="exportAllData()"><div class="hub-icon" style="background:#475569">'+IC.upload+'</div>'
     +'<div class="hub-main"><div class="hub-title">Export / Backup</div><div class="hub-sub">Download all data as JSON</div></div><div class="chev">'+IC.chev+'</div></button>';
@@ -1935,14 +1906,6 @@ function renderSheet(){
   var groups=[['active','Active'],['planning','Planning'],['archived','Archived']];
   var h='<div class="sheet-backdrop" onclick="if(event.target===this)closeSheet()"><div class="sheet">';
   h+='<div class="sheet-grip"></div><div class="sheet-title">Your Trips</div>';
-  /* group switcher — only when this persona can see more than one group */
-  var vg=visibleGroups();
-  if(vg.length>1){
-    h+='<div style="padding:0 18px 8px"><div class="field-label" style="margin-bottom:5px">Group</div><div class="gchips">';
-    for(var gi=0;gi<vg.length;gi++){var gobj=vg[gi];
-      h+='<button class="gchip'+(gobj.id===S.groupId?' on':'')+'" onclick="switchGroup(\''+gobj.id+'\')">'+esc(gobj.name)+'</button>';}
-    h+='</div></div>';
-  }
   h+='<button class="btn-secondary green" style="margin:4px 18px 8px;width:calc(100% - 36px)" onclick="closeSheet();openScreen({type:\'newtrip\'})">'+IC.plus+' Plan a new trip</button>';
   var vis=visibleTrips();
   if(!vis.length) h+='<div class="body-empty" style="text-align:left;padding:6px 2px 4px">No trips yet. '+(isAdmin()?'Tap “Plan a new trip” above.':'Ask an admin to add you to a trip.')+'</div>';
@@ -1986,8 +1949,6 @@ function renderScreen(){
   if(t==='owners')    return scrOwners();
   if(t==='wizard')    return scrWizard();
   if(t==='personas')  return scrPersonas();
-  if(t==='groups')    return scrGroups();
-  if(t==='groupedit') return scrGroupEdit();
   if(t==='personedit') return scrPersonEdit();
   if(t==='persondetails') return scrPersonDetails();
   if(t==='dayedit')   return scrDayEdit();
@@ -2723,15 +2684,14 @@ function tmplCard(id,title,sub,people){
 function createTrip(){
   var nm=val('nt-name')||'New Trip';
   var start=val('nt-start'),end=val('nt-end');
-  var pool=groupPeople(S.groupId).map(function(p){return p.id;});
+  var pool=FAMILY.map(function(p){return p.id;});
   var mem=S._members?pool.filter(function(id){return S._members.has(id);}):pool.slice();
   if(!mem.length)mem=pool.slice();
   if(mem.indexOf(S.persona)<0)mem.push(S.persona); /* creator is always on their own trip */
   var col=PALETTE[TRIPS.length%PALETTE.length][0];
   var id='t'+Date.now();
   var dates=(start&&end)?(monOf(start)+' '+(+start.slice(8))+' – '+monOf(end)+' '+(+end.slice(8))+', '+start.slice(0,4)):'Dates TBD';
-  var grp=[S.groupId||(GROUPS[0]||{}).id];   /* new trip belongs to the active group */
-  var tripObj={id:id,name:nm,sub:'Walt Disney World',status:'planning',start:start||'',end:end||'',dates:dates,color:col,members:mem,by:S.persona,groups:grp};
+  var tripObj={id:id,name:nm,sub:'Walt Disney World',status:'planning',start:start||'',end:end||'',dates:dates,color:col,members:mem,by:S.persona};
   TRIPS.push(tripObj);
   genDays(id);
   var np={},nt=[];
@@ -2835,12 +2795,11 @@ function wizOwnerName(){
 /* wipe the demo seed and stand up a clean account for this owner */
 function resetToBlank(){
   FAMILY=[];TRIPS=[];DAYS=[];VISITS=[];PARKHOURS=[];DINING=[];LLS=[];SHOWS=[];FLIGHTS=[];RESORTS=[];PARKRES=[];REBOOKS=[];NOTIFS=[];CHAT=[];
-  var gid='g1';GROUPS=[{id:gid,name:'My Group',by:null}];
   var oid='p'+Date.now();
-  var owner={id:oid,name:wizOwnerName(),color:PALETTE[0][0],admin:true,groups:[gid],email:(window.CLOUD&&window.CLOUD.user&&window.CLOUD.user.email)||'',uid:cloudUid()};
-  FAMILY.push(owner);ALL_IDS=[oid];GROUPS[0].by=oid;
-  S.persona=oid;S.groupId=gid;S.tripId=null;PACKING={};TODO=[];
-  persist();save('dtp_persona',oid);saveGroupId();saveTripId();
+  var owner={id:oid,name:wizOwnerName(),color:PALETTE[0][0],admin:true,email:(window.CLOUD&&window.CLOUD.user&&window.CLOUD.user.email)||'',uid:cloudUid()};
+  FAMILY.push(owner);ALL_IDS=[oid];
+  S.persona=oid;S.tripId=null;PACKING={};TODO=[];
+  persist();save('dtp_persona',oid);saveTripId();
 }
 function startWizard(){S._wiz={step:'welcome'};openScreen({type:'wizard'});}
 function wizStart(){
@@ -2857,7 +2816,6 @@ function wizSkip(){
 }
 function wizSaveParty(){
   var nm=val('wiz-party')||'My Trip';
-  if(GROUPS[0]){GROUPS[0].name=nm;save('dtp_groups',GROUPS);}
   if(window.CLOUD&&window.CLOUD.renameParty)window.CLOUD.renameParty(nm).catch(function(){});
   S._wiz.step='trip';renderScreen_inplace2();
 }
@@ -2866,7 +2824,7 @@ function wizSaveTrip(){
   if(!nm){toast('Name your trip');return;}
   if(s&&e&&e<s){toast('End date is before the start');return;}
   var id='t'+Date.now();
-  TRIPS.push({id:id,name:nm,start:s||'',end:e||'',by:S.persona,members:[S.persona],groups:[GROUPS[0].id]});
+  TRIPS.push({id:id,name:nm,start:s||'',end:e||'',by:S.persona,members:[S.persona]});
   save('dtp_trips',TRIPS);
   if(s&&e){reconcileDays(id);save('dtp_days',DAYS);}
   S.tripId=id;saveTripId();loadLists();
@@ -2876,7 +2834,7 @@ function wizAddPerson(){
   var nm=val('wiz-pname'),em=val('wiz-pemail');
   if(!nm){toast('Enter a name');return;}
   var id='p'+Date.now();
-  FAMILY.push({id:id,name:nm,color:PALETTE[FAMILY.length%PALETTE.length][0],admin:false,groups:[GROUPS[0].id],email:em||''});
+  FAMILY.push({id:id,name:nm,color:PALETTE[FAMILY.length%PALETTE.length][0],admin:false,email:em||''});
   ALL_IDS=FAMILY.map(function(p){return p.id;});
   var t=tripById(S.tripId);if(t){if(!t.members)t.members=[];if(t.members.indexOf(id)<0)t.members.push(id);}
   save('dtp_family',FAMILY);save('dtp_trips',TRIPS);
@@ -2971,10 +2929,6 @@ function cloudSection(){
     h+='<button class="btn-secondary" onclick="cloudJoinParty(\'cloud-join\')">Join with a code</button>';
     h+='<div class="field" style="margin-top:6px"><input class="field-input" id="cloud-join" placeholder="Enter an invite code" style="text-transform:uppercase"></div>';
   }
-  if(window.CLOUD.isSuper){
-    h+='<div class="hub-section-label" style="margin-left:0">Super-admin</div>';
-    h+='<button class="btn-secondary" onclick="openOwners()">Authorized owners</button>';
-  }
   h+='<div class="hub-section-label" style="margin-left:0">Account</div>';
   h+='<button class="btn-secondary" onclick="switchMyPersona()">This isn\'t me — switch person</button>';
   h+='<button class="btn-secondary" onclick="logoutPersona()">Sign out</button>';
@@ -3059,7 +3013,7 @@ function scrPersonas(){
   var body='<div class="hub-section-label" style="margin-left:0">People</div>';
   for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i];
     var bits=[];if(p.admin)bits.push('Admin');
-    var gn=(p.groups||[]).length;bits.push(gn+' '+(gn===1?'group':'groups'));
+    if(p.email)bits.push(esc(p.email));
     bits.push(p.uid?'signed in':'not joined');
     body+='<button class="hub-row" onclick="openScreen({type:\'personedit\',pid:\''+p.id+'\'})">'
       +'<div class="hub-icon" style="background:'+p.color+'">'+esc(p.name[0])+'</div>'
@@ -3069,63 +3023,6 @@ function scrPersonas(){
   return screenShell('Manage People',body,null,null,'Done','<button class="sec-add" onclick="addPersona()">Add person</button>');
 }
 
-/* Manage Groups — tappable list of group items (consistent with Manage People) */
-function scrGroups(){
-  if(!isAdmin())return screenShell('Manage Groups','<div class="body-empty" style="padding:24px 12px">Admin only — switch to an admin persona from the <strong>I am</strong> button.</div>',null,null,'Done');
-  S._newGroup=null;   /* back at the list → no pending add */
-  var body='<div class="hub-section-label" style="margin-left:0">Groups</div>';
-  body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">A group is a family or household. Tap one to edit its name and members.</div>';
-  for(var i=0;i<GROUPS.length;i++){var g=GROUPS[i];
-    var np=groupPeople(g.id).length,nt=tripsInGroup(g.id).length;
-    body+='<button class="hub-row" onclick="openScreen({type:\'groupedit\',gid:\''+g.id+'\'})">'
-      +'<div class="hub-icon" style="background:#6B4FA0">'+IC.home+'</div>'
-      +'<div class="hub-main"><div class="hub-title">'+esc(g.name)+'</div><div class="hub-sub">'+np+' '+(np===1?'person':'people')+' · '+nt+' '+(nt===1?'trip':'trips')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
-  }
-  return screenShell('Manage Groups',body,null,null,'Done','<button class="sec-add" onclick="addGroup()">Add group</button>');
-}
-function addGroup(){var id='g'+Date.now();GROUPS.push({id:id,name:'New Group',by:S.persona});saveGroups();S._newGroup=id;S._formInit=null;openScreen({type:'groupedit',gid:id});}
-/* per-group editor: name + members (with a Save button) */
-function scrGroupEdit(){
-  if(!isAdmin())return screenShell('Edit Group','<div class="body-empty" style="padding:24px 12px">Admin only.</div>',null,null,'Done');
-  var gid=(S.screen&&S.screen.gid),g=groupById(gid);
-  if(!g)return screenShell('Edit Group','<div class="body-empty" style="padding:24px 12px">Group not found.</div>',null,null,'Done');
-  if(S._formInit!=='group:'+gid){S._geMembers=new Set(groupPeople(gid).map(function(p){return p.id;}));S._formInit='group:'+gid;}
-  var body='<div class="field"><label class="field-label">Group name</label><input class="field-input" id="ge-name" value="'+esc(g.name)+'"></div>';
-  body+='<div class="field"><label class="field-label">Members</label><div class="whoselect">';
-  for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i],on=S._geMembers.has(p.id);
-    body+='<div class="who-opt'+(on?' on':'')+'" onclick="geToggleMember(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+'<span class="wcheck">'+IC.checkw.replace('currentColor','#15803D')+'</span></div>';
-  }
-  body+='</div></div>';
-  var nt=tripsInGroup(gid).length;
-  body+='<div class="body-empty" style="text-align:left;padding:2px 2px 0;font-size:12px">'+nt+' '+(nt===1?'trip belongs':'trips belong')+' to this group. Assign trips to groups in the trip editor.</div>';
-  body+='<button class="btn-danger-link" onclick="geDelete(\''+gid+'\')">Remove this group</button>';
-  return screenShell('Edit '+esc(g.name),body,'Save','saveGroupEdit(\''+gid+'\')','Cancel',null,'backToGroups()');
-}
-function geToggleMember(pid){if(!S._geMembers)S._geMembers=new Set();if(S._geMembers.has(pid))S._geMembers.delete(pid);else S._geMembers.add(pid);renderScreen_inplace2();}
-function saveGroupEdit(gid){
-  var g=groupById(gid);if(!g){backToGroups();return;}
-  var nm=val('ge-name');if(nm)g.name=nm;
-  /* apply membership: add/remove this group on each person, never leaving anyone group-less */
-  FAMILY.forEach(function(p){
-    if(!Array.isArray(p.groups))p.groups=[];
-    var has=p.groups.indexOf(gid)>=0,want=S._geMembers.has(p.id);
-    if(want&&!has)p.groups.push(gid);
-    else if(!want&&has&&p.groups.length>1)p.groups=p.groups.filter(function(x){return x!==gid;});
-  });
-  S._newGroup=null;   /* committed */
-  save('dtp_groups',GROUPS);save('dtp_family',FAMILY);toast('Group saved');backToGroups();
-}
-function geDelete(gid){
-  if(GROUPS.length<=1){toast('Keep at least one group');return;}
-  var nt=tripsInGroup(gid).length;
-  if(nt){toast('Move its '+nt+' '+(nt===1?'trip':'trips')+' to another group first (trip editor)');return;}
-  var g=groupById(gid);
-  if(!confirm('Remove group “'+(g?g.name:'')+'”? People stay, just not in this group.'))return;
-  var fallback=GROUPS.filter(function(x){return x.id!==gid;})[0].id;
-  FAMILY.forEach(function(p){if(p.groups&&p.groups.indexOf(gid)>=0){p.groups=p.groups.filter(function(x){return x!==gid;});if(!p.groups.length)p.groups=[fallback];}});
-  GROUPS=GROUPS.filter(function(x){return x.id!==gid;});
-  save('dtp_groups',GROUPS);save('dtp_family',FAMILY);backToGroups();
-}
 
 /* shared travel-detail inputs (booking metadata) — used by both the self-service
    editor and the admin person editor. `pre` is the id prefix (pd / pe). */
@@ -3165,17 +3062,12 @@ function scrPersonEdit(){
   if(!isAdmin())return screenShell('Edit Person','<div class="body-empty" style="padding:24px 12px">Admin only.</div>',null,null,'Done');
   var pid=(S.screen&&S.screen.pid),p=person(pid);
   if(!p)return screenShell('Edit Person','<div class="body-empty" style="padding:24px 12px">Person not found.</div>',null,null,'Done');
-  if(S._formInit!=='person:'+pid){S._peAdmin=!!p.admin;S._peGroups=new Set(p.groups||[]);S._formInit='person:'+pid;}
+  if(S._formInit!=='person:'+pid){S._peAdmin=!!p.admin;S._formInit='person:'+pid;}
   var body='<div class="field"><label class="field-label">Name</label><input class="field-input" id="pe-name" value="'+esc(p.name)+'"></div>';
   body+='<div class="field"><label class="field-label">Color</label><select class="field-select" id="pe-color">'+colorOptions(p.color)+'</select></div>';
   /* role */
   body+='<div class="field"><label class="field-label">Role</label>';
-  body+='<div class="notify-row'+(S._peAdmin?' on':'')+'" onclick="peToggleAdmin()"><span class="notify-check">'+(S._peAdmin?IC.checkw:'')+'</span><div><div class="notify-lbl">Admin</div><div class="notify-sub">Can manage people, groups and every trip, and delete anything.</div></div></div></div>';
-  /* groups */
-  body+='<div class="field"><label class="field-label">Groups</label><div class="gchips">';
-  for(var gi=0;gi<GROUPS.length;gi++){var g=GROUPS[gi],on=S._peGroups.has(g.id);
-    body+='<button class="gchip'+(on?' on':'')+'" onclick="peToggleGroup(\''+g.id+'\')">'+esc(g.name)+'</button>';}
-  body+='</div></div>';
+  body+='<div class="notify-row'+(S._peAdmin?' on':'')+'" onclick="peToggleAdmin()"><span class="notify-check">'+(S._peAdmin?IC.checkw:'')+'</span><div><div class="notify-lbl">Admin</div><div class="notify-sub">Can manage people and every trip, and delete anything.</div></div></div></div>';
   /* sign-in link */
   body+='<div class="field"><label class="field-label">Sign-in</label>';
   body+='<div style="display:flex;align-items:center;justify-content:space-between;font-size:14px">';
@@ -3203,15 +3095,7 @@ function backToPeople(){
     if(person(nid)){FAMILY=FAMILY.filter(function(x){return x.id!==nid;});ALL_IDS=FAMILY.map(function(p){return p.id;});delete PACKING[nid];save('dtp_family',FAMILY);saveLists();}}
   S._formInit=null;openScreen({type:'personas'});
 }
-function backToGroups(){
-  if(S._newGroup){var nid=S._newGroup;S._newGroup=null;
-    if(groupById(nid)){GROUPS=GROUPS.filter(function(x){return x.id!==nid;});
-      FAMILY.forEach(function(p){if(p.groups&&p.groups.indexOf(nid)>=0){p.groups=p.groups.filter(function(x){return x!==nid;});if(!p.groups.length&&GROUPS[0])p.groups=[GROUPS[0].id];}});
-      save('dtp_groups',GROUPS);save('dtp_family',FAMILY);}}
-  S._formInit=null;openScreen({type:'groups'});
-}
 function peToggleAdmin(){S._peAdmin=!S._peAdmin;renderScreen_inplace2();}
-function peToggleGroup(gid){if(!S._peGroups)S._peGroups=new Set();if(S._peGroups.has(gid))S._peGroups.delete(gid);else S._peGroups.add(gid);renderScreen_inplace2();}
 function savePersonEdit(pid){
   var p=person(pid);if(!p){closeScreen();return;}
   var nm=val('pe-name');if(nm)p.name=nm;
@@ -3219,9 +3103,6 @@ function savePersonEdit(pid){
   /* admin — keep at least one admin */
   if(!S._peAdmin&&p.admin&&!FAMILY.filter(function(x){return x.admin&&x.id!==pid;}).length){toast('Keep at least one admin');return;}
   p.admin=!!S._peAdmin;
-  /* groups — keep at least one */
-  var gs=[];if(S._peGroups)S._peGroups.forEach(function(x){gs.push(x);});
-  p.groups=gs.length?gs:[GROUPS[0].id];
   captureTravel(p,'pe');
   ALL_IDS=FAMILY.map(function(x){return x.id;});
   S._newPerson=null;   /* committed */
@@ -3237,7 +3118,7 @@ function addPersona(){
   var col=PALETTE[FAMILY.length%PALETTE.length][0];
   for(var i=0;i<PALETTE.length;i++)if(!used[PALETTE[i][0]]){col=PALETTE[i][0];break;}
   var id='p'+Date.now();
-  FAMILY.push({id:id,name:'New Person',color:col,groups:[GROUPS[0].id]});
+  FAMILY.push({id:id,name:'New Person',color:col});
   ALL_IDS=FAMILY.map(function(p){return p.id;});
   PACKING[id]=[];
   save('dtp_family',FAMILY);saveLists();
@@ -3271,9 +3152,8 @@ function delPersona(id){
 
 /* Trip member picker (assign global personas to a trip) */
 function memberSelectField(pre){
-  if(!S._members){S._members=new Set(pre&&pre.length?pre:groupPeople(S.groupId).map(function(p){return p.id;}));}
-  /* offer the active group's people, plus anyone already selected (covers multi-group trips) */
-  var pool=groupPeople(S.groupId).map(function(p){return p.id;});
+  if(!S._members){S._members=new Set(pre&&pre.length?pre:FAMILY.map(function(p){return p.id;}));}
+  var pool=FAMILY.map(function(p){return p.id;});
   S._members.forEach(function(id){if(pool.indexOf(id)<0&&person(id))pool.push(id);});
   var h='<div class="field"><label class="field-label">People on this trip <span class="opt">(drives filters & assignments)</span></label><div class="whoselect">';
   for(var i=0;i<pool.length;i++){var p=person(pool[i]);if(!p)continue;var on=S._members.has(p.id);
@@ -3788,7 +3668,7 @@ function scrTripEdit(){
     var who=(t.by&&person(t.by))?person(t.by).name:'an admin';
     return screenShell('Trip','<div class="body-empty" style="text-align:left;padding:6px 2px">Only '+esc(who)+' or an admin can change this trip’s name, dates and members.</div>',null,null,'Done');
   }
-  if(S._formInit!=='trip'){S._formStatus.tr=t.status;S._formColor=t.color;S._formInit='trip';S._tgroups=new Set((t.groups&&t.groups.length)?t.groups:[GROUPS[0].id]);}
+  if(S._formInit!=='trip'){S._formStatus.tr=t.status;S._formColor=t.color;S._formInit='trip';}
   var body='<div class="field"><label class="field-label">Trip name</label><input class="field-input" id="tr-name" value="'+esc(t.name)+'"></div>';
   body+='<div class="field"><label class="field-label">Destination <span class="opt">(optional)</span></label><input class="field-input" id="tr-sub" value="'+esc(t.sub||'')+'"></div>';
   body+='<div class="field-row"><div class="field"><label class="field-label">Start date</label><input class="field-input" type="date" id="tr-start" value="'+esc(t.start||'')+'"></div>';
@@ -3798,12 +3678,6 @@ function scrTripEdit(){
   body+='<button class="seg-btn'+(S._formStatus.tr==='planning'?' on':'')+'" onclick="pickStatus(\'tr\',\'planning\')">Planning</button>';
   body+='<button class="seg-btn'+(S._formStatus.tr==='archived'?' on':'')+'" onclick="pickStatus(\'tr\',\'archived\')">Archived</button></div></div>';
   body+='<div class="field"><label class="field-label">Color</label><select class="field-select" id="tr-color">'+colorOptions(S._formColor)+'</select></div>';
-  if(isAdmin()){
-    body+='<div class="field"><label class="field-label">Groups <span class="opt">(which families this trip belongs to)</span></label><div class="gchips">';
-    for(var gi=0;gi<GROUPS.length;gi++){var gg=GROUPS[gi],gon=S._tgroups&&S._tgroups.has(gg.id);
-      body+='<button class="gchip'+(gon?' on':'')+'" onclick="toggleTripGroup(\''+gg.id+'\')">'+esc(gg.name)+'</button>';}
-    body+='</div></div>';
-  }
   body+=memberSelectField(t.members);
   body+='<div class="field"><label class="field-label">Notifications</label>';
   body+='<div class="notify-row'+(S._notify?' on':'')+'" onclick="notifToggle()"><span class="notify-check">'+(S._notify?IC.checkw:'')+'</span><div><div class="notify-lbl">Notify members of changes</div><div class="notify-sub">'+(t.status==='active'?'You’ll choose who to tell about anyone added or removed.':'This trip is still planning — switch on to notify people you add or remove.')+'</div></div></div></div>';
@@ -3819,7 +3693,6 @@ function scrTripEdit(){
   body+='<button class="btn-danger-link" onclick="delTrip(\''+t.id+'\')">Delete this trip</button>';
   return screenShell('Edit Trip',body,'Save','saveTrip()');
 }
-function toggleTripGroup(gid){if(!S._tgroups)S._tgroups=new Set();if(S._tgroups.has(gid))S._tgroups.delete(gid);else S._tgroups.add(gid);renderScreen_inplace2();}
 function saveTrip(){
   var t=tripById(S.screen.tripId||S.tripId);if(!t){closeScreen();return;}
   if(!canEditTrip(t)){toast('Only the trip creator or an admin can edit this trip');closeScreen();return;}
@@ -3834,10 +3707,9 @@ function saveTrip(){
   }
   t.status=S._formStatus.tr||t.status;
   var c=val('tr-color');if(c)t.color=c;
-  if(isAdmin()&&S._tgroups){var gs=[];S._tgroups.forEach(function(x){gs.push(x);});t.groups=gs.length?gs:[GROUPS[0].id];}
   var oldMem=(t.members||[]).slice();
   t.members=S._members?FAMILY.map(function(p){return p.id;}).filter(function(id){return S._members.has(id);}):t.members;
-  if(!t.members||!t.members.length)t.members=groupPeople(S.groupId).map(function(p){return p.id;});
+  if(!t.members||!t.members.length)t.members=FAMILY.map(function(p){return p.id;});
   if(t.status==='active')for(var j=0;j<TRIPS.length;j++)if(TRIPS[j].id!==t.id&&TRIPS[j].status==='active')TRIPS[j].status='planning';
   if(t.id===S.tripId){S.fmode='all';S.filter.clear();}
   save('dtp_trips',TRIPS);var optIn=S._notify;var newMem=t.members.slice();S._members=null;toast('Trip updated');closeScreen();render();
@@ -3908,7 +3780,6 @@ function render(){
   renderNav();
 }
 materializeAllDays();
-ensureVisibleGroup();
 ensureVisibleTrip();
 loadLists();
 S.open=defOpen();
