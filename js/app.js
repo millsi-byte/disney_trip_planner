@@ -50,7 +50,6 @@ var S = {
   filter:new Set(),    // specific-person filter (rare); non-empty overrides fmode
   open:{},             // collapsible card state per key
   plan:"packing",      // packing | todo
-  ov:"dining",         // overview sub-view
   persona:"scott",     // current persona (who am I)
   screen:null,         // slide-in screen def
   sheet:null,          // bottom sheet def
@@ -68,7 +67,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='74';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='75';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -669,7 +668,6 @@ function go(tab){S.tab=tab;closeSheet();render();}
 function selDay(i){S.dayIdx=i;S.open=defOpen();render();}
 function toggleCard(k){S.open[k]=!S.open[k];render();}
 function setPlan(p){S.plan=p;render();}
-function setOv(v){S.ov=v;render();}
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('in');clearTimeout(window._tt);window._tt=setTimeout(function(){t.classList.remove('in');},1900);}
 /* unregister the service worker + drop caches, then reload — escapes a stale cache */
 /* full device wipe — kept available (callable, e.g. from the console) but
@@ -698,6 +696,7 @@ function forceUpdate(){
 function applyFilterChange(){
   if(S.screen&&(S.screen.type==='lists'||S.screen.type==='packlist'))refreshLists();
   else if(S.screen&&S.screen.type==='todolist')refreshTodo();
+  else if(S.screen&&S.screen.type==='section')renderScreen_inplace2();
   else render();
 }
 /* primary filter: Mine / Everyone / Not mine — clears any specific-person pick */
@@ -1418,21 +1417,22 @@ function renderPlanHub(){
       +'<div class="hub-main"><div class="hub-title">Edit Trip Details</div><div class="hub-sub">'+esc(trip().dates)+'</div></div><div class="chev">'+IC.chev+'</div></button>';
   o+='<div class="hub-section-label">Trip components</div>';
   for(var i=0;i<rows.length;i++) o+=hubRow(rows[i]);
-  /* Import tools are admin-only for now — power-user seeding */
-  if(isAdmin()){
-    o+='<div class="hub-section-label">Get started fast</div>';
-    o+='<button class="hub-row" onclick="openScreen({type:\'import\'})"><div class="hub-icon" style="background:#1E40AF">'+IC.sparkles+'</div>'
-      +'<div class="hub-main"><div class="hub-title">AI Import <span class="admin-tag">Admin</span></div><div class="hub-sub">Paste structured details from Claude</div></div><div class="chev">'+IC.chev+'</div></button>';
-    o+='<button class="hub-row" onclick="openScreen({type:\'csvimport\'})"><div class="hub-icon" style="background:#0F766E">'+IC.upload+'</div>'
-      +'<div class="hub-main"><div class="hub-title">CSV Import <span class="admin-tag">Admin</span></div><div class="hub-sub">Seed a trip from a spreadsheet</div></div><div class="chev">'+IC.chev+'</div></button>';
-  }
-  if(isAdmin()){
-    o+='<div class="hub-section-label">Admin</div>';
-    o+='<button class="hub-row" onclick="openScreen({type:\'personas\'})"><div class="hub-icon" style="background:#1C3A5E">'+IC.users+'</div>'
-      +'<div class="hub-main"><div class="hub-title">Manage People <span class="admin-tag">Admin</span></div><div class="hub-sub">'+FAMILY.length+' people</div></div><div class="chev">'+IC.chev+'</div></button>';
-    o+='<button class="hub-row" onclick="openScreen({type:\'groups\'})"><div class="hub-icon" style="background:#6B4FA0">'+IC.home+'</div>'
-      +'<div class="hub-main"><div class="hub-title">Manage Groups <span class="admin-tag">Admin</span></div><div class="hub-sub">'+GROUPS.length+' '+(GROUPS.length===1?'group':'groups')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
-  }
+  return o;
+}
+/* Admin tab — admin-only hub for imports + people/groups (far-right nav tab) */
+function renderAdminHub(){
+  if(!isAdmin())return '<div class="body-empty" style="margin-top:40px">Admin only.</div>';
+  var o='<div class="pg-title">Admin</div><div class="pg-sub">Power-user tools for '+esc(trip().name)+'.</div>';
+  o+='<div class="hub-section-label">Import</div>';
+  o+='<button class="hub-row" onclick="openScreen({type:\'import\'})"><div class="hub-icon" style="background:#1E40AF">'+IC.sparkles+'</div>'
+    +'<div class="hub-main"><div class="hub-title">AI Import</div><div class="hub-sub">Paste structured details from Claude</div></div><div class="chev">'+IC.chev+'</div></button>';
+  o+='<button class="hub-row" onclick="openScreen({type:\'csvimport\'})"><div class="hub-icon" style="background:#0F766E">'+IC.upload+'</div>'
+    +'<div class="hub-main"><div class="hub-title">CSV Import</div><div class="hub-sub">Seed a trip from a spreadsheet</div></div><div class="chev">'+IC.chev+'</div></button>';
+  o+='<div class="hub-section-label">People</div>';
+  o+='<button class="hub-row" onclick="openScreen({type:\'personas\'})"><div class="hub-icon" style="background:#1C3A5E">'+IC.users+'</div>'
+    +'<div class="hub-main"><div class="hub-title">Manage People</div><div class="hub-sub">'+FAMILY.length+' people</div></div><div class="chev">'+IC.chev+'</div></button>';
+  o+='<button class="hub-row" onclick="openScreen({type:\'groups\'})"><div class="hub-icon" style="background:#6B4FA0">'+IC.home+'</div>'
+    +'<div class="hub-main"><div class="hub-title">Manage Groups</div><div class="hub-sub">'+GROUPS.length+' '+(GROUPS.length===1?'group':'groups')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
   return o;
 }
 function hubRow(r){
@@ -1452,81 +1452,11 @@ function openSection(section){
   openScreen({type:'section',section:section});
 }
 
-/* ============================================================
-   OVERVIEW
-   ============================================================ */
-function renderOverview(){
-  var o='<div class="pg-title">Overview</div><div class="pg-sub">Everything across the trip, in day order.</div>';
-  var views=[['dining','All Dining'],['parkres','Park Reservations'],['resort','Resort'],['ll','Lightning Lanes'],['flights','Flights']];
-  o+='<div class="ov-toggle"><div class="seg">';
-  for(var i=0;i<views.length;i++) o+='<button class="seg-btn'+(S.ov===views[i][0]?' on':'')+'" onclick="setOv(\''+views[i][0]+'\')">'+views[i][1]+'</button>';
-  o+='</div></div>';
-  if(S.ov==='dining') o+=ovDining();
-  else if(S.ov==='parkres') o+=ovParkRes();
-  else if(S.ov==='resort') o+=ovResort();
-  else if(S.ov==='ll') o+=ovLL();
-  else o+=ovFlights();
-  return o;
-}
+/* shared day header (used by the Plan section screens) */
 function dayHd(date,noPark){
   var d=dayByDate(date),pp=dayPrimaryPark(date),pk=(pp&&PARKS[pp])?PARKS[pp]:null;
   var bg=pk?pk.color:PARKS.trv.color;
   return '<div class="day-hd" style="background:'+bg+'"><div class="day-hd-name">'+monOf(date)+' '+(d?d.d:(+date.slice(8)))+(d?' · '+d.dl:'')+'</div>'+((pk&&!noPark)?'<div class="day-hd-date">'+esc(pk.name)+'</div>':'')+'</div>';
-}
-function ovDining(){
-  var o='',any=false,TD=tripDays();
-  for(var i=0;i<TD.length;i++){
-    var din=diningFor(TD[i].date).filter(function(x){return visible(x.who);});
-    if(!din.length)continue;any=true;
-    o+=dayHd(TD[i].date,true);
-    for(var j=0;j<din.length;j++){o+='<div class="ov-card'+(isPlanningStatus(din[j].status)?' planning':'')+'">'+diningRow(din[j])+'</div>';}
-  }
-  return any?o:'<div class="body-empty">No dining for the selected people.</div>';
-}
-function ovParkRes(){
-  var o='',any=false,TD=tripDays();
-  for(var i=0;i<TD.length;i++){
-    var prl=parkResFor(TD[i].date).filter(function(p){return visible(p.who);});
-    if(!prl.length)continue;any=true;
-    o+=dayHd(TD[i].date);
-    for(var j=0;j<prl.length;j++){var pr=prl[j],ppk=PARKS[pr.park];
-      o+='<div class="ov-card'+(isPlanningStatus(pr.status)?' planning':'')+'"><div class="din-row"><span style="width:12px;height:12px;border-radius:50%;background:'+(ppk?ppk.color:'#999')+';flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name">'+(ppk?esc(ppk.name):esc(pr.park))+'</div>'+whoChips(pr.who)+'</div>'+statusBadge(pr.status)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'predit\',edit:\''+pr.id+'\',day:\''+pr.day+'\'})">'+IC.pencil+'</button></div></div>';
-    }
-  }
-  return any?o:'<div class="body-empty">No park reservations'+(filterActive()?' for the current filter':'')+'. These days are Park Hopper.</div>';
-}
-function ovResort(){
-  var rs=RESORTS.filter(function(r){return r.trip===S.tripId&&visible(r.who);});
-  if(!rs.length)return '<div class="body-empty">No resort stays'+(filterActive()?' for the current filter':'')+' yet.</div>';
-  rs.sort(function(a,b){return a.checkin<b.checkin?-1:1;});
-  var o='';
-  for(var i=0;i<rs.length;i++){var r=rs[i];
-    var nights=Math.max(0,Math.round((Date.parse(r.checkout)-Date.parse(r.checkin))/86400000));
-    o+='<div class="ov-card'+(isPlanningStatus(r.status)?' planning':'')+'"><div class="din-row"><span style="width:12px;height:12px;border-radius:50%;background:'+PALETTE[i%PALETTE.length][0]+';flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name">'+esc(r.name)+'</div><div class="din-time">'+esc(r.room)+' · '+monOf(r.checkin)+' '+(+r.checkin.slice(8))+' → '+monOf(r.checkout)+' '+(+r.checkout.slice(8))+' · '+nights+' night'+(nights===1?'':'s')+'</div>'+whoChips(r.who)+'</div>'+statusBadge(r.status)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'resortedit\',edit:\''+r.id+'\'})">'+IC.pencil+'</button></div></div>';
-  }
-  return o;
-}
-function ovLL(){
-  var o='',TD=tripDays();
-  for(var i=0;i<TD.length;i++){
-    var lls=llFor(TD[i].date).filter(function(x){return visible(x.who);});
-    if(!lls.length)continue;
-    o+=dayHd(TD[i].date);
-    for(var j=0;j<lls.length;j++){var l=lls[j];
-      o+='<div class="ov-card'+(isPlanningStatus(l.status)?' planning':'')+'"><div class="din-row"><div style="flex:1;min-width:0"><div class="din-name">'+esc(l.ride)+' <span class="ll-tag '+tagCls(l.tier)+'">'+tagShort(l.tier)+'</span></div><div class="din-time">'+(l.status==='booked'?('Booked '+esc(l.bookedTime||'')):('Window '+esc(l.window)))+'</div>'+whoChips(l.who)+'</div>'+statusBadge(l.status)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'addll\',edit:\''+l.id+'\',day:\''+l.day+'\'})">'+IC.pencil+'</button></div></div>';
-    }
-  }
-  return o||'<div class="body-empty">No Lightning Lanes for the selected people.</div>';
-}
-function ovFlights(){
-  var o='',any=false,TD=tripDays();
-  for(var i=0;i<TD.length;i++){
-    var flts=flightsFor(TD[i].date).filter(function(x){return visible(x.who);});
-    if(!flts.length)continue;any=true;
-    o+=dayHd(TD[i].date);
-    for(var j=0;j<flts.length;j++) o+='<div class="ov-card'+(isPlanningStatus(flts[j].status)?' planning':'')+'">'+flightJourney(flts[j],dayByDate(TD[i].date))+'</div>';
-  }
-  return any?o:'<div class="body-empty">No flights for the selected people.</div>';
 }
 
 /* ============================================================
@@ -1835,7 +1765,8 @@ function todoAssignField(creator){
    NAV
    ============================================================ */
 function renderNav(){
-  var tabs=[['home',IC.home,'Agenda'],['overview',IC.grid,'Overview'],['plan',IC.plan,'Plan'],['lists',IC.list,'Lists'],['chat',IC.chat,'Chat']];
+  var tabs=[['home',IC.home,'Agenda'],['plan',IC.plan,'Plan'],['lists',IC.list,'Lists'],['chat',IC.chat,'Chat']];
+  if(isAdmin())tabs.push(['admin',IC.gear,'Admin']);   /* admin-only tab, far right */
   var h='';
   for(var i=0;i<tabs.length;i++){var on=S.tab===tabs[i][0];
     var cu=chatUnread();
@@ -2980,52 +2911,53 @@ function scrSection(){
     hours:['Park Hours',IC.bolt,'#0F5F73']
   };
   var m=map[sec]||['Section',IC.route,'var(--ink)'];
+  var owned=(sec!=='hours');   /* park hours have no per-item owner → no Mine/Everyone filter */
+  function fnote(label){return '<div class="body-empty">No '+label+(filterActive()?' for the current filter':'')+' yet.</div>';}
   var body='',add='',TD=tripDays(),dft=(TD[1]||TD[0]||{date:''}).date;
   if(sec==='dining'){
-    for(var i=0;i<TD.length;i++){var din=diningFor(TD[i].date);if(!din.length)continue;
+    for(var i=0;i<TD.length;i++){var din=diningFor(TD[i].date).filter(function(x){return visible(x.who);});if(!din.length)continue;
       body+=dayHd(TD[i].date);for(var j=0;j<din.length;j++)body+='<div class="ov-card'+(isPlanningStatus(din[j].status)?' planning':'')+'">'+diningRow(din[j])+'</div>';}
+    if(!body)body=fnote('dining');
     add='<button class="sec-add" onclick="openScreen({type:\'adddining\',day:\''+dft+'\'})">Add dining</button>';
   }else if(sec==='addflight'){
-    for(var i2=0;i2<TD.length;i2++){var fl=flightsFor(TD[i2].date);if(!fl.length)continue;
+    for(var i2=0;i2<TD.length;i2++){var fl=flightsFor(TD[i2].date).filter(function(x){return visible(x.who);});if(!fl.length)continue;
       body+=dayHd(TD[i2].date);for(var j2=0;j2<fl.length;j2++)body+='<div class="ov-card'+(isPlanningStatus(fl[j2].status)?' planning':'')+'">'+flightJourney(fl[j2],dayByDate(TD[i2].date))+'</div>';}
+    if(!body)body=fnote('flights');
     add='<button class="sec-add" onclick="openScreen({type:\'addflight\',day:\''+((TD[0]||{date:''}).date)+'\'})">Add flight</button>';
   }else if(sec==='ll'){
-    var anyLL=false;
-    for(var il=0;il<TD.length;il++){var lld=llFor(TD[il].date);if(!lld.length)continue;anyLL=true;
+    for(var il=0;il<TD.length;il++){var lld=llFor(TD[il].date).filter(function(x){return visible(x.who);});if(!lld.length)continue;
       body+=dayHd(TD[il].date);
       for(var lj=0;lj<lld.length;lj++){var l=lld[lj];
         body+='<div class="ov-card'+(isPlanningStatus(l.status)?' planning':'')+'"><div class="din-row"><div style="flex:1;min-width:0"><div class="din-name">'+esc(l.ride)+' <span class="ll-tag '+tagCls(l.tier)+'">'+tagShort(l.tier)+'</span></div><div class="din-time">'+(l.status==='booked'?('Booked '+esc(l.bookedTime||'')):('Window '+esc(l.window)))+'</div>'+whoChips(l.who)+'</div>'+statusBadge(l.status)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'addll\',edit:\''+l.id+'\',day:\''+l.day+'\'})">'+IC.pencil+'</button></div></div>';
       }
     }
-    if(!anyLL) body+='<div class="body-empty">No Lightning Lanes yet.</div>';
+    if(!body)body=fnote('Lightning Lanes');
     add='<button class="sec-add" onclick="openScreen({type:\'addll\',day:\''+dft+'\'})">Add ride</button>';
   }else if(sec==='resort'){
-    var rsl=RESORTS.filter(function(r){return r.trip===S.tripId;});
+    var rsl=RESORTS.filter(function(r){return r.trip===S.tripId&&visible(r.who);});
     for(var ir=0;ir<rsl.length;ir++){var rr=rsl[ir];
       body+='<div class="ov-card'+(isPlanningStatus(rr.status)?' planning':'')+'"><div class="din-row"><div style="flex:1"><div class="din-name">'+esc(rr.name)+'</div><div class="din-time">'+esc(rr.room)+' · '+monOf(rr.checkin)+' '+(+rr.checkin.slice(8))+' → '+monOf(rr.checkout)+' '+(+rr.checkout.slice(8))+'</div></div>'
         +statusBadge(rr.status)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'resortedit\',edit:\''+rr.id+'\'})">'+IC.pencil+'</button></div></div>';
     }
-    if(!rsl.length) body+='<div class="body-empty">No resort stays yet.</div>';
+    if(!rsl.length) body=fnote('resort stays');
     add='<button class="sec-add" onclick="openScreen({type:\'resortedit\'})">Add resort stay</button>';
   }else if(sec==='parkres'){
-    var anyPR=false;
-    for(var ip=0;ip<TD.length;ip++){var dp=TD[ip];var prl=parkResFor(dp.date);if(!prl.length)continue;anyPR=true;
+    for(var ip=0;ip<TD.length;ip++){var dp=TD[ip];var prl=parkResFor(dp.date).filter(function(p){return visible(p.who);});if(!prl.length)continue;
       body+=dayHd(dp.date);
       for(var pj=0;pj<prl.length;pj++){var prx=prl[pj],ppk=PARKS[prx.park];
         body+='<div class="ov-card'+(isPlanningStatus(prx.status)?' planning':'')+'"><div class="din-row"><span style="background:'+(ppk?ppk.color:'#999')+';width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name">'+(ppk?esc(ppk.name):esc(prx.park))+'</div>'+whoChips(prx.who)+'</div>'+statusBadge(prx.status)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'predit\',edit:\''+prx.id+'\',day:\''+prx.day+'\'})">'+IC.pencil+'</button></div></div>';
       }
     }
-    if(!anyPR) body+='<div class="body-empty">No park reservations yet.</div>';
+    if(!body) body=fnote('park reservations');
     add='<button class="sec-add" onclick="openScreen({type:\'predit\',day:\''+dft+'\'})">Add park reservation</button>';
   }else if(sec==='visits'){
-    var anyV=false;
-    for(var i3=0;i3<TD.length;i3++){var dvs=visitsFor(TD[i3].date);if(!dvs.length)continue;anyV=true;
+    for(var i3=0;i3<TD.length;i3++){var dvs=visitsFor(TD[i3].date).filter(function(v){return visible(v.who);});if(!dvs.length)continue;
       body+=dayHd(TD[i3].date);
       for(var vj=0;vj<dvs.length;vj++){var vv=dvs[vj],vpk=PARKS[vv.park];
         body+='<div class="ov-card"><div class="din-row"><span style="background:'+(vpk?vpk.color:'#999')+';width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name">'+(vpk?esc(vpk.name):esc(vv.park))+'</div><div class="din-time">'+timingLbl(vv.timing)+'</div>'+whoChips(vv.who)+'</div>'+(vj===0?'<span class="st-badge st-booked">Primary</span>':'<span class="st-badge st-todo">Hopper</span>')+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'visedit\',edit:\''+vv.id+'\',day:\''+vv.day+'\'})">'+IC.pencil+'</button></div></div>';
       }
     }
-    if(!anyV) body+='<div class="body-empty">No park visits yet.</div>';
+    if(!body) body=fnote('park visits');
     add='<button class="sec-add" onclick="openScreen({type:\'visedit\',day:\''+dft+'\'})">Add park visit</button>';
   }else if(sec==='hours'){
     var anyH=false;
@@ -3038,6 +2970,7 @@ function scrSection(){
     if(!anyH) body+='<div class="body-empty">No park hours yet.</div>';
     add='<button class="sec-add" onclick="openScreen({type:\'hoursedit\',day:\''+dft+'\'})">Add park hours</button>';
   }
+  if(owned)body=renderFilter()+body;   /* Mine / Everyone / Not mine on ownership categories */
   return screenShell(m[0],body,null,null,'Done',add);
 }
 function scrGeneric(){return screenShell('Coming soon','<div class="body-empty">This section editor is part of the full build.</div>',null,null,'Done');}
@@ -3455,6 +3388,8 @@ function renderNoTrip(){
   return o;
 }
 function render(){
+  /* normalise stale/unauthorised tabs (Overview removed; Admin is admin-only) */
+  if(S.tab==='overview'||(S.tab==='admin'&&!isAdmin()))S.tab='home';
   document.getElementById('header-host').innerHTML=renderHeader();
   if(noTripSelected()){
     document.getElementById('strip-host').innerHTML='';
@@ -3465,11 +3400,11 @@ function render(){
     return;
   }
   document.getElementById('strip-host').innerHTML=renderStrip();
-  document.getElementById('filter-host').innerHTML=(S.tab==='home'||S.tab==='overview')?renderFilter():'';
+  document.getElementById('filter-host').innerHTML=(S.tab==='home')?renderFilter():'';
   var o='';
   if(S.tab==='home') o=renderAgenda();
   else if(S.tab==='plan') o=renderPlanHub();
-  else if(S.tab==='overview') o=renderOverview();
+  else if(S.tab==='admin') o=renderAdminHub();
   else if(S.tab==='lists') o=renderListsHub();
   else if(S.tab==='chat') o=renderChat();
   document.getElementById('app').innerHTML=o;
