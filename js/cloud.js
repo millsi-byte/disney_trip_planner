@@ -239,6 +239,15 @@
     stopListener();C.adminWid=null;
     return reconcile('adopt');
   };
+  /* permanently delete a tenant workspace (kv + members + doc). Super-admin only,
+     and never the super's own active space. */
+  C.deleteWorkspace=function(wid){
+    if(!C.isSuper)return Promise.reject(new Error('Super-admin only'));
+    if(wid&&wid===C.wid)return Promise.reject(new Error('That\'s your own active space'));
+    var base=db().doc('workspaces/'+wid);
+    var delAll=function(col){return base.collection(col).get().then(function(s){return Promise.all(s.docs.map(function(d){return d.ref.delete();}));});};
+    return delAll('kv').then(function(){return delAll('members');}).then(function(){return base.delete();});
+  };
 
   /* read the user's chosen party + their access level, then sync */
   function startSync(){

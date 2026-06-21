@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='105';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='106';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -3220,7 +3220,18 @@ function scrTenant(){
   body+='<div class="hub-section-label" style="margin-left:0">Trips ('+trips.length+')</div>';
   for(var k=0;k<trips.length;k++){var t=trips[k];var mc=(t.members||[]).length;
     body+='<div class="hub-row" style="cursor:default"><div class="hub-icon" style="background:'+(t.color||'#475569')+'">'+IC.map+'</div><div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(t.name||'(unnamed)')+'</div><div class="hub-sub">'+esc(t.dates||(t.start||'')+(t.end?' – '+t.end:''))+' · '+mc+' '+(mc===1?'person':'people')+'</div></div></div>';}
+  var own=(window.CLOUD&&window.CLOUD.wid&&window.CLOUD.wid===S._tenantWid);
+  body+='<div class="hub-section-label" style="margin-left:0">Danger zone</div>';
+  if(own)body+='<div class="body-empty" style="text-align:left;padding:0 2px;font-size:12px">This is your own active space — manage it from your own account.</div>';
+  else body+='<button class="btn-danger-link" onclick="deleteTenant(\''+esc(S._tenantWid)+'\')">Delete this family space permanently</button>';
   return screenShell(nm,body,null,null,'Back','<button class="sec-add" onclick="enterTenant(\''+esc(S._tenantWid)+'\')">Manage this family</button>','openTenants()');
+}
+/* super-admin: permanently remove an orphaned/unwanted tenant */
+function deleteTenant(wid){
+  if(!(window.CLOUD&&window.CLOUD.isSuper)){toast('Super-admin only');return;}
+  if(!confirm('Permanently delete this entire family space and ALL its data (parties, people, trips, lists)? This cannot be undone.'))return;
+  toast('Deleting…');
+  window.CLOUD.deleteWorkspace(wid).then(function(){toast('Deleted');openTenants();}).catch(function(e){toast(e.message||'Could not delete');});
 }
 /* switch INTO a tenant to manage it (super-admin); banner offers Exit */
 function enterTenant(wid){
