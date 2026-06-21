@@ -67,7 +67,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='79';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='80';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1854,6 +1854,7 @@ function renderScreen(){
   if(t==='persona')   return scrPersona();
   if(t==='personas')  return scrPersonas();
   if(t==='groups')    return scrGroups();
+  if(t==='personedit') return scrPersonEdit();
   if(t==='persondetails') return scrPersonDetails();
   if(t==='dayedit')   return scrDayEdit();
   if(t==='predit')    return scrPREdit();
@@ -2645,73 +2646,34 @@ function colorOptions(sel){
 }
 function scrPersonas(){
   if(!isAdmin())return screenShell('Manage People','<div class="body-empty" style="padding:24px 12px">Admin only — switch to an admin persona from the <strong>I am</strong> button.</div>',null,null,'Done');
-  var body='<div class="hub-section-label" style="margin-left:0">All personas</div>';
+  var body='<div class="hub-section-label" style="margin-left:0">People</div>';
   for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i];
-    body+='<div class="field-group" style="margin-bottom:10px">';
-    body+='<div class="field-row" style="align-items:flex-end;gap:8px">';
-    body+='<span class="pdot" style="width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;background:'+p.color+';flex-shrink:0;margin-bottom:7px">'+esc(p.name[0])+'</span>';
-    body+='<div class="field" style="flex:2;margin:0"><label class="field-label">Name</label><input class="field-input" id="pn-'+p.id+'" value="'+esc(p.name)+'"></div>';
-    body+='<div class="field" style="flex:1;margin:0"><label class="field-label">Color</label><select class="field-select" id="pc-'+p.id+'">'+colorOptions(p.color)+'</select></div>';
-    body+='</div>';
-    var lnk='style="background:none;border:none;color:#1C3A5E;font-weight:600;font-size:13px;cursor:pointer;padding:4px 2px"';
-    body+='<div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;font-size:13px">';
-    body+='<span style="color:#6B7280;display:flex;align-items:center;gap:5px">'+(p.pin?IC.lock+' PIN set':'No PIN — set on first login')+'</span>';
-    body+='<span>'+(p.pin?'<button '+lnk+' onclick="resetPersonaPin(\''+p.id+'\')">Reset PIN</button>':'<button '+lnk+' onclick="setPersonaPin(\''+p.id+'\')">Set PIN</button>')+'</span>';
-    body+='</div>';
-    body+='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">';
-    body+='<button '+lnk+' onclick="toggleAdmin(\''+p.id+'\')">'+(p.admin?'★ Admin · tap to remove':'Make admin')+'</button>';
-    body+='<button '+lnk+' onclick="capturePersonas();openScreen({type:\'persondetails\',pid:\''+p.id+'\'})">Travel details</button>';
-    body+='<button style="color:#B91C1C;font-size:14px;font-weight:600;background:none;border:none;cursor:pointer;padding:4px 2px" onclick="delPersona(\''+p.id+'\')">Remove</button>';
-    body+='</div>';
-    body+='<div style="margin-top:10px"><div class="field-label" style="margin-bottom:5px">Groups</div><div class="gchips">';
-    for(var gi=0;gi<GROUPS.length;gi++){var g=GROUPS[gi],gon=inGroup(p,g.id);
-      body+='<button class="gchip'+(gon?' on':'')+'" onclick="togglePersonGroup(\''+p.id+'\',\''+g.id+'\')">'+esc(g.name)+'</button>';}
-    body+='</div></div>';
-    body+='</div>';
+    var bits=[];if(p.admin)bits.push('Admin');
+    var gn=(p.groups||[]).length;bits.push(gn+' '+(gn===1?'group':'groups'));
+    if(p.email)bits.push(esc(p.email));
+    body+='<button class="hub-row" onclick="openScreen({type:\'personedit\',pid:\''+p.id+'\'})">'
+      +'<div class="hub-icon" style="background:'+p.color+'">'+esc(p.name[0])+'</div>'
+      +'<div class="hub-main"><div class="hub-title">'+esc(p.name)+(p.pin?' '+IC.lock:'')+'</div><div class="hub-sub">'+bits.join(' · ')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
   }
-  body+='<button class="sheet-new" style="margin:6px 0 0;width:100%" onclick="addPersona()">'+IC.plus+' Add person</button>';
-  body+='<div class="body-empty" style="text-align:left;padding:10px 2px 0">Personas are global — assign them to any trip from the trip editor (tap the trip name in the header). <strong>Admins</strong> can manage people, see every trip, and delete any item or booking. To reset a forgotten PIN, tap <strong>Reset PIN</strong> — the person picks a new one next time they log in.</div>';
-  return screenShell('Manage People',body,'Save','savePersonas()');
+  body+='<button class="sheet-new" style="margin:10px 0 0;width:100%" onclick="addPersona()">'+IC.plus+' Add person</button>';
+  body+='<div class="body-empty" style="text-align:left;padding:10px 2px 0;font-size:12px">Tap a person to edit their name, role, groups, PIN and travel details. People are global — assign them to trips from the trip editor.</div>';
+  return screenShell('Manage People',body,null,null,'Done');
 }
-function capturePersonas(){
-  for(var i=0;i<FAMILY.length;i++){
-    var n=document.getElementById('pn-'+FAMILY[i].id),c=document.getElementById('pc-'+FAMILY[i].id);
-    if(n&&n.value&&n.value.trim())FAMILY[i].name=n.value.trim();
-    if(c&&c.value)FAMILY[i].color=c.value;
-  }
-}
-/* admin PIN management for other people: reset (clear → they choose next login) or set a specific one */
+/* admin PIN management: reset (clear → they choose next login) or set a specific one.
+   Text/transient edits in the open form survive via renderScreen_inplace2's snapshot. */
 function resetPersonaPin(id){
-  capturePersonas();var p=person(id);if(!p)return;
+  var p=person(id);if(!p)return;
   if(!confirm('Reset '+p.name+'\'s PIN? They\'ll choose a new one next time they log in.'))return;
   p.pin='';save('dtp_family',FAMILY);toast(p.name+'\'s PIN was reset');renderScreen_inplace2();
 }
 function setPersonaPin(id){
-  capturePersonas();var p=person(id);if(!p)return;
+  var p=person(id);if(!p)return;
   askPin({title:'Set a PIN for '+p.name},function(np){
     if(np==null)return;np=String(np).trim();
     if(!np){toast('PIN cannot be blank');return;}
     p.pin=np;save('dtp_family',FAMILY);toast(p.name+'’s PIN set');renderScreen_inplace2();
   });
 }
-function togglePersonGroup(pid,gid){
-  capturePersonas();var p=person(pid);if(!p)return;
-  if(!Array.isArray(p.groups))p.groups=[];
-  var i=p.groups.indexOf(gid);
-  if(i>=0){ if(p.groups.length<=1){toast('Everyone must be in at least one group');return;} p.groups.splice(i,1); }
-  else p.groups.push(gid);
-  save('dtp_family',FAMILY);renderScreen_inplace2();
-}
-function toggleAdmin(id){
-  capturePersonas();var p=person(id);if(!p)return;
-  if(p.admin){
-    var others=FAMILY.filter(function(x){return x.admin&&x.id!==id;});
-    if(!others.length){toast('Keep at least one admin');return;}
-    p.admin=false;
-  }else p.admin=true;
-  save('dtp_family',FAMILY);toast(p.name+(p.admin?' is now an admin':' is no longer an admin'));renderScreen_inplace2();
-}
-function savePersonas(){capturePersonas();save('dtp_family',FAMILY);toast('People updated');closeScreen();render();}
 
 /* Manage Groups — create / rename / delete (no scoping yet; that lands with the backend) */
 function scrGroups(){
@@ -2745,29 +2707,89 @@ function delGroup(id){
 }
 function saveGroupEdits(){captureGroups();saveGroups();toast('Groups updated');closeScreen();render();}
 
-/* Per-person travel details (email + booking metadata). You edit your own;
-   admins can edit anyone. These feed flight booking / check-in. */
+/* shared travel-detail inputs (booking metadata) — used by both the self-service
+   editor and the admin person editor. `pre` is the id prefix (pd / pe). */
+function personTravelFields(p,pre){
+  var h='';
+  h+='<div class="field"><label class="field-label">Email</label><input class="field-input" id="'+pre+'-email" type="email" inputmode="email" value="'+esc(p.email||'')+'" placeholder="name@example.com"></div>';
+  h+='<div class="field"><label class="field-label">Full legal name <span class="opt">(as on ID)</span></label><input class="field-input" id="'+pre+'-fullname" value="'+esc(p.fullName||'')+'" placeholder="e.g. Nancy Jane Mills"></div>';
+  h+='<div class="field"><label class="field-label">TSA PreCheck / Known Traveler #</label><input class="field-input" id="'+pre+'-ktn" inputmode="numeric" value="'+esc(p.ktn||'')+'"></div>';
+  h+='<div class="field"><label class="field-label">Passport # <span class="opt">(international travel only)</span></label><input class="field-input" id="'+pre+'-passport" value="'+esc(p.passport||'')+'"></div>';
+  h+='<div class="field"><label class="field-label">Frequent flyer numbers <span class="opt">(one per line)</span></label><textarea class="field-input" id="'+pre+'-ff" rows="3" style="resize:vertical" placeholder="e.g. Delta 1234567890">'+esc(p.frequentFlyer||'')+'</textarea></div>';
+  return h;
+}
+function captureTravel(p,pre){
+  if(!p)return;
+  p.email=val(pre+'-email');p.fullName=val(pre+'-fullname');p.ktn=val(pre+'-ktn');p.passport=val(pre+'-passport');
+  var ff=document.getElementById(pre+'-ff');p.frequentFlyer=ff?ff.value.trim():'';
+}
+/* Per-person travel details — self-service editor (account screen) */
 function scrPersonDetails(){
   var pid=(S.screen&&S.screen.pid)||S.persona,p=person(pid);
   if(!p)return screenShell('Travel Details','<div class="body-empty" style="padding:24px 12px">Person not found.</div>',null,null,'Done');
   if(pid!==S.persona&&!isAdmin())return screenShell('Travel Details','<div class="body-empty" style="padding:24px 12px">You can only edit your own details.</div>',null,null,'Done');
-  var body='<div class="body-empty" style="text-align:left;padding:0 2px 10px;font-size:13px">Used when booking flights and at check-in. Visible to '+(pid===S.persona?'you':'you')+' and admins.</div>';
-  body+='<div class="field"><label class="field-label">Email</label><input class="field-input" id="pd-email" type="email" inputmode="email" value="'+esc(p.email||'')+'" placeholder="name@example.com"></div>';
-  body+='<div class="field"><label class="field-label">Full legal name <span class="opt">(as on ID)</span></label><input class="field-input" id="pd-fullname" value="'+esc(p.fullName||'')+'" placeholder="e.g. Nancy Jane Mills"></div>';
-  body+='<div class="field"><label class="field-label">TSA PreCheck / Known Traveler #</label><input class="field-input" id="pd-ktn" inputmode="numeric" value="'+esc(p.ktn||'')+'"></div>';
-  body+='<div class="field"><label class="field-label">Passport # <span class="opt">(international travel only)</span></label><input class="field-input" id="pd-passport" value="'+esc(p.passport||'')+'"></div>';
-  body+='<div class="field"><label class="field-label">Frequent flyer numbers <span class="opt">(one per line)</span></label><textarea class="field-input" id="pd-ff" rows="3" style="resize:vertical" placeholder="e.g. Delta 1234567890">'+esc(p.frequentFlyer||'')+'</textarea></div>';
+  var body='<div class="body-empty" style="text-align:left;padding:0 2px 10px;font-size:13px">Used when booking flights and at check-in. Visible to you and admins.</div>';
+  body+=personTravelFields(p,'pd');
   return screenShell((pid===S.persona?'My Travel Details':esc(p.name)+'’s Travel Details'),body,'Save','savePersonDetails(\''+pid+'\')');
 }
 function savePersonDetails(pid){
   var p=person(pid);if(!p){closeScreen();return;}
   if(pid!==S.persona&&!isAdmin()){toast('You can only edit your own details');closeScreen();return;}
-  p.email=val('pd-email');p.fullName=val('pd-fullname');p.ktn=val('pd-ktn');p.passport=val('pd-passport');
-  var ff=document.getElementById('pd-ff');p.frequentFlyer=ff?ff.value.trim():'';
+  captureTravel(p,'pd');
   save('dtp_family',FAMILY);toast('Travel details saved');closeScreen();render();
 }
+
+/* Full person editor (admin) — opened by tapping a person in Manage People.
+   Identity + role + groups + PIN + travel details in one form. */
+function scrPersonEdit(){
+  if(!isAdmin())return screenShell('Edit Person','<div class="body-empty" style="padding:24px 12px">Admin only.</div>',null,null,'Done');
+  var pid=(S.screen&&S.screen.pid),p=person(pid);
+  if(!p)return screenShell('Edit Person','<div class="body-empty" style="padding:24px 12px">Person not found.</div>',null,null,'Done');
+  if(S._formInit!=='person:'+pid){S._peAdmin=!!p.admin;S._peGroups=new Set(p.groups||[]);S._formInit='person:'+pid;}
+  var body='<div class="field"><label class="field-label">Name</label><input class="field-input" id="pe-name" value="'+esc(p.name)+'"></div>';
+  body+='<div class="field"><label class="field-label">Color</label><select class="field-select" id="pe-color">'+colorOptions(p.color)+'</select></div>';
+  /* role */
+  body+='<div class="field"><label class="field-label">Role</label>';
+  body+='<div class="notify-row'+(S._peAdmin?' on':'')+'" onclick="peToggleAdmin()"><span class="notify-check">'+(S._peAdmin?IC.checkw:'')+'</span><div><div class="notify-lbl">Admin</div><div class="notify-sub">Can manage people, groups and every trip, and delete anything.</div></div></div></div>';
+  /* groups */
+  body+='<div class="field"><label class="field-label">Groups</label><div class="gchips">';
+  for(var gi=0;gi<GROUPS.length;gi++){var g=GROUPS[gi],on=S._peGroups.has(g.id);
+    body+='<button class="gchip'+(on?' on':'')+'" onclick="peToggleGroup(\''+g.id+'\')">'+esc(g.name)+'</button>';}
+  body+='</div></div>';
+  /* security */
+  body+='<div class="field"><label class="field-label">Security</label>';
+  body+='<div style="display:flex;align-items:center;justify-content:space-between;font-size:14px">';
+  body+='<span style="color:#6B7280;display:flex;align-items:center;gap:5px">'+(p.pin?IC.lock+' PIN set':'No PIN — set on first login')+'</span>';
+  body+='<button class="btn-secondary" style="margin:0;width:auto;padding:8px 14px;min-height:0" onclick="'+(p.pin?'resetPersonaPin':'setPersonaPin')+'(\''+pid+'\')">'+(p.pin?'Reset PIN':'Set PIN')+'</button>';
+  body+='</div></div>';
+  /* travel details */
+  body+='<div class="hub-section-label" style="margin-left:0">Travel details</div>';
+  body+=personTravelFields(p,'pe');
+  body+='<button class="btn-danger-link" onclick="peDelete(\''+pid+'\')">Remove this person</button>';
+  return screenShell('Edit '+esc(p.name),body,'Save','savePersonEdit(\''+pid+'\')');
+}
+function peToggleAdmin(){S._peAdmin=!S._peAdmin;renderScreen_inplace2();}
+function peToggleGroup(gid){if(!S._peGroups)S._peGroups=new Set();if(S._peGroups.has(gid))S._peGroups.delete(gid);else S._peGroups.add(gid);renderScreen_inplace2();}
+function savePersonEdit(pid){
+  var p=person(pid);if(!p){closeScreen();return;}
+  var nm=val('pe-name');if(nm)p.name=nm;
+  var c=document.getElementById('pe-color');if(c&&c.value)p.color=c.value;
+  /* admin — keep at least one admin */
+  if(!S._peAdmin&&p.admin&&!FAMILY.filter(function(x){return x.admin&&x.id!==pid;}).length){toast('Keep at least one admin');return;}
+  p.admin=!!S._peAdmin;
+  /* groups — keep at least one */
+  var gs=[];if(S._peGroups)S._peGroups.forEach(function(x){gs.push(x);});
+  p.groups=gs.length?gs:[GROUPS[0].id];
+  captureTravel(p,'pe');
+  ALL_IDS=FAMILY.map(function(x){return x.id;});
+  save('dtp_family',FAMILY);S._formInit=null;toast('Saved');closeScreen();render();
+}
+function peDelete(pid){
+  var existed=!!person(pid);
+  delPersona(pid);
+  if(existed&&!person(pid)){S._formInit=null;closeScreen();render();}
+}
 function addPersona(){
-  capturePersonas();
   var used={};FAMILY.forEach(function(p){used[p.color]=1;});
   var col=PALETTE[FAMILY.length%PALETTE.length][0];
   for(var i=0;i<PALETTE.length;i++)if(!used[PALETTE[i][0]]){col=PALETTE[i][0];break;}
@@ -2776,14 +2798,13 @@ function addPersona(){
   ALL_IDS=FAMILY.map(function(p){return p.id;});
   PACKING[id]=[];
   save('dtp_family',FAMILY);saveLists();
-  renderScreen_inplace2();
+  S._formInit=null;openScreen({type:'personedit',pid:id});   /* jump straight into the new person's form */
 }
 function delPersona(id){
   if(FAMILY.length<=1){toast('Keep at least one person');return;}
   var p=person(id);
   if(p&&p.admin&&!FAMILY.filter(function(x){return x.admin&&x.id!==id;}).length){toast('Make someone else an admin first');return;}
   if(!confirm('Remove '+(p?p.name:'this person')+'? They\'ll be taken off all trips and items.'))return;
-  capturePersonas();
   FAMILY=FAMILY.filter(function(x){return x.id!==id;});
   ALL_IDS=FAMILY.map(function(x){return x.id;});
   delete PACKING[id];delete TODO_TMPL[id];delete PACKING_TMPL[id];saveTmpl();savePackTmpl();
