@@ -67,7 +67,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='78';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='79';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1854,6 +1854,7 @@ function renderScreen(){
   if(t==='persona')   return scrPersona();
   if(t==='personas')  return scrPersonas();
   if(t==='groups')    return scrGroups();
+  if(t==='persondetails') return scrPersonDetails();
   if(t==='dayedit')   return scrDayEdit();
   if(t==='predit')    return scrPREdit();
   if(t==='visedit')   return scrVisitEdit();
@@ -2611,6 +2612,7 @@ function scrPersona(){
     var body='<div class="hub-section-label" style="margin-left:0">Your account</div>';
     body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px">You\'re signed in as <strong>'+esc(me?me.name:'')+'</strong>'+(isAdmin()?' · Admin':'')+'. To use the app as someone else, log out and choose a persona.</div>';
     body+='<button class="btn-secondary green" onclick="openScreen({type:\'newtrip\'})">Plan a new trip</button>';
+    body+='<button class="btn-secondary" onclick="openScreen({type:\'persondetails\',pid:\''+S.persona+'\'})">My travel details</button>';
     body+='<div class="hub-section-label" style="margin-left:0">Security</div>';
     body+='<button class="btn-secondary" onclick="setMyPin()">Change my PIN</button>';
     body+='<button class="btn-secondary" onclick="logoutPersona()">Log out</button>';
@@ -2658,6 +2660,7 @@ function scrPersonas(){
     body+='</div>';
     body+='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">';
     body+='<button '+lnk+' onclick="toggleAdmin(\''+p.id+'\')">'+(p.admin?'★ Admin · tap to remove':'Make admin')+'</button>';
+    body+='<button '+lnk+' onclick="capturePersonas();openScreen({type:\'persondetails\',pid:\''+p.id+'\'})">Travel details</button>';
     body+='<button style="color:#B91C1C;font-size:14px;font-weight:600;background:none;border:none;cursor:pointer;padding:4px 2px" onclick="delPersona(\''+p.id+'\')">Remove</button>';
     body+='</div>';
     body+='<div style="margin-top:10px"><div class="field-label" style="margin-bottom:5px">Groups</div><div class="gchips">';
@@ -2741,6 +2744,28 @@ function delGroup(id){
   saveGroups();renderScreen_inplace2();
 }
 function saveGroupEdits(){captureGroups();saveGroups();toast('Groups updated');closeScreen();render();}
+
+/* Per-person travel details (email + booking metadata). You edit your own;
+   admins can edit anyone. These feed flight booking / check-in. */
+function scrPersonDetails(){
+  var pid=(S.screen&&S.screen.pid)||S.persona,p=person(pid);
+  if(!p)return screenShell('Travel Details','<div class="body-empty" style="padding:24px 12px">Person not found.</div>',null,null,'Done');
+  if(pid!==S.persona&&!isAdmin())return screenShell('Travel Details','<div class="body-empty" style="padding:24px 12px">You can only edit your own details.</div>',null,null,'Done');
+  var body='<div class="body-empty" style="text-align:left;padding:0 2px 10px;font-size:13px">Used when booking flights and at check-in. Visible to '+(pid===S.persona?'you':'you')+' and admins.</div>';
+  body+='<div class="field"><label class="field-label">Email</label><input class="field-input" id="pd-email" type="email" inputmode="email" value="'+esc(p.email||'')+'" placeholder="name@example.com"></div>';
+  body+='<div class="field"><label class="field-label">Full legal name <span class="opt">(as on ID)</span></label><input class="field-input" id="pd-fullname" value="'+esc(p.fullName||'')+'" placeholder="e.g. Nancy Jane Mills"></div>';
+  body+='<div class="field"><label class="field-label">TSA PreCheck / Known Traveler #</label><input class="field-input" id="pd-ktn" inputmode="numeric" value="'+esc(p.ktn||'')+'"></div>';
+  body+='<div class="field"><label class="field-label">Passport # <span class="opt">(international travel only)</span></label><input class="field-input" id="pd-passport" value="'+esc(p.passport||'')+'"></div>';
+  body+='<div class="field"><label class="field-label">Frequent flyer numbers <span class="opt">(one per line)</span></label><textarea class="field-input" id="pd-ff" rows="3" style="resize:vertical" placeholder="e.g. Delta 1234567890">'+esc(p.frequentFlyer||'')+'</textarea></div>';
+  return screenShell((pid===S.persona?'My Travel Details':esc(p.name)+'’s Travel Details'),body,'Save','savePersonDetails(\''+pid+'\')');
+}
+function savePersonDetails(pid){
+  var p=person(pid);if(!p){closeScreen();return;}
+  if(pid!==S.persona&&!isAdmin()){toast('You can only edit your own details');closeScreen();return;}
+  p.email=val('pd-email');p.fullName=val('pd-fullname');p.ktn=val('pd-ktn');p.passport=val('pd-passport');
+  var ff=document.getElementById('pd-ff');p.frequentFlyer=ff?ff.value.trim():'';
+  save('dtp_family',FAMILY);toast('Travel details saved');closeScreen();render();
+}
 function addPersona(){
   capturePersonas();
   var used={};FAMILY.forEach(function(p){used[p.color]=1;});
