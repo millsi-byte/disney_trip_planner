@@ -62,12 +62,13 @@ S.open = defOpen();
 
 /* persistence */
 function load(k,fb){try{var s=localStorage.getItem(k);if(s)return JSON.parse(s);}catch(e){}return fb;}
-function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
+  try{if(typeof window!=='undefined'&&window.CLOUD&&window.CLOUD.push)window.CLOUD.push(k,v);}catch(e){}}
 
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='89';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='90';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -201,6 +202,25 @@ function persist(){
   save('dtp_days',DAYS);save('dtp_visits',VISITS);save('dtp_hours',PARKHOURS);save('dtp_dining',DINING);save('dtp_lls',LLS);
   save('dtp_shows',SHOWS);save('dtp_flights',FLIGHTS);save('dtp_resorts',RESORTS);
   save('dtp_parkres',PARKRES);save('dtp_rebooks',REBOOKS);save('dtp_trips',TRIPS);save('dtp_family',FAMILY);save('dtp_groups',GROUPS);save('dtp_chat',CHAT);
+}
+
+/* re-read every synced collection from localStorage into the in-memory globals.
+   Called after a cloud pull (sign-in reconcile or a realtime update) so the UI
+   reflects data that arrived from another device. Identity/selection keys
+   (persona, tripId, groupId) stay device-local and are intentionally not touched. */
+function rehydrate(){
+  TODO_TMPL=load('dtp_todo_tmpl',TODO_TMPL);
+  PACKING_TMPL=load('dtp_pack_tmpl',PACKING_TMPL);
+  FAMILY=load('dtp_family',FAMILY); ALL_IDS=FAMILY.map(function(p){return p.id;});
+  DAYS=load('dtp_days',DAYS); VISITS=load('dtp_visits',VISITS); PARKHOURS=load('dtp_hours',PARKHOURS);
+  DINING=load('dtp_dining',DINING); LLS=load('dtp_lls',LLS); SHOWS=load('dtp_shows',SHOWS);
+  FLIGHTS=load('dtp_flights',FLIGHTS); RESORTS=load('dtp_resorts',RESORTS); PARKRES=load('dtp_parkres',PARKRES);
+  REBOOKS=load('dtp_rebooks',REBOOKS); TRIPS=load('dtp_trips',TRIPS); NOTIFS=load('dtp_notifs',NOTIFS);
+  GROUPS=load('dtp_groups',GROUPS)||GROUPS; CHAT=load('dtp_chat',CHAT);
+  try{ensureVisibleGroup();}catch(e){}
+  try{ensureVisibleTrip();}catch(e){}
+  try{loadLists();}catch(e){}
+  try{render();}catch(e){}
 }
 
 /* ── Helpers ───────────────────────────────────────────────── */
@@ -2655,11 +2675,11 @@ function cloudSection(){
   if(!(window.CLOUD&&window.CLOUD.enabled))return '';
   var h='<div class="hub-section-label" style="margin-left:0">Cloud sync <span style="font-size:11px;font-weight:600;color:#92400E">· beta</span></div>';
   if(window.CLOUD.user){
-    h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Signed in to the cloud as <strong>'+esc(window.CLOUD.user.email||window.CLOUD.user.uid)+'</strong>.</div>';
-    h+='<button class="btn-secondary" onclick="window.CLOUD.ping().then(function(v){toast(v)}).catch(function(e){toast(e.message||\'Test failed\')})">Test cloud read/write</button>';
+    var st=window.CLOUD.synced?'<span style="color:#16A34A;font-weight:600">syncing</span>':'connecting…';
+    h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Signed in as <strong>'+esc(window.CLOUD.user.email||window.CLOUD.user.uid)+'</strong> · '+st+'.<br>Your data backs up here and syncs to your other devices when you sign in with this same account.</div>';
     h+='<button class="btn-secondary" onclick="window.CLOUD.signOut()">Sign out of cloud</button>';
   }else{
-    h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Not signed in to the cloud yet. (Sync isn\'t wired in — this just verifies sign-in works.)</div>';
+    h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Not signed in. Sign in to back up your data and sync it across your devices.</div>';
     h+='<button class="btn-secondary" onclick="window.CLOUD.signInGoogle().catch(function(e){toast(e.message||\'Sign-in failed\')})">Sign in with Google</button>';
     h+='<div class="field" style="margin-top:8px"><input class="field-input" id="cloud-email" type="email" inputmode="email" placeholder="you@email.com"></div>';
     h+='<button class="btn-secondary" onclick="cloudEmailLink()">Email me a sign-in link</button>';
