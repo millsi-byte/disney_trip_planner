@@ -2,9 +2,14 @@
    Baseline Tap — cloud layer (Firebase auth + data sync)
    Additive + guarded: if the Firebase SDK or config aren't present,
    window.CLOUD.enabled is false and the app runs exactly as before on
-   localStorage. When signed in, every shared dtp_* key is mirrored to
-   Firestore under users/<uid>/kv and kept live across this account's
-   devices. Identity/selection keys stay device-local.
+   localStorage.
+
+   Two sync targets:
+     • personal  → users/<uid>/kv        (your own devices, default)
+     • family    → workspaces/<wid>/kv   (everyone who joined the code)
+   The active target is the user's workspace id, stored on their profile
+   (users/<uid>/meta/profile.wid) so all their devices follow the same one.
+   Identity/selection keys stay device-local and are never synced.
    ============================================================ */
 (function(){
   if(typeof firebase==='undefined'||typeof FIREBASE_CONFIG==='undefined'){
@@ -13,7 +18,9 @@
   }
   try{ firebase.initializeApp(FIREBASE_CONFIG); }catch(e){ /* already initialized */ }
   var auth=firebase.auth();
-  var C={enabled:true,user:null,ready:false,synced:false,applyingRemote:false};
+  var C={enabled:true,user:null,ready:false,synced:false,applyingRemote:false,wid:null};
+
+  function db(){return firebase.firestore();}
 
   /* ── auth ──────────────────────────────────────────────── */
   C.signInGoogle=function(){
@@ -40,26 +47,30 @@
   /* connectivity test: write a doc to your own space and read it back */
   C.ping=function(){
     if(!C.user)return Promise.reject(new Error('Sign in first'));
-    var ref=firebase.firestore().doc('users/'+C.user.uid+'/_diag/ping');
+    var ref=db().doc('users/'+C.user.uid+'/_diag/ping');
     var v='ok @ '+new Date().toLocaleTimeString();
     return ref.set({val:v,ts:Date.now()}).then(function(){return ref.get();}).then(function(s){return s.exists?s.data().val:'(missing)';});
   };
 
   /* ── sync engine ───────────────────────────────────────── */
-  /* keys that must stay device-local (who's logged in, which trip/group is
-     open on THIS device, read-receipts, schema guard, sync bookkeeping) */
-  var LOCAL_ONLY={dtp_persona:1,dtp_tripId:1,dtp_groupId:1,dtp_chatseen:1,dtp_emailForSignIn:1,dtp_ver:1};
+  /* keys that must stay device-local */
+  var LOCAL_ONLY={dtp_persona:1,dtp_tripId:1,dtp_groupId:1,dtp_chatseen:1,dtp_emailForSignIn:1,dtp_ver:1,dtp_wid:1};
   function syncable(k){return !!k&&k.indexOf('dtp_')===0&&k.indexOf('dtp__')!==0&&!LOCAL_ONLY[k];}
-  function kvCol(){return firebase.firestore().collection('users/'+C.user.uid+'/kv');}
+  /* the active key/value collection: family workspace if joined, else personal */
+  function kvCol(){return C.wid?db().collection('workspaces/'+C.wid+'/kv'):db().collection('users/'+C.user.uid+'/kv');}
+  function profileRef(){return db().doc('users/'+C.user.uid+'/meta/profile');}
   function loadTimes(){try{return JSON.parse(localStorage.getItem('dtp__synctimes')||'{}');}catch(e){return {};}}
   function saveTimes(t){try{localStorage.setItem('dtp__synctimes',JSON.stringify(t));}catch(e){}}
+  function localKeys(){var a=[],i,k;for(i=0;i<localStorage.length;i++){k=localStorage.key(i);if(syncable(k))a.push(k);}return a;}
   function doRehydrate(){
     C.applyingRemote=true;
     try{ if(typeof rehydrate==='function')rehydrate(); }catch(e){}
     C.applyingRemote=false;
   }
+  function setLocalWid(w){C.wid=w||null;try{w?localStorage.setItem('dtp_wid',w):localStorage.removeItem('dtp_wid');}catch(e){}}
+  function newCode(){return (Math.random().toString(36).slice(2,6)+Math.random().toString(36).slice(2,6)).toUpperCase();}
 
-  /* mirror a single local save up to the cloud (no-op until reconciled) */
+  /* mirror a single local save up to the active target (no-op until reconciled) */
   C.push=function(k,v){
     if(!C.synced||!C.user||C.applyingRemote||!syncable(k))return;
     var ts=Date.now();
@@ -67,40 +78,37 @@
     try{ kvCol().doc(k).set({v:JSON.stringify(v),ts:ts}); }catch(e){ console.warn('cloud push',k,e&&e.message); }
   };
 
-  /* first pass after sign-in: merge local <-> cloud (last-write-wins per key) */
-  function reconcile(){
-    C.synced=false;
+  /* sync the local store against the active target.
+       mode 'merge'  → last-write-wins per key, both directions (device sync)
+       mode 'adopt'  → the target wins entirely (joining a family space) */
+  function reconcile(mode){
+    C.synced=false; stopListener();
     var col=kvCol();
     return col.get().then(function(snap){
       var times=loadTimes(), cloud={};
       snap.forEach(function(d){ if(syncable(d.id))cloud[d.id]=d.data(); });
-      var union={}, i, k;
-      for(i=0;i<localStorage.length;i++){ k=localStorage.key(i); if(syncable(k))union[k]=1; }
-      Object.keys(cloud).forEach(function(k){union[k]=1;});
-      var pushes=[];
       C.applyingRemote=true;
+      if(mode==='adopt'){
+        localKeys().forEach(function(k){ if(!(k in cloud)){ try{localStorage.removeItem(k);}catch(e){} delete times[k]; } });
+        Object.keys(cloud).forEach(function(k){ try{localStorage.setItem(k,cloud[k].v);}catch(e){} times[k]=cloud[k].ts||Date.now(); });
+        C.applyingRemote=false; saveTimes(times);
+        return Promise.resolve();
+      }
+      var union={}; localKeys().forEach(function(k){union[k]=1;}); Object.keys(cloud).forEach(function(k){union[k]=1;});
+      var pushes=[];
       Object.keys(union).forEach(function(k){
-        var c=cloud[k], cts=c?(c.ts||0):0, lts=times[k]||0;
-        var local=localStorage.getItem(k);
-        if(c && cts>=lts){
-          try{localStorage.setItem(k,c.v);}catch(e){}   /* c.v is already a JSON string */
-          times[k]=cts;
-        }else if(local!=null){
-          var ts=lts||Date.now(); times[k]=ts;
-          pushes.push(col.doc(k).set({v:local,ts:ts}));
-        }
+        var c=cloud[k], cts=c?(c.ts||0):0, lts=times[k]||0, local=localStorage.getItem(k);
+        if(c && cts>=lts){ try{localStorage.setItem(k,c.v);}catch(e){} times[k]=cts; }
+        else if(local!=null){ var ts=lts||Date.now(); times[k]=ts; pushes.push(col.doc(k).set({v:local,ts:ts})); }
       });
-      C.applyingRemote=false;
-      saveTimes(times);
+      C.applyingRemote=false; saveTimes(times);
       return Promise.all(pushes);
     }).then(function(){
-      C.synced=true;
-      doRehydrate();
-      startListener();
+      C.synced=true; doRehydrate(); startListener();
     });
   }
 
-  /* live updates from this account's other devices */
+  /* live updates from other devices / members on the active target */
   var unsub=null, rht=null;
   function scheduleRehydrate(){ clearTimeout(rht); rht=setTimeout(doRehydrate,150); }
   function startListener(){
@@ -115,9 +123,7 @@
         var k=d.id; if(!syncable(k))return;
         var data=d.data(), cts=data.ts||0, lts=times[k]||0;
         if(cts>lts){
-          C.applyingRemote=true;
-          try{localStorage.setItem(k,data.v);}catch(e){}
-          C.applyingRemote=false;
+          C.applyingRemote=true; try{localStorage.setItem(k,data.v);}catch(e){} C.applyingRemote=false;
           times[k]=cts; changed=true;
         }
       });
@@ -126,18 +132,66 @@
   }
   function stopListener(){ if(unsub){ try{unsub();}catch(e){} unsub=null; } }
 
+  /* ── family space (shared workspace) ───────────────────── */
+  C.inFamily=function(){return !!C.wid;};
+  C.familyCode=function(){return C.wid||null;};
+
+  /* create a shared family space from your current data and switch onto it */
+  C.createFamily=function(name){
+    if(!C.user)return Promise.reject(new Error('Sign in first'));
+    var wid=newCode();
+    var wref=db().doc('workspaces/'+wid);
+    return wref.set({name:name||'Family',by:C.user.uid,createdAt:Date.now()})
+      .then(function(){ return wref.collection('members').doc(C.user.uid).set({email:C.user.email||null,joinedAt:Date.now()}); })
+      .then(function(){ setLocalWid(wid); return profileRef().set({wid:wid},{merge:true}); })
+      .then(function(){ return reconcile('merge'); })   /* push your data up into the new space */
+      .then(function(){ return wid; });
+  };
+
+  /* join an existing family space by code and adopt its data */
+  C.joinFamily=function(code){
+    if(!C.user)return Promise.reject(new Error('Sign in first'));
+    code=(code||'').trim().toUpperCase();
+    if(!code)return Promise.reject(new Error('Enter a code'));
+    var wref=db().doc('workspaces/'+code);
+    return wref.get().then(function(s){
+      if(!s.exists)throw new Error('No family space with that code');
+      return wref.collection('members').doc(C.user.uid).set({email:C.user.email||null,joinedAt:Date.now()});
+    }).then(function(){ setLocalWid(code); return profileRef().set({wid:code},{merge:true}); })
+      .then(function(){ return reconcile('adopt'); })   /* take on the family's data */
+      .then(function(){ return code; });
+  };
+
+  /* leave the family space; your device returns to your personal copy */
+  C.leaveFamily=function(){
+    if(!C.user||!C.wid)return Promise.resolve();
+    var wid=C.wid;
+    return db().doc('workspaces/'+wid).collection('members').doc(C.user.uid).delete().catch(function(){})
+      .then(function(){ setLocalWid(null); return profileRef().set({wid:null},{merge:true}); })
+      .then(function(){ return reconcile('adopt'); });   /* re-adopt personal space */
+  };
+
   window.CLOUD=C;
+
+  /* read the user's chosen workspace, then sync against it */
+  function startSync(){
+    return profileRef().get().then(function(s){
+      C.wid=(s.exists&&s.data().wid)||null;
+      setLocalWid(C.wid);
+    }).catch(function(){ C.wid=null; })
+      .then(function(){ return reconcile('merge'); });
+  }
 
   /* reflect auth state in the UI and drive sync on/off */
   auth.onAuthStateChanged(function(u){
     C.user=u; C.ready=true;
     if(u){
-      reconcile().then(function(){
+      startSync().then(function(){
         try{ if(typeof toast==='function')toast('Cloud sync on'); }catch(e){}
         try{ if(window.S&&S.screen&&typeof renderScreen_inplace2==='function')renderScreen_inplace2(); }catch(e){}
-      }).catch(function(e){ console.warn('cloud reconcile',e&&e.message); });
+      }).catch(function(e){ console.warn('cloud sync',e&&e.message); });
     }else{
-      stopListener(); C.synced=false;
+      stopListener(); C.synced=false; C.wid=null;
     }
     try{ if(typeof render==='function')render(); }catch(e){}
     try{ if(window.S&&S.screen&&typeof renderScreen_inplace2==='function')renderScreen_inplace2(); }catch(e){}

@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='90';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='91';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2676,7 +2676,21 @@ function cloudSection(){
   var h='<div class="hub-section-label" style="margin-left:0">Cloud sync <span style="font-size:11px;font-weight:600;color:#92400E">· beta</span></div>';
   if(window.CLOUD.user){
     var st=window.CLOUD.synced?'<span style="color:#16A34A;font-weight:600">syncing</span>':'connecting…';
-    h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Signed in as <strong>'+esc(window.CLOUD.user.email||window.CLOUD.user.uid)+'</strong> · '+st+'.<br>Your data backs up here and syncs to your other devices when you sign in with this same account.</div>';
+    h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Signed in as <strong>'+esc(window.CLOUD.user.email||window.CLOUD.user.uid)+'</strong> · '+st+'.</div>';
+    if(window.CLOUD.inFamily&&window.CLOUD.inFamily()){
+      var code=window.CLOUD.familyCode();
+      h+='<div class="hub-section-label" style="margin-left:0">Family space</div>';
+      h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Sharing with everyone who joined this code. Send it to family so they can join.</div>';
+      h+='<div class="field" style="margin-top:2px"><div style="font-family:monospace;font-size:22px;font-weight:700;letter-spacing:2px;padding:10px 12px;background:#F1F5F9;border-radius:10px;text-align:center">'+esc(code)+'</div></div>';
+      h+='<button class="btn-secondary" onclick="cloudLeaveFamily()">Leave family space</button>';
+    }else{
+      h+='<div class="hub-section-label" style="margin-left:0">Family space</div>';
+      h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Right now your data only syncs to your own devices. Start a family space to share it with others, or join one with a code.</div>';
+      h+='<button class="btn-secondary green" onclick="cloudCreateFamily()">Start a family space</button>';
+      h+='<div class="field" style="margin-top:8px"><input class="field-input" id="cloud-join" placeholder="Enter a family code" style="text-transform:uppercase"></div>';
+      h+='<button class="btn-secondary" onclick="cloudJoinFamily()">Join with a code</button>';
+    }
+    h+='<div class="hub-section-label" style="margin-left:0">Account</div>';
     h+='<button class="btn-secondary" onclick="window.CLOUD.signOut()">Sign out of cloud</button>';
   }else{
     h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Not signed in. Sign in to back up your data and sync it across your devices.</div>';
@@ -2689,6 +2703,22 @@ function cloudSection(){
 function cloudEmailLink(){
   var v=val('cloud-email');if(!v){toast('Enter your email');return;}
   window.CLOUD.sendEmailLink(v).then(function(){toast('Link sent — check your email');}).catch(function(e){toast(e.message||'Could not send link');});
+}
+function cloudCreateFamily(){
+  if(!confirm('Start a family space and share your current trips with whoever joins it?'))return;
+  toast('Creating…');
+  window.CLOUD.createFamily('Family').then(function(code){toast('Family space ready — code '+code);if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();}).catch(function(e){toast(e.message||'Could not create');});
+}
+function cloudJoinFamily(){
+  var code=val('cloud-join');if(!code){toast('Enter a code');return;}
+  if(!confirm('Join this family space? This device will switch to the shared data.'))return;
+  toast('Joining…');
+  window.CLOUD.joinFamily(code).then(function(){toast('Joined the family space');if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();}).catch(function(e){toast(e.message||'Could not join');});
+}
+function cloudLeaveFamily(){
+  if(!confirm('Leave the family space? Your device goes back to your personal copy. The shared data stays for everyone else.'))return;
+  toast('Leaving…');
+  window.CLOUD.leaveFamily().then(function(){toast('Left the family space');if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();}).catch(function(e){toast(e.message||'Could not leave');});
 }
 
 /* Persona switch (from the header). Two modes:
