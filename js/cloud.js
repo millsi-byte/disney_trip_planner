@@ -40,6 +40,8 @@
   auth.onAuthStateChanged(function(u){
     C.user=u;C.ready=true;
     try{ if(typeof render==='function')render(); }catch(e){}
+    try{ if(window.S&&S.screen&&typeof renderScreen_inplace2==='function')renderScreen_inplace2(); }catch(e){}
+    try{ if(u&&typeof toast==='function')toast('Signed in as '+(u.email||'cloud')); }catch(e){}
   });
   /* finish an email-link sign-in if the page was opened from one */
   C.completeEmailLink().then(function(r){
