@@ -1,13 +1,15 @@
 /* Baseline Tap — service worker
    Network-first so new versions show up on the next load; cache is the
    offline fallback only. */
-var CACHE = 'dtp-v86';
+var CACHE = 'dtp-v87';
 var ASSETS = [
   './',
   './index.html',
   './css/styles.css',
   './js/data.js',
   './js/app.js',
+  './js/firebase-config.js',
+  './js/cloud.js',
   './manifest.json'
 ];
 

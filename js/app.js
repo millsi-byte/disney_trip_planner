@@ -67,7 +67,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='86';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='87';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2650,6 +2650,26 @@ function createTrip(){
 }
 
 
+/* cloud sign-in section (only shows when the Firebase layer loaded) — slice 1 test surface */
+function cloudSection(){
+  if(!(window.CLOUD&&window.CLOUD.enabled))return '';
+  var h='<div class="hub-section-label" style="margin-left:0">Cloud sync <span style="font-size:11px;font-weight:600;color:#92400E">· beta</span></div>';
+  if(window.CLOUD.user){
+    h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Signed in to the cloud as <strong>'+esc(window.CLOUD.user.email||window.CLOUD.user.uid)+'</strong>.</div>';
+    h+='<button class="btn-secondary" onclick="window.CLOUD.signOut()">Sign out of cloud</button>';
+  }else{
+    h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Not signed in to the cloud yet. (Sync isn\'t wired in — this just verifies sign-in works.)</div>';
+    h+='<button class="btn-secondary" onclick="window.CLOUD.signInGoogle().catch(function(e){toast(e.message||\'Sign-in failed\')})">Sign in with Google</button>';
+    h+='<div class="field" style="margin-top:8px"><input class="field-input" id="cloud-email" type="email" inputmode="email" placeholder="you@email.com"></div>';
+    h+='<button class="btn-secondary" onclick="cloudEmailLink()">Email me a sign-in link</button>';
+  }
+  return h;
+}
+function cloudEmailLink(){
+  var v=val('cloud-email');if(!v){toast('Enter your email');return;}
+  window.CLOUD.sendEmailLink(v).then(function(){toast('Link sent — check your email');}).catch(function(e){toast(e.message||'Could not send link');});
+}
+
 /* Persona switch (from the header). Two modes:
    - first run / signed out: a plain chooser, no account actions
    - signed in: switch persona, change your own PIN, or log out */
@@ -2666,6 +2686,7 @@ function scrPersona(){
     body+='<button class="btn-secondary" onclick="setMyPin()">Change my PIN</button>';
     body+='<button class="btn-secondary" onclick="logoutPersona()">Log out</button>';
     body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px">'+(isAdmin()?'Manage the roster in <strong>Plan → Manage People</strong>.':'Forgot your PIN? An admin can reset it in <strong>Plan → Manage People</strong>.')+'</div>';
+    body+=cloudSection();
     body+='<div class="hub-section-label" style="margin-left:0">Device</div>';
     body+='<button class="btn-secondary" onclick="forceUpdate()">Force app update</button>';
     body+='<div class="body-empty" style="text-align:center;padding:14px 2px 0;font-size:12px">Baseline Tap · Build '+BUILD+'</div>';
