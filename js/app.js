@@ -67,7 +67,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='88';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='89';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2656,6 +2656,7 @@ function cloudSection(){
   var h='<div class="hub-section-label" style="margin-left:0">Cloud sync <span style="font-size:11px;font-weight:600;color:#92400E">· beta</span></div>';
   if(window.CLOUD.user){
     h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Signed in to the cloud as <strong>'+esc(window.CLOUD.user.email||window.CLOUD.user.uid)+'</strong>.</div>';
+    h+='<button class="btn-secondary" onclick="window.CLOUD.ping().then(function(v){toast(v)}).catch(function(e){toast(e.message||\'Test failed\')})">Test cloud read/write</button>';
     h+='<button class="btn-secondary" onclick="window.CLOUD.signOut()">Sign out of cloud</button>';
   }else{
     h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Not signed in to the cloud yet. (Sync isn\'t wired in — this just verifies sign-in works.)</div>';

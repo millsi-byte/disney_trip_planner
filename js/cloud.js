@@ -33,6 +33,13 @@
     });
   };
   C.signOut=function(){return auth.signOut();};
+  /* connectivity test: write a doc to your own space and read it back */
+  C.ping=function(){
+    if(!C.user)return Promise.reject(new Error('Sign in first'));
+    var ref=firebase.firestore().doc('users/'+C.user.uid+'/_diag/ping');
+    var v='ok @ '+new Date().toLocaleTimeString();
+    return ref.set({val:v,ts:Date.now()}).then(function(){return ref.get();}).then(function(s){return s.exists?s.data().val:'(missing)';});
+  };
 
   window.CLOUD=C;
 
