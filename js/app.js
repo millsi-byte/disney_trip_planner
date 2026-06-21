@@ -67,7 +67,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='75';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='76';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1377,6 +1377,11 @@ function renderListsHub(){
       : listStarterCard('Packing List',IC.suitcase,'#92400E','packing',pkTmplCount());
   o+=hubRow(['Need to Buy',IC.cart,'#B45309',needBuyCount()+' items','needbuy']);
   o+='<div class="body-empty" style="text-align:left;padding:12px 2px 0;font-size:12px">Your To&nbsp;Do and Packing lists are private to you; the trip owner and admins can see everyone’s. <strong>Need to Buy</strong> is shared with the whole group.</div>';
+  o+='<div class="hub-section-label">Master templates</div>';
+  o+='<button class="hub-row" onclick="openScreen({type:\'todotmpl\'})"><div class="hub-icon" style="background:#166534">'+IC.checks+'</div>'
+    +'<div class="hub-main"><div class="hub-title">Global To Do Template</div><div class="hub-sub">Reused when you start a new trip</div></div><div class="chev">'+IC.chev+'</div></button>';
+  o+='<button class="hub-row" onclick="openScreen({type:\'packtmpl\'})"><div class="hub-icon" style="background:#92400E">'+IC.suitcase+'</div>'
+    +'<div class="hub-main"><div class="hub-title">Global Packing Template</div><div class="hub-sub">Reused when you start a new trip</div></div><div class="chev">'+IC.chev+'</div></button>';
   return o;
 }
 /* not-set-up-yet card: create the list blank or from your global template */
@@ -2606,9 +2611,6 @@ function scrPersona(){
     var body='<div class="hub-section-label" style="margin-left:0">Your account</div>';
     body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px">You\'re signed in as <strong>'+esc(me?me.name:'')+'</strong>'+(isAdmin()?' · Admin':'')+'. To use the app as someone else, log out and choose a persona.</div>';
     body+='<button class="btn-secondary green" onclick="openScreen({type:\'newtrip\'})">Plan a new trip</button>';
-    body+='<div class="hub-section-label" style="margin-left:0">Your lists</div>';
-    body+='<button class="btn-secondary" onclick="openScreen({type:\'todotmpl\'})">Global To Do List Template</button>';
-    body+='<button class="btn-secondary" onclick="openScreen({type:\'packtmpl\'})">Global Packing List Template</button>';
     body+='<div class="hub-section-label" style="margin-left:0">Security</div>';
     body+='<button class="btn-secondary" onclick="setMyPin()">Change my PIN</button>';
     body+='<button class="btn-secondary" onclick="logoutPersona()">Log out</button>';
