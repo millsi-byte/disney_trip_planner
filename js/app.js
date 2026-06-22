@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='112';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='113';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -788,7 +788,7 @@ function openScreen(def){
   S.pkForm=null;S.pkScope='mine';S._delsect=null;S._pksect=null;ADD.psect=null;
   S._formLoc=null;S._formTier=null;S._formInit=null;S._members=null;S._formColor=null;
   S._notify=notifDefault();
-  if(def.type==='newtrip'){S._notify=true;S._formInit=null;S._ntStep=null;S._ntPartyId=null;S._ntNewParty=false;S._ntProvParty=null;S._ntTripId=null;S._ntFirstRun=false;S._ntReturnTo=null;}
+  if(def.type==='newtrip'){S._notify=true;S._formInit=null;S._ntStep=null;S._ntPartyId=null;S._ntNewParty=false;S._ntProvParty=null;S._ntTripId=null;S._ntFirstRun=false;}
   else if(def.type==='tripedit'){var _et=tripById(def.tripId);S._notify=!!(_et&&_et.status==='active');}
   if(def.type==='addflight'){S.formLegs=def.edit?((FLIGHTS.filter(function(f){return f.id===def.edit;})[0]||{legs:[0]}).legs.length):1;}
   else{S.formLegs=1;}
@@ -2804,8 +2804,7 @@ function ntAddInline(){
   renderScreen_inplace2();
 }
 function ntBack(){
-  if(S._ntStep==='invite'){S._ntStep='people';renderScreen_inplace2();return;}
-  if(S._ntStep==='people'){
+  if(S._ntStep==='invite'){
     if(S._ntTripId){
       TRIPS=TRIPS.filter(function(x){return x.id!==S._ntTripId;});
       DAYS=DAYS.filter(function(d){return d.trip!==S._ntTripId;});
@@ -2836,29 +2835,7 @@ function ntCreateTrip(){
   save('dtp_packing_'+id,np);save('dtp_todo_'+id,nt);
   save('dtp_trips',TRIPS);save('dtp_days',DAYS);
   S._ntTripId=id;S._members=new Set(mem);
-  S._ntStep='people';renderScreen_inplace2();
-}
-function ntToggleMember(pid){
-  if(!S._members)return;
-  if(S._members.has(pid))S._members.delete(pid);else S._members.add(pid);
-  var t=tripById(S._ntTripId);
-  if(t){var m=[];S._members.forEach(function(x){m.push(x);});t.members=m;save('dtp_trips',TRIPS);}
-  renderScreen_inplace2();
-}
-function ntAddPersonToTrip(){S._ntReturnTo='newtrip';addPersonToParty(S._ntPartyId);}
-function ntReturnFromPersonEdit(pid){
-  var prevNew=S._newPerson;S._ntReturnTo=null;S._newPerson=null;
-  if(pid){
-    if(!S._members)S._members=new Set();S._members.add(pid);
-    var t=tripById(S._ntTripId);
-    if(t){var m=[];S._members.forEach(function(x){m.push(x);});t.members=m;save('dtp_trips',TRIPS);}
-  }else{
-    if(prevNew&&person(prevNew)){FAMILY=FAMILY.filter(function(x){return x.id!==prevNew;});ALL_IDS=FAMILY.map(function(p){return p.id;});delete PACKING[prevNew];save('dtp_family',FAMILY);saveLists();}
-    var t2=tripById(S._ntTripId);S._members=new Set(t2?(t2.members||[]):[]);
-  }
-  S._formInit='newtrip';S._ntStep='people';
-  S.screen={type:'newtrip'};renderOverlay();
-  requestAnimationFrame(function(){var s=document.getElementById('screen-host').firstChild;if(s)s.classList.add('in');});
+  S._ntStep='invite';renderScreen_inplace2();
 }
 function ntFinish(silent){
   var t=tripById(S._ntTripId);
@@ -2871,7 +2848,7 @@ function ntFinish(silent){
   if(id)loadLists();
   S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();S.tab='plan';
   S._ntStep=null;S._ntPartyId=null;S._ntNewParty=false;S._ntProvParty=null;
-  S._ntTripId=null;S._ntFirstRun=false;S._ntReturnTo=null;S._members=null;S._formInit=null;
+  S._ntTripId=null;S._ntFirstRun=false;S._members=null;S._formInit=null;
   closeScreen();render();
   if(t&&!silent)notifyMembership(t,[],t.members,optIn);
   if(!silent)toast('Trip created');
@@ -2890,7 +2867,7 @@ function ntCancel(){
     saveParties();save('dtp_family',FAMILY);
   }
   S._ntStep=null;S._ntPartyId=null;S._ntNewParty=false;S._ntProvParty=null;
-  S._ntTripId=null;S._ntFirstRun=false;S._ntReturnTo=null;S._members=null;S._formInit=null;
+  S._ntTripId=null;S._ntFirstRun=false;S._members=null;S._formInit=null;
   closeScreen();
 }
 function scrNewTrip(){
@@ -2959,28 +2936,7 @@ function scrNewTrip(){
     body+='<button class="btn-secondary" onclick="ntBack()">← Back</button>';
     return screenShell(title,body,null,null,cancelLabel,null,cancelArg);
   }
-  /* ── Step 3: PEOPLE ── */
-  if(S._ntStep==='people'){
-    var t3=tripById(S._ntTripId);
-    if(!S._members&&t3)S._members=new Set(t3.members||[]);
-    var pmem3=partyPeople(S._ntPartyId);
-    body+='<div class="hub-section-label" style="margin-left:0">Who\'s on this trip?</div>';
-    body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Everyone from the party is pre-selected. Uncheck anyone sitting this one out.</div>';
-    body+='<div class="whoselect">';
-    for(var p3i=0;p3i<pmem3.length;p3i++){var p3=pmem3[p3i];
-      var p3on=S._members&&S._members.has(p3.id);
-      var locked=p3.id===S.persona;
-      body+='<div class="who-opt'+(p3on?' on':'')+(locked?' locked':'')+'" '+(locked?'':'onclick="ntToggleMember(\''+p3.id+'\')"')+'>';
-      body+='<span class="wdot" style="background:'+p3.color+'">'+esc(p3.name[0])+'</span>'+esc(p3.name);
-      if(p3on)body+='<span class="wcheck">'+IC.checkw+'</span>';
-      body+='</div>';}
-    body+='</div>';
-    body+='<button class="btn-secondary" onclick="ntAddPersonToTrip()">+ New person</button>';
-    body+='<button class="btn-secondary green" onclick="ntStep(\'invite\')">Next →</button>';
-    body+='<button class="btn-secondary" onclick="ntBack()">← Back</button>';
-    return screenShell(title,body,null,null,cancelLabel,null,cancelArg);
-  }
-  /* ── Step 4: INVITE ── */
+  /* ── Step 3: INVITE ── */
   var inviteable=partyPeople(S._ntPartyId).filter(function(p){return !p.uid;});
   body+='<div class="hub-section-label" style="margin-left:0">Invite your people</div>';
   body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Send links now or skip — invite later from Admin → Planning Party.</div>';
@@ -3560,7 +3516,6 @@ function scrPersonEdit(){
 /* sub-editors return to their list, not all the way out to the Admin tab.
    A just-added record that was never saved (cancelled) is discarded here. */
 function backToPeople(){
-  if(S._ntReturnTo==='newtrip'){ntReturnFromPersonEdit(null);return;}
   if(S._newPerson){var nid=S._newPerson;S._newPerson=null;
     if(person(nid)){FAMILY=FAMILY.filter(function(x){return x.id!==nid;});ALL_IDS=FAMILY.map(function(p){return p.id;});delete PACKING[nid];save('dtp_family',FAMILY);saveLists();}}
   S._formInit=null;openScreen({type:'personas'});
@@ -3593,7 +3548,6 @@ function savePersonEdit(pid){
   ALL_IDS=FAMILY.map(function(x){return x.id;});
   S._newPerson=null;   /* committed */
   save('dtp_family',FAMILY);toast('Saved');
-  if(S._ntReturnTo==='newtrip'){ntReturnFromPersonEdit(pid);return;}
   backToPeople();
 }
 function peDelete(pid){
