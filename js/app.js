@@ -1557,7 +1557,8 @@ function renderPlanHub(){
 /* Admin tab — admin-only hub for imports + people/groups (far-right nav tab) */
 function renderAdminHub(){
   if(!isAdmin())return '<div class="body-empty" style="margin-top:40px">Admin only.</div>';
-  var o='<div class="pg-title">Admin</div><div class="pg-sub">Power-user tools for '+esc(trip().name)+'.</div>';
+  var _t0=trip();
+  var o='<div class="pg-title">Admin</div><div class="pg-sub">Power-user tools for '+esc((_t0&&_t0.name)||partyLabel())+'.</div>';
   o+='<div class="hub-section-label">Import</div>';
   o+='<button class="hub-row" onclick="openScreen({type:\'import\'})"><div class="hub-icon" style="background:#1E40AF">'+IC.sparkles+'</div>'
     +'<div class="hub-main"><div class="hub-title">AI Import</div><div class="hub-sub">Paste structured details from Claude</div></div><div class="chev">'+IC.chev+'</div></button>';
@@ -3345,7 +3346,10 @@ function enterTenant(wid){
     /* act as one of their admins so permissions/UI resolve */
     var adm=FAMILY.filter(function(p){return p.admin;})[0]||FAMILY[0];
     if(adm){S.persona=adm.id;save('dtp_persona',adm.id);}
-    ensureActiveParty();ensureVisibleTrip();
+    ensureActiveParty();
+    /* auto-pick one of their trips so the agenda/plan/lists tabs have content
+       (otherwise every tab falls back to the "no trip" landing) */
+    if(noTripSelected()){var vt=visibleTrips();S.tripId=(vt[0]&&vt[0].id)||null;saveTripId();}
     closeScreen();S.tab='home';render();toast('Managing '+partyLabel());
   }).catch(function(e){toast(e.message||'Could not open');});
 }
@@ -4158,7 +4162,9 @@ function render(){
   if(noTripSelected()){
     document.getElementById('strip-host').innerHTML='';
     document.getElementById('filter-host').innerHTML='';
-    document.getElementById('app').innerHTML=renderNoTrip();
+    /* the Admin console (people/parties/trips) doesn't need a selected trip —
+       keep it reachable so an empty tenant is still manageable */
+    document.getElementById('app').innerHTML=(S.tab==='admin'&&isAdmin())?renderAdminHub():renderNoTrip();
     document.getElementById('app').style.padding='';
     renderNav();
     return;
