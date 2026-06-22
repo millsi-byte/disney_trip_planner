@@ -3122,15 +3122,17 @@ function scrPartyEdit(){
       +'<span style="min-width:0"><span class="hub-title" style="font-size:14px">'+esc(p.name)+(p.admin?' · Admin':'')+'</span></span></button>'
       +'<button class="btn-secondary" style="margin:0;width:auto;padding:6px 12px;min-height:0;flex-shrink:0" onclick="partyRemoveMember(\''+gid+'\',\''+p.id+'\')">Remove</button></div>';
   }
-  /* add a member from the rest of the roster */
+  /* add a member — pull someone from the roster, or create a brand-new person */
   var avail=FAMILY.filter(function(x){return !personInParty(x,gid);});
+  body+='<div class="hub-section-label" style="margin-left:0">Add a member</div>';
   if(avail.length){
-    body+='<div class="hub-section-label" style="margin-left:0">Add a member</div><div class="whoselect">';
+    body+='<div class="whoselect">';
     for(var j=0;j<avail.length;j++){var a=avail[j];
       body+='<div class="who-opt" onclick="partyAddMember(\''+gid+'\',\''+a.id+'\')"><span class="wdot" style="background:'+a.color+'">'+esc(a.name[0])+'</span>'+esc(a.name)+'<span class="wcheck">'+IC.plus+'</span></div>';
     }
     body+='</div>';
   }
+  body+='<button class="btn-secondary" onclick="addPersonToParty(\''+gid+'\')">'+IC.plus+' New person</button>';
   /* trips assigned to this party */
   var trips=tripsInParty(gid);
   body+='<div class="hub-section-label" style="margin-left:0">Trips ('+trips.length+')</div>';
@@ -3403,10 +3405,12 @@ function scrPersonEdit(){
   /* role */
   body+='<div class="field"><label class="field-label">Role</label>';
   body+='<div class="notify-row'+(S._peAdmin?' on':'')+'" onclick="peToggleAdmin()"><span class="notify-check">'+(S._peAdmin?IC.checkw:'')+'</span><div><div class="notify-lbl">Admin</div><div class="notify-sub">Can manage people and every trip, and delete anything.</div></div></div></div>';
-  /* planning parties this person belongs to */
-  body+='<div class="field"><label class="field-label">Planning Parties</label><div class="gchips">';
+  /* planning parties this person belongs to — tap a party to add/remove (live) */
+  body+='<div class="field"><label class="field-label">Planning Parties</label>';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 6px;font-size:12px">Tap a party to add or remove this person. They can be in several.</div>';
+  body+='<div class="gchips">';
   for(var gi=0;gi<PARTIES.length;gi++){var g=PARTIES[gi],on=S._peParties.has(g.id);
-    body+='<button class="gchip'+(on?' on':'')+'" onclick="peToggleParty(\''+g.id+'\')">'+esc(g.name)+'</button>';}
+    body+='<button class="gchip'+(on?' on':'')+'" onclick="peToggleParty(\''+g.id+'\')">'+(on?IC.checkw+' ':'+ ')+esc(g.name)+'</button>';}
   body+='</div></div>';
   /* trips this person is on (via their parties or direct membership) — tap to open */
   var ptrips=TRIPS.filter(function(t){return (t.members&&t.members.indexOf(pid)>=0)||(t.parties||[]).some(function(g2){return personInParty(p,g2);});});
@@ -3444,7 +3448,17 @@ function backToPeople(){
   S._formInit=null;openScreen({type:'personas'});
 }
 function peToggleAdmin(){S._peAdmin=!S._peAdmin;renderScreen_inplace2();}
-function peToggleParty(gid){if(!S._peParties)S._peParties=new Set();if(S._peParties.has(gid))S._peParties.delete(gid);else S._peParties.add(gid);renderScreen_inplace2();}
+function peToggleParty(gid){
+  var pid=(S.screen&&S.screen.pid),p=person(pid);
+  if(!S._peParties)S._peParties=new Set((p&&p.parties)||[]);
+  if(S._peParties.has(gid)){
+    if(S._peParties.size<=1){toast('Everyone needs at least one party');return;}
+    S._peParties.delete(gid);
+  }else S._peParties.add(gid);
+  /* commit live so membership sticks even if you navigate away to a trip */
+  if(p){var gs=[];S._peParties.forEach(function(x){gs.push(x);});p.parties=gs;save('dtp_family',FAMILY);}
+  renderScreen_inplace2();
+}
 /* commit the safe person fields then jump to a trip (so edits aren't lost) */
 function peGotoTrip(pid,tid){var p=person(pid);if(p){var nm=val('pe-name');if(nm)p.name=nm;var c=document.getElementById('pe-color');if(c&&c.value)p.color=c.value;var gs=[];if(S._peParties)S._peParties.forEach(function(x){gs.push(x);});if(gs.length)p.parties=gs;captureTravel(p,'pe');S._newPerson=null;save('dtp_family',FAMILY);}openTripPlanning(tid);}
 function savePersonEdit(pid){
@@ -3478,6 +3492,19 @@ function addPersona(){
   save('dtp_family',FAMILY);saveLists();
   S._newPerson=id;   /* provisional until saved — cancelling discards it */
   S._formInit=null;openScreen({type:'personedit',pid:id});   /* jump straight into the new person's form */
+}
+/* create a new person already in a specific party (from the party page) */
+function addPersonToParty(gid){
+  if(partyById(gid))ptSaveName(gid);   /* keep any unsaved party-name edit */
+  var used={};FAMILY.forEach(function(p){used[p.color]=1;});
+  var col=PALETTE[FAMILY.length%PALETTE.length][0];
+  for(var i=0;i<PALETTE.length;i++)if(!used[PALETTE[i][0]]){col=PALETTE[i][0];break;}
+  var id='p'+Date.now();
+  FAMILY.push({id:id,name:'New Person',color:col,parties:[gid||S.partyId||(PARTIES[0]||{}).id]});
+  ALL_IDS=FAMILY.map(function(p){return p.id;});
+  PACKING[id]=[];
+  save('dtp_family',FAMILY);saveLists();
+  S._newPerson=id;S._formInit=null;openScreen({type:'personedit',pid:id});
 }
 function delPersona(id){
   if(FAMILY.length<=1){toast('Keep at least one person');return;}
