@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='109';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='110';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2746,11 +2746,19 @@ function reviewItem(kind,type,val,extra){
 
 /* New Trip */
 function scrNewTrip(){
+  if(S._formInit!=='newtrip'){S._ntPartyId=S.partyId||(PARTIES[0]||{}).id;S._formInit='newtrip';}
+  if(!partyById(S._ntPartyId))S._ntPartyId=(PARTIES[0]||{}).id;
   var body='';
   body+='<div class="field"><label class="field-label">Trip name</label><input class="field-input" id="nt-name" placeholder="e.g. Thanksgiving 2026"></div>';
   body+='<div class="field-row"><div class="field"><label class="field-label">Start date</label><input class="field-input" type="date" id="nt-start"></div>';
   body+='<div class="field"><label class="field-label">End date</label><input class="field-input" type="date" id="nt-end"></div></div>';
-  body+=memberSelectField();
+  /* a trip belongs to one planning party — everyone in it comes on the trip */
+  body+='<div class="field"><label class="field-label">Planning party <span class="opt">(who this trip is for)</span></label><div class="gchips">';
+  for(var gi=0;gi<PARTIES.length;gi++){var g=PARTIES[gi],on=(S._ntPartyId===g.id);
+    body+='<button class="gchip'+(on?' on':'')+'" onclick="pickNewTripParty(\''+g.id+'\')">'+(on?IC.checkw+' ':'')+esc(g.name)+'</button>';}
+  body+='</div>';
+  var _np=partyPeople(S._ntPartyId);
+  body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0;font-size:12px">'+_np.length+' '+(_np.length===1?'person':'people')+' from <strong>'+esc((partyById(S._ntPartyId)||{}).name||'')+'</strong> will be on this trip. Manage members in Admin → Planning Parties.</div></div>';
   body+='<div class="hub-section-label" style="margin-left:0">Start from your template?</div>';
   body+=tmplCard('mine','My template','Each person\'s packing & to-do pre-loaded',true);
   body+=tmplCard('blank','Blank trip','Start completely fresh',false);
@@ -2767,17 +2775,17 @@ function tmplCard(id,title,sub,people){
   if(people){h+='<div class="tmpl-people">';for(var i=0;i<FAMILY.length;i++)h+='<span class="wdot" style="width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;background:'+FAMILY[i].color+'">'+FAMILY[i].name[0]+'</span>';h+='</div>';}
   return h+'</div></div>';
 }
+function pickNewTripParty(gid){S._ntPartyId=gid;renderScreen_inplace2();}
 function createTrip(){
   var nm=val('nt-name')||'New Trip';
   var start=val('nt-start'),end=val('nt-end');
-  var pool=partyPeople(S.partyId).map(function(p){return p.id;});
-  var mem=S._members?pool.filter(function(id){return S._members.has(id);}):pool.slice();
-  if(!mem.length)mem=pool.slice();
+  var partyId=S._ntPartyId||S.partyId||(PARTIES[0]||{}).id;
+  var mem=partyPeople(partyId).map(function(p){return p.id;});   /* everyone in the chosen party */
   if(mem.indexOf(S.persona)<0)mem.push(S.persona); /* creator is always on their own trip */
   var col=PALETTE[TRIPS.length%PALETTE.length][0];
   var id='t'+Date.now();
   var dates=(start&&end)?(monOf(start)+' '+(+start.slice(8))+' – '+monOf(end)+' '+(+end.slice(8))+', '+start.slice(0,4)):'Dates TBD';
-  var tripObj={id:id,name:nm,sub:'Walt Disney World',status:'planning',start:start||'',end:end||'',dates:dates,color:col,members:mem,by:S.persona,parties:[S.partyId||(PARTIES[0]||{}).id]};
+  var tripObj={id:id,name:nm,sub:'Walt Disney World',status:'planning',start:start||'',end:end||'',dates:dates,color:col,members:mem,by:S.persona,parties:[partyId]};
   TRIPS.push(tripObj);
   genDays(id);
   var np={},nt=[];
@@ -2789,10 +2797,10 @@ function createTrip(){
   });
   save('dtp_packing_'+id,np);save('dtp_todo_'+id,nt);
   save('dtp_trips',TRIPS);save('dtp_days',DAYS);
-  var optIn=S._notify;S._members=null;
+  var optIn=S._notify;S._members=null;S._ntPartyId=null;S._formInit=null;
   toast('Trip created'+(S.newTmpl==='mine'?' from your template':''));
-  /* land on the new trip's Plan page */
-  saveLists();S.tripId=id;saveTripId();loadLists();S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();S.tab='plan';
+  /* land on the new trip's Plan page — switch to its party so it's visible */
+  saveLists();S.tripId=id;saveTripId();S.partyId=partyId;savePartyId();loadLists();S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();S.tab='plan';
   closeScreen();render();
   notifyMembership(tripObj,[],mem,optIn);
 }
