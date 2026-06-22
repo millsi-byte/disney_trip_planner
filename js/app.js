@@ -1,6 +1,6 @@
 /* ============================================================
    Baseline Tap — App
-   Vanilla JS. Global handlers (matches the prototype's style).
+   Vanilla JS. Global handlers (matches the prototype\'s style).
    ============================================================ */
 
 /* ── Icons ─────────────────────────────────────────────────── */
@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='111';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='112';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -156,7 +156,7 @@ CHAT = load('dtp_chat', CHAT);
 })();
 function saveChat(){save('dtp_chat',CHAT);}
 
-/* per-trip packing / to-do (PACKING/TODO hold the active trip's lists) */
+/* per-trip packing / to-do (PACKING/TODO hold the active trip\'s lists) */
 function listKey(base){return 'dtp_'+base+'_'+S.tripId;}
 function loadLists(){
   if(!S.tripId){PACKING={};TODO=[];return;}   /* no trip selected — nothing to load */
@@ -182,7 +182,7 @@ function genDays(tid){
     cur.setUTCDate(cur.getUTCDate()+1);
   }
 }
-/* reconcile a trip's day records to its start/end range, keeping in-range
+/* reconcile a trip\'s day records to its start/end range, keeping in-range
    days (and their data), adding missing ones, dropping out-of-range ones */
 function reconcileDays(tid){
   var t=tripById(tid);if(!t||!t.start||!t.end)return;
@@ -258,7 +258,7 @@ function trip(){for(var i=0;i<TRIPS.length;i++)if(TRIPS[i].id===S.tripId)return 
 function tripInActiveParty(t){return !t.parties||!t.parties.length||t.parties.indexOf(S.partyId)>=0;}
 function visibleTrips(){
   if(isAdmin())return TRIPS.filter(tripInActiveParty);
-  /* others: trips in the active party they're on, plus any trip they own
+  /* others: trips in the active party they\'re on, plus any trip they own
      (you never lose your own trip, even if it lives in another party) */
   return TRIPS.filter(function(t){
     if(t.by&&t.by===S.persona)return true;
@@ -267,7 +267,7 @@ function visibleTrips(){
 }
 /* does the current persona have any trip they can see? */
 function hasVisibleTrip(){return !!visibleTrips().length;}
-/* is the current selection empty or pointing at a trip this persona can't see?
+/* is the current selection empty or pointing at a trip this persona can\'t see?
    "no trip selected" is a deliberate state — you only leave it by picking a trip */
 function noTripSelected(){
   if(!S.tripId)return true;
@@ -279,7 +279,7 @@ function noTripSelected(){
    visible selection is kept; anything else is blanked so render() shows the
    no-trip landing and the user purposely picks the trip they want. */
 function ensureVisibleTrip(){ if(noTripSelected())S.tripId=null; }
-/* who may edit a trip's details: admins or the person who created it */
+/* who may edit a trip\'s details: admins or the person who created it */
 function canEditTrip(t){t=t||trip();return isAdmin()||!!(t&&t.by&&t.by===S.persona);}
 /* personas assigned to the current trip (drives filters + who-select) */
 function tripMembers(){var t=trip();return (t&&t.members&&t.members.length)?t.members.filter(function(id){return !!person(id);}):partyPeople(S.partyId).map(function(p){return p.id;});}
@@ -290,7 +290,7 @@ function tripDays(){return DAYS.filter(function(d){return d.trip===S.tripId;}).s
 function day(){var ds=tripDays();return ds[S.dayIdx]||ds[0]||null;}
 function dayByDate(ds){for(var i=0;i<DAYS.length;i++)if(DAYS[i].trip===S.tripId&&DAYS[i].date===ds)return DAYS[i];return null;}
 function fmtDay(ds){var d=dayByDate(ds);return d?(monOf(ds)+" "+d.d+" · "+d.dl):ds;}
-/* park visits — first-class items that drive each day's park */
+/* park visits — first-class items that drive each day\'s park */
 function visitsFor(ds){return VISITS.filter(function(v){return v.trip===S.tripId&&v.day===ds;});}
 function dayPrimaryPark(ds){var vs=visitsFor(ds).filter(function(v){return visible(v.who);});if(!vs.length)vs=visitsFor(ds);return vs.length?vs[0].park:null;}
 function pkOf(ds){var p=dayPrimaryPark(ds);return (p&&PARKS[p])?PARKS[p]:PARKS.trv;}
@@ -302,8 +302,8 @@ function timingLbl(t){return TIMING[t]||'Day';}
 
 /* person-filter visibility.
    A non-empty S.filter (specific people picked) always wins; otherwise the
-   primary mode applies: all = everything, mine = items I'm on (incl. everyone-
-   items), notme = items I'm NOT on (the ones I could ask to join). */
+   primary mode applies: all = everything, mine = items I\'m on (incl. everyone-
+   items), notme = items I\'m NOT on (the ones I could ask to join). */
 function visible(who){
   if(S.filter&&S.filter.size){
     if(who==="all") return true;           // everyone-items always show
@@ -372,7 +372,7 @@ function pillify(t){
 function isFlightRow(it){return (it.crit&&it.crit.toLowerCase().indexOf('flight')>=0)||/^(Depart|Arrive)\b/.test(it.x);}
 /* "Admin" is a persona role. Being signed in as an admin persona grants all
    admin rights; switching into an admin persona is itself PIN-protected, so the
-   admin's login PIN is effectively the admin PIN — the two are one and the same. */
+   admin\'s login PIN is effectively the admin PIN — the two are one and the same. */
 function isAdmin(){var p=person(S.persona);return !!(p&&p.admin);}            /* global admin (any trip) */
 function isTripOwner(t){t=t||trip();return !!(t&&t.by&&t.by===S.persona);}    /* owner of this trip */
 /* may edit/delete an item: its creator, the trip owner, or a global admin */
@@ -386,9 +386,9 @@ function ownOK(it){
   var who=(it&&it.by&&person(it.by))?person(it.by).name:'its creator';
   toast('Only '+who+', the trip owner or an admin can change this'); return false;
 }
-/* critical/irreversible deletes: caution + the acting person's own PIN */
+/* critical/irreversible deletes: caution + the acting person\'s own PIN */
 function confirmCritical(label,cb){
-  if(!confirm('⚠️ Delete this '+label+'?\n\nThis can’t be undone. Make sure you really mean to.')) return;
+  if(!confirm('⚠️ Delete this '+label+'?\n\nThis can\'t be undone. Make sure you really mean to.')) return;
   var me=person(S.persona);
   if(me&&me.pin){
     askPin({title:'Confirm with your PIN',sub:'Enter your PIN to delete this '+label+'.'},function(e){
@@ -414,7 +414,7 @@ function screenItem(){
   for(var i=0;i<coll.length;i++)if(coll[i].id===id)return coll[i];
   return null;
 }
-/* remove just yourself from an item's people (the self-removal exception) */
+/* remove just yourself from an item\'s people (the self-removal exception) */
 function removeMe(){
   var it=screenItem();if(!it){closeScreen();return;}
   var cat=CAT_OF[S.screen.type]||'';
@@ -425,11 +425,11 @@ function removeMe(){
   if(cat) notifyChange({trip:it.trip,cat:cat,label:notifLabel(cat,it),item:it,oldWho:oldWho,newWho:it.who,actor:S.persona,optIn:S._notify});
   toast('Removed you from this');closeScreen();render();
 }
-/* add yourself to an item you can see but aren't on (self-add / "request back in") */
+/* add yourself to an item you can see but aren\'t on (self-add / "request back in") */
 function joinMe(){
   var it=screenItem();if(!it){closeScreen();return;}
   var cat=CAT_OF[S.screen.type]||'';
-  if(it.who==='all'){toast('You’re already included');closeScreen();return;}
+  if(it.who==='all'){toast('You\'re already included');closeScreen();return;}
   var oldWho=it.who;
   var arr=Array.isArray(it.who)?it.who.slice():[];
   if(arr.indexOf(S.persona)<0)arr.push(S.persona);
@@ -452,13 +452,13 @@ var CAT_OF={adddining:'Dining',llbook:'Lightning Lane',addll:'Lightning Lane',pr
   showedit:'Show',addflight:'Flight',resortedit:'Resort',visedit:'Park visit'};
 
 function pname(id){var p=person(id);return p?p.name:'Someone';}
-/* a who-bearing item's responsible person: its creator, else the trip owner */
+/* a who-bearing item\'s responsible person: its creator, else the trip owner */
 function creatorOf(item,tid){
   if(item&&item.by)return item.by;
   var t=tripById(tid||(item&&item.trip)||S.tripId);
   return t?t.by:null;
 }
-/* normalise an item's `who` to an explicit member array for a given trip */
+/* normalise an item\'s `who` to an explicit member array for a given trip */
 function whoArrFor(who,tid){
   if(who==='all'){var t=tripById(tid)||trip();return (t&&t.members&&t.members.length)?t.members.slice():tripMembers();}
   return Array.isArray(who)?who.slice():[];
@@ -536,7 +536,7 @@ function notifyChange(o){
 }
 function tripMembersFor(tid){var t=tripById(tid)||trip();return (t&&t.members&&t.members.length)?t.members.slice():tripMembers();}
 
-/* the notification we'd deliver a given recipient for this change */
+/* the notification we\'d deliver a given recipient for this change */
 function notifForRecipient(id,o){
   var b=(S._notifById||{})[id];if(b)return b;
   /* someone the actor chose to also tell — a plain heads-up */
@@ -546,12 +546,12 @@ function notifForRecipient(id,o){
     var oldA=whoArrFor(o.oldWho,o.trip),newA=whoArrFor(o.newWho,o.trip);
     if(oldA.indexOf(o.actor)>=0&&newA.indexOf(o.actor)<0) text=who+' left “'+o.label+'” ('+o.cat+')';
     else if(oldA.indexOf(o.actor)<0&&newA.indexOf(o.actor)>=0) text=who+' joined “'+o.label+'” ('+o.cat+')';
-    else text=who+' updated who’s on “'+o.label+'” ('+o.cat+')';
+    else text=who+' updated who\'s on “'+o.label+'” ('+o.cat+')';
   }
   return {to:id,from:o.actor,trip:o.trip,cat:o.cat,label:o.label,kind:kind,text:text};
 }
 /* deleting an item that had people on it — offer to alert them (and the
-   creator, if an admin/owner is deleting someone else's). Same status gate. */
+   creator, if an admin/owner is deleting someone else\'s). Same status gate. */
 function notifyDelete(cat,item){
   if(!item||!cat)return;
   var actor=S.persona,tid=item.trip||S.tripId,who=pname(actor),label=notifLabel(cat,item);
@@ -675,7 +675,7 @@ function notifyField(cat){
   if(isActionCat(cat))h+='<div class="notify-note amber">'+IC.warn+' Whoever booked this is always told when people join or leave — it may need a real reservation change.</div>';
   return h+'</div>';
 }
-/* open the picker for a general heads-up when who didn't change but notify is on */
+/* open the picker for a general heads-up when who didn\'t change but notify is on */
 function openNotifAll(cat,rec){
   var actor=S.persona,tid=rec.trip||S.tripId,label=notifLabel(cat,rec);
   var members=whoArrFor(rec.who,tid).filter(function(id){return id!==actor&&person(id);});
@@ -788,7 +788,7 @@ function openScreen(def){
   S.pkForm=null;S.pkScope='mine';S._delsect=null;S._pksect=null;ADD.psect=null;
   S._formLoc=null;S._formTier=null;S._formInit=null;S._members=null;S._formColor=null;
   S._notify=notifDefault();
-  if(def.type==='newtrip')S._notify=true;                                   /* inviting people defaults to on */
+  if(def.type==='newtrip'){S._notify=true;S._formInit=null;S._ntStep=null;S._ntPartyId=null;S._ntNewParty=false;S._ntProvParty=null;S._ntTripId=null;S._ntFirstRun=false;S._ntReturnTo=null;}
   else if(def.type==='tripedit'){var _et=tripById(def.tripId);S._notify=!!(_et&&_et.status==='active');}
   if(def.type==='addflight'){S.formLegs=def.edit?((FLIGHTS.filter(function(f){return f.id===def.edit;})[0]||{legs:[0]}).legs.length):1;}
   else{S.formLegs=1;}
@@ -798,7 +798,7 @@ function openScreen(def){
 function closeScreen(){var host=document.getElementById('screen-host');var s=host&&host.firstChild;if(s){s.classList.remove('in');setTimeout(function(){S.screen=null;renderOverlay();},260);}else{S.screen=null;renderOverlay();}}
 
 /* PIN entry — custom modal so we get a numeric keypad + auto-focused cursor
-   (the native prompt() can't do either). Async: calls cb(value) or cb(null). */
+   (the native prompt() can\'t do either). Async: calls cb(value) or cb(null). */
 function askPin(opts,cb){
   opts=opts||{};
   /* test hook: synchronous answer when running headless */
@@ -834,7 +834,7 @@ function finishLogin(id){
 
 /* ── single sign-on via the cloud ──────────────────────────
    When a cloud user is signed in, the person they ARE is whichever persona
-   carries their uid. First time, they claim one; after that it's automatic
+   carries their uid. First time, they claim one; after that it\'s automatic
    on every device. No PINs anywhere. */
 function cloudUid(){return (window.CLOUD&&window.CLOUD.user)?window.CLOUD.user.uid:null;}
 function personaForUid(uid){if(!uid)return null;for(var i=0;i<FAMILY.length;i++)if(FAMILY[i].uid===uid)return FAMILY[i];return null;}
@@ -884,14 +884,14 @@ function onCloudSynced(){
   /* 4. not linked / matched / invited → access depends on authorization */
   if(window.CLOUD.isSuper||window.CLOUD.isOwner){
     if(window.CLOUD.inParty&&window.CLOUD.inParty())
-      openScreen({type:'claim'});      /* returning owner whose seat isn't linked → pick */
+      openScreen({type:'claim'});      /* returning owner whose seat isn\'t linked → pick */
     else
-      openScreen({type:'wizard'});     /* authorized new owner → guided setup */
+      openScreen({type:'newtrip'});     /* authorized new owner → guided setup */
   }else{
     openScreen({type:'noaccess'});     /* not on the guest list */
   }
 }
-/* called by cloud.js when there's no signed-in cloud user */
+/* called by cloud.js when there\'s no signed-in cloud user */
 function onCloudSignedOut(){
   try{localStorage.removeItem('dtp_persona');}catch(e){}
   openScreen({type:'signin'});   /* the gate covers the app until they sign in again */
@@ -903,7 +903,7 @@ function claimPersona(id){
   if(!uid){toast('Sign in first');return;}
   /* no stealing: a seat already linked to a different account is off-limits */
   if(p.uid&&p.uid!==uid){toast(p.name+' is already taken — an admin can unlink it first');return;}
-  /* no self-promotion: you can't grab an admin seat unless you're already an
+  /* no self-promotion: you can\'t grab an admin seat unless you\'re already an
      admin or no admin has been set up yet (the very first owner) */
   var adminExists=FAMILY.some(function(x){return x.admin&&x.uid&&x.uid!==uid;});
   if(p.admin&&adminExists&&!isAdmin()){toast('Only an admin can take an admin seat');return;}
@@ -914,7 +914,7 @@ function claimPersona(id){
   S.persona=id;save('dtp_persona',id);
   ensureActiveParty();ensureVisibleTrip();
   closeScreen();
-  /* if you brought your own data and aren't sharing yet, spin up a party so
+  /* if you brought your own data and aren\'t sharing yet, spin up a party so
      you get a code to invite others — no separate "create" step needed */
   if(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user&&window.CLOUD.inParty&&!window.CLOUD.inParty()){
     window.CLOUD.createParty('Planning Party').then(function(){toast('You are '+p.name);render();}).catch(function(){toast('You are '+p.name);render();});
@@ -930,7 +930,7 @@ function unclaimPersona(id){
 }
 /* sign out — cloud sign-out when available, else just forget the local persona */
 function logoutPersona(){
-  try{if(window.CLOUD&&window.CLOUD.adminWid){localStorage.removeItem('dtp_adminWid');}}catch(e){}   /* never sign out stranded in someone else's space */
+  try{if(window.CLOUD&&window.CLOUD.adminWid){localStorage.removeItem('dtp_adminWid');}}catch(e){}   /* never sign out stranded in someone else\'s space */
   if(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user){
     window.CLOUD.signOut();   /* triggers onCloudSignedOut → sign-in screen */
     return;
@@ -956,7 +956,7 @@ function refreshLists(){
   render();
 }
 var ADD={};
-/* who may manage a person's packing list / its sections: the owner or oversight */
+/* who may manage a person\'s packing list / its sections: the owner or oversight */
 function pkCanList(pid){return pid===S.persona||listOversight();}
 /* who may change a single item: list manager, or whoever added it */
 function pkCanItem(pid,it){return pkCanList(pid)||(it&&it.by===S.persona);}
@@ -1020,11 +1020,11 @@ function pkSaveAsTemplate(){
   savePackTmpl();toast('Saved as your global packing template');
 }
 /* ── To Do — assignable per-trip items ─────────────────────────
-   Visibility: you see an item if you created it (`by`) or it's assigned
+   Visibility: you see an item if you created it (`by`) or it\'s assigned
    to you (`who`). Creator + global admin may edit/delete; creator,
    assignee or admin may toggle done; an assignee may unassign themselves. */
-/* who gets full list oversight: the global admin, or this trip's owner
-   (they're organising the trip and keeping everyone on track) */
+/* who gets full list oversight: the global admin, or this trip\'s owner
+   (they\'re organising the trip and keeping everyone on track) */
 function listOversight(){return isAdmin()||isTripOwner();}
 function todoOversight(){return listOversight();}
 function tdById(id){for(var i=0;i<TODO.length;i++)if(TODO[i].id===id)return TODO[i];return null;}
@@ -1186,7 +1186,7 @@ function dayConditions(d){
   }
   return o;
 }
-/* badges derived from the day's items (+ any custom one-off tags) */
+/* badges derived from the day\'s items (+ any custom one-off tags) */
 function dayBadges(d){
   var date=d.date,out=[],vis=function(w){return visible(w);};
   if(flightsFor(date).filter(function(f){return vis(f.who);}).length) out.push('Travel Day');
@@ -1506,7 +1506,7 @@ function renderListsHub(){
       ? hubRow(['Packing List',IC.suitcase,'#92400E',pkMyCount()+' items','packing'])
       : listStarterCard('Packing List',IC.suitcase,'#92400E','packing',pkTmplCount());
   o+=hubRow(['Need to Buy',IC.cart,'#B45309',needBuyCount()+' items','needbuy']);
-  o+='<div class="body-empty" style="text-align:left;padding:12px 2px 0;font-size:12px">Your To&nbsp;Do and Packing lists are private to you; the trip owner and admins can see everyone’s. <strong>Need to Buy</strong> is shared with the whole group.</div>';
+  o+='<div class="body-empty" style="text-align:left;padding:12px 2px 0;font-size:12px">Your To&nbsp;Do and Packing lists are private to you; the trip owner and admins can see everyone\'s. <strong>Need to Buy</strong> is shared with the whole group.</div>';
   o+='<div class="hub-section-label">Master templates</div>';
   o+='<button class="hub-row" onclick="openScreen({type:\'todotmpl\'})"><div class="hub-icon" style="background:#166534">'+IC.checks+'</div>'
     +'<div class="hub-main"><div class="hub-title">Global To Do Template</div><div class="hub-sub">Reused when you start a new trip</div></div><div class="chev">'+IC.chev+'</div></button>';
@@ -1574,7 +1574,7 @@ function renderAdminHub(){
   if(window.CLOUD&&window.CLOUD.isSuper){
     o+='<div class="hub-section-label">Super Admin</div>';
     o+='<button class="hub-row" onclick="openTenants()"><div class="hub-icon" style="background:#7C2D12">'+IC.grid+'</div>'
-      +'<div class="hub-main"><div class="hub-title">All Tenants</div><div class="hub-sub">Every owner’s parties, people & trips</div></div><div class="chev">'+IC.chev+'</div></button>';
+      +'<div class="hub-main"><div class="hub-title">All Tenants</div><div class="hub-sub">Every owner\'s parties, people & trips</div></div><div class="chev">'+IC.chev+'</div></button>';
     o+='<button class="hub-row" onclick="openOwners()"><div class="hub-icon" style="background:#0F766E">'+IC.users+'</div>'
       +'<div class="hub-main"><div class="hub-title">Authorized Users</div><div class="hub-sub">Who may sign in to the app</div></div><div class="chev">'+IC.chev+'</div></button>';
   }
@@ -1697,7 +1697,7 @@ function packScopeToggle(){
 }
 function setPkScope(s){S.pkScope=s;S.pkForm=null;ADD.pk=null;ADD.psect=null;S._pksect=null;refreshLists();}
 function packEveryoneView(){
-  var o='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">Everyone’s packing lists for '+esc(trip().name)+'. As the trip owner or an admin you can edit any item.</div>';
+  var o='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">Everyone\'s packing lists for '+esc(trip().name)+'. As the trip owner or an admin you can edit any item.</div>';
   tripMembers().forEach(function(pid){o+=packingPerson(pid);});
   return o;
 }
@@ -1789,7 +1789,7 @@ function pkItemEditor(pid,c,j){
 }
 function pkBuyerField(){
   var mem=tripMembers();
-  var h='<div class="field" style="margin:0"><label class="field-label">Who buys it <span class="opt">(defaults to who it’s for)</span></label><div class="whoselect">';
+  var h='<div class="field" style="margin:0"><label class="field-label">Who buys it <span class="opt">(defaults to who it\'s for)</span></label><div class="whoselect">';
   for(var i=0;i<mem.length;i++){var p=person(mem[i]);if(!p)continue;var on=S._who&&S._who.has(p.id);
     h+='<div class="who-opt'+(on?' on':'')+'" onclick="toggleWho(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+'<span class="wcheck">'+IC.checkw.replace('currentColor','#15803D')+'</span></div>';
   }
@@ -1829,7 +1829,7 @@ function todoBody(){
   }
   return o;
 }
-/* admin lens: switch between your own list and everyone's */
+/* admin lens: switch between your own list and everyone\'s */
 function todoScopeToggle(){
   var all=S.tdScope==='all';
   var o='<div class="seg" style="margin-bottom:12px">';
@@ -1839,9 +1839,9 @@ function todoScopeToggle(){
   return o;
 }
 function setTdScope(s){S.tdScope=s;S.tdForm=null;refreshTodo();}
-/* admin-only oversight: each person's list across the trip */
+/* admin-only oversight: each person\'s list across the trip */
 function todoEveryoneView(){
-  var o='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">Everyone’s to-do lists for '+esc(trip().name)+'. As the trip owner or an admin you can check, edit or remove any item.</div>';
+  var o='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">Everyone\'s to-do lists for '+esc(trip().name)+'. As the trip owner or an admin you can check, edit or remove any item.</div>';
   var mem=tripMembers();
   for(var p=0;p<mem.length;p++){var pid=mem[p];
     var items=tdMine(pid).filter(tdCanSee);   /* hide others' private items from oversight */
@@ -1912,7 +1912,7 @@ function todoEditor(item){
   o+='<div class="field" style="margin:0"><label class="field-label">When <span class="opt">(optional)</span></label><input class="field-input" id="td-when" placeholder="e.g. 14 days" value="'+(item&&item.when?esc(item.when):'')+'"></div>';
   o+=todoAssignField(creator);
   o+='<div class="field" style="margin:0"><label class="field-label">Privacy</label><div class="seg"><button class="seg-btn'+(!S._tdPriv?' on':'')+'" onclick="tdFormPriv(false)">Visible</button><button class="seg-btn'+(S._tdPriv?' on book':'')+'" onclick="tdFormPriv(true)">'+IC.lock+' Hidden</button></div></div>';
-  if(S._tdPriv)o+='<div class="priv-note">Hidden from the trip owner and admins. Anyone you assign it to still sees it; otherwise it’s just yours.</div>';
+  if(S._tdPriv)o+='<div class="priv-note">Hidden from the trip owner and admins. Anyone you assign it to still sees it; otherwise it\'s just yours.</div>';
   o+=notifyField('To Do');
   o+='<div style="display:flex;gap:8px"><button class="btn-primary" style="margin:0;flex:1" onclick="tdSave()">Save</button><button class="btn-secondary" style="margin:0;flex:1" onclick="tdCancelForm()">Cancel</button></div>';
   o+='</div>';
@@ -2012,7 +2012,7 @@ function renderSheet(){
 /* slide-in screen router */
 function renderScreen(){
   var t=S.screen.type;
-  /* editing an existing item you don't own → limited view (with self-removal) */
+  /* editing an existing item you don\'t own → limited view (with self-removal) */
   var EDIT={adddining:1,llbook:1,addll:1,addflight:1,resortedit:1,showedit:1,predit:1,visedit:1,hoursedit:1,rbedit:1,stopedit:1};
   if(EDIT[t]){var _it=screenItem();if(_it&&!canManage(_it))return scrLimitedItem(_it);}
   if(t==='addflight') return scrAddFlight();
@@ -2026,7 +2026,6 @@ function renderScreen(){
   if(t==='signin')    return scrSignIn();
   if(t==='claim')     return scrClaim();
   if(t==='noaccess')  return scrNoAccess();
-  if(t==='wizard')    return scrWizard();
   if(t==='parties')   return scrParties();
   if(t==='partyedit') return scrPartyEdit();
   if(t==='personas')  return scrPersonas();
@@ -2093,7 +2092,7 @@ function scrLimitedItem(it){
     body+='<button class="btn-secondary" onclick="removeMe()">Remove me from this</button>';
     body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px">Takes you off this item — it stays for everyone else.'+(act?' Because this is a real booking, '+esc(by)+' is notified so they can update the reservation.':'')+'</div>';
   }else if(it.who==='all'){
-    body+='<div class="body-empty" style="text-align:left;padding:0 2px">This includes everyone on the trip, so you’re already on it.</div>';
+    body+='<div class="body-empty" style="text-align:left;padding:0 2px">This includes everyone on the trip, so you\'re already on it.</div>';
   }else{
     body+='<button class="btn-secondary green" onclick="joinMe()">Add me to this</button>';
     body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px">'+(act?'Adds you to the group and notifies <strong>'+esc(by)+'</strong> to update the actual reservation.':'Adds you in — anyone on the trip can join.')+'</div>';
@@ -2373,7 +2372,7 @@ function parseImportText(raw){
   if(!raw||!raw.trim())return null;
   var s=raw
     .replace(/[“”„‟″‶]/g,'"')   /* curly/smart double quotes → " */
-    .replace(/[‘’‚‛′‵]/g,"'")   /* curly/smart single quotes → ' */
+    .replace(/[''‚‛′‵]/g,"'")   /* curly/smart single quotes → ' */
     .trim().replace(/^```(json)?/i,'').replace(/```$/,'').trim();
   try{return JSON.parse(s);}catch(e){}
   var a=s.indexOf('{'),b=s.lastIndexOf('}');
@@ -2442,8 +2441,8 @@ function buildImportItem(it){
   }
   return {type:it.type||'?',error:'Unknown type "'+(it.type||'')+'"'};
 }
-/* non-blocking guard: does a built item's date fall outside the selected
-   trip's range? Returns a friendly warning string, or '' if it fits / unknown. */
+/* non-blocking guard: does a built item\'s date fall outside the selected
+   trip\'s range? Returns a friendly warning string, or '' if it fits / unknown. */
 function importDateWarn(rec,type){
   var t=trip();if(!t||!t.start||!t.end||!rec)return '';
   var lo=t.start,hi=t.end;
@@ -2503,7 +2502,7 @@ function importCsvTemplate(){
   var rows=[IMPORT_CSV_COLS];
   /* example rows — replace or delete these before importing */
   var ex={
-    resort:{type:'resort',name:"Disney's Pop Century",room:'Standard Room',checkin:'2026-07-14',checkout:'2026-07-16',conf:'A10293847',status:'booked'},
+    resort:{type:'resort',name:"Disney\'s Pop Century",room:'Standard Room',checkin:'2026-07-14',checkout:'2026-07-16',conf:'A10293847',status:'booked'},
     dining:{type:'dining',name:'Space 220',day:'2026-07-15',meal:'Dinner',time:'6:45 PM',park:'ep',loc:'in',status:'reserved'},
     lightning:{type:'lightning',ride:'Rise of the Resistance',day:'2026-07-17',park:'hs',tier:'sp',status:'planning'},
     flight:{type:'flight',label:'Outbound',status:'booked',airline:'Southwest',num:'WN 4657',depApt:'BOS',depCity:'Boston',depTime:'5:45 AM',depDate:'2026-07-14',arrApt:'MCO',arrCity:'Orlando',arrTime:'11:50 AM',arrDate:'2026-07-14'}
@@ -2608,7 +2607,7 @@ var IMPORT_REQ={Resort:['name'],Dining:['name','day'],'Lightning Lane':['ride','
 function importEditOpen(i){
   var e=(S._importItems||[])[i];if(!e||!e.rec)return;
   S._importEdit=i;
-  /* seed the who-select from the item's current assignment (defaults to everyone) */
+  /* seed the who-select from the item\'s current assignment (defaults to everyone) */
   S._who=new Set((e.rec.who==='all'||!e.rec.who)?tripMembers():e.rec.who);
   renderScreen_inplace2();
 }
@@ -2744,34 +2743,88 @@ function reviewItem(kind,type,val,extra){
   return h+'</div></div>';
 }
 
-/* New Trip */
-function scrNewTrip(){
-  if(S._formInit!=='newtrip'){S._ntPartyId=S.partyId||(PARTIES[0]||{}).id;S._formInit='newtrip';}
-  if(!partyById(S._ntPartyId))S._ntPartyId=(PARTIES[0]||{}).id;
-  var body='';
-  body+='<div class="field"><label class="field-label">Trip name</label><input class="field-input" id="nt-name" placeholder="e.g. Thanksgiving 2026"></div>';
-  body+='<div class="field-row"><div class="field"><label class="field-label">Start date</label><input class="field-input" type="date" id="nt-start"></div>';
-  body+='<div class="field"><label class="field-label">End date</label><input class="field-input" type="date" id="nt-end"></div></div>';
-  /* a trip belongs to one planning party — everyone in it comes on the trip */
-  body+='<div class="field"><label class="field-label">Planning party <span class="opt">(who this trip is for)</span></label><div class="gchips">';
-  for(var gi=0;gi<PARTIES.length;gi++){var g=PARTIES[gi],on=(S._ntPartyId===g.id);
-    body+='<button class="gchip'+(on?' on':'')+'" onclick="pickNewTripParty(\''+g.id+'\')">'+(on?IC.checkw+' ':'')+esc(g.name)+'</button>';}
-  body+='</div>';
-  var _np=partyPeople(S._ntPartyId);
-  body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0;font-size:12px">'+_np.length+' '+(_np.length===1?'person':'people')+' from <strong>'+esc((partyById(S._ntPartyId)||{}).name||'')+'</strong> will be on this trip. Manage members in Admin → Planning Parties.</div></div>';
-  body+='<div class="field"><label class="field-label">Notifications</label>';
-  body+='<div class="notify-row'+(S._notify?' on':'')+'" onclick="notifToggle()"><span class="notify-check">'+(S._notify?IC.checkw:'')+'</span><div><div class="notify-lbl">Tell people they’re on this trip</div><div class="notify-sub">When you create it, you’ll choose who to notify that they’ve been added.</div></div></div></div>';
-  body+='<button class="btn-primary" onclick="createTrip()">Create trip</button>';
-  body+='<button class="btn-secondary" onclick="closeScreen();openScreen({type:\'import\'})">Import details from a file instead</button>';
-  return screenShell('New Trip',body,null,null,'Cancel');
+/* ── New Trip Wizard ─────────────────────────────────────── */
+function ntInit(){
+  if(S._formInit==='newtrip')return;
+  S._ntFirstRun=!PARTIES.length;
+  if(S._ntFirstRun){
+    resetToBlank();
+    if(window.CLOUD&&window.CLOUD.inParty&&!window.CLOUD.inParty()&&window.CLOUD.createParty)
+      window.CLOUD.createParty('My Planning Party').catch(function(){});
+    S._ntProvParty=(PARTIES[0]||{}).id||null;
+  }
+  S._ntStep='party';
+  S._ntNewParty=S._ntFirstRun;
+  S._ntPartyId=S._ntFirstRun?((PARTIES[0]||{}).id||null):(S.partyId||(PARTIES[0]||{}).id||null);
+  if(!S._ntProvParty)S._ntProvParty=null;
+  S._members=null;
+  S._formInit='newtrip';
 }
-function pickNewTripParty(gid){S._ntPartyId=gid;renderScreen_inplace2();}
-function createTrip(){
-  var nm=val('nt-name')||'New Trip';
+function ntStep(s){S._ntStep=s;renderScreen_inplace2();}
+function ntPickParty(gid){S._ntPartyId=gid;S._ntNewParty=false;renderScreen_inplace2();}
+function ntToggleNewParty(){
+  S._ntNewParty=!S._ntNewParty;
+  if(!S._ntNewParty&&S._ntProvParty){
+    PARTIES=PARTIES.filter(function(x){return x.id!==S._ntProvParty;});
+    FAMILY.forEach(function(p){if(p.parties){p.parties=p.parties.filter(function(g){return g!==S._ntProvParty;});if(!p.parties.length&&PARTIES.length)p.parties=[(PARTIES[0]||{}).id];}});
+    saveParties();save('dtp_family',FAMILY);
+    S._ntProvParty=null;S._ntPartyId=S.partyId||(PARTIES[0]||{}).id||null;
+  }
+  renderScreen_inplace2();
+}
+function ntSaveNewParty(){
+  var nm=val('nt-pname');
+  if(!nm){toast('Name your party');return;}
+  if(!S._ntProvParty){
+    var gid='g'+Date.now();
+    PARTIES.push({id:gid,name:nm,by:S.persona});
+    var me=person(S.persona);
+    if(me){if(!Array.isArray(me.parties))me.parties=[];if(me.parties.indexOf(gid)<0)me.parties.push(gid);}
+    S._ntProvParty=gid;S._ntPartyId=gid;
+    saveParties();save('dtp_family',FAMILY);
+    renderScreen_inplace2();
+  }else{
+    var g=partyById(S._ntProvParty);
+    if(g&&nm!==g.name){g.name=nm;saveParties();if(window.CLOUD&&window.CLOUD.renameParty&&S._ntFirstRun)window.CLOUD.renameParty(nm).catch(function(){});}
+    S._ntStep='trip';renderScreen_inplace2();
+  }
+}
+function ntAddExisting(pid){partyAddMember(S._ntPartyId,pid);}
+function ntAddInline(){
+  var nm=val('nt-iname'),em=val('nt-iemail');
+  if(!nm){toast('Enter a name');return;}
+  var used={};FAMILY.forEach(function(p){used[p.color]=1;});
+  var col=PALETTE[FAMILY.length%PALETTE.length][0];
+  for(var i=0;i<PALETTE.length;i++)if(!used[PALETTE[i][0]]){col=PALETTE[i][0];break;}
+  var id='p'+Date.now();
+  FAMILY.push({id:id,name:nm,color:col,admin:false,parties:[S._ntPartyId],email:em||'',uid:null});
+  ALL_IDS=FAMILY.map(function(p){return p.id;});
+  PACKING[id]=[];
+  save('dtp_family',FAMILY);saveLists();
+  renderScreen_inplace2();
+}
+function ntBack(){
+  if(S._ntStep==='invite'){S._ntStep='people';renderScreen_inplace2();return;}
+  if(S._ntStep==='people'){
+    if(S._ntTripId){
+      TRIPS=TRIPS.filter(function(x){return x.id!==S._ntTripId;});
+      DAYS=DAYS.filter(function(d){return d.trip!==S._ntTripId;});
+      try{localStorage.removeItem('dtp_packing_'+S._ntTripId);localStorage.removeItem('dtp_todo_'+S._ntTripId);}catch(e){}
+      save('dtp_trips',TRIPS);save('dtp_days',DAYS);
+      S._ntTripId=null;S._members=null;
+    }
+    S._ntStep='trip';renderScreen_inplace2();return;
+  }
+  if(S._ntStep==='trip'){S._ntStep='party';renderScreen_inplace2();return;}
+  if(S._ntStep==='party'&&S._ntNewParty&&PARTIES.length>0&&!S._ntFirstRun){S._ntNewParty=false;renderScreen_inplace2();}
+}
+function ntCreateTrip(){
+  var nm=val('nt-name');if(!nm){toast('Name your trip');return;}
   var start=val('nt-start'),end=val('nt-end');
+  if(start&&end&&end<start){toast('End date is before the start');return;}
   var partyId=S._ntPartyId||S.partyId||(PARTIES[0]||{}).id;
-  var mem=partyPeople(partyId).map(function(p){return p.id;});   /* everyone in the chosen party */
-  if(mem.indexOf(S.persona)<0)mem.push(S.persona); /* creator is always on their own trip */
+  var mem=partyPeople(partyId).map(function(p){return p.id;});
+  if(mem.indexOf(S.persona)<0)mem.push(S.persona);
   var col=PALETTE[TRIPS.length%PALETTE.length][0];
   var id='t'+Date.now();
   var dates=(start&&end)?(monOf(start)+' '+(+start.slice(8))+' – '+monOf(end)+' '+(+end.slice(8))+', '+start.slice(0,4)):'Dates TBD';
@@ -2779,15 +2832,171 @@ function createTrip(){
   TRIPS.push(tripObj);
   genDays(id);
   var np={},nt=[];
-  mem.forEach(function(pid){ np[pid]=[]; });
+  mem.forEach(function(pid){np[pid]=[];});
   save('dtp_packing_'+id,np);save('dtp_todo_'+id,nt);
   save('dtp_trips',TRIPS);save('dtp_days',DAYS);
-  var optIn=S._notify;S._members=null;S._ntPartyId=null;S._formInit=null;
-  toast('Trip created');
-  /* land on the new trip's Plan page — switch to its party so it's visible */
-  saveLists();S.tripId=id;saveTripId();S.partyId=partyId;savePartyId();loadLists();S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();S.tab='plan';
+  S._ntTripId=id;S._members=new Set(mem);
+  S._ntStep='people';renderScreen_inplace2();
+}
+function ntToggleMember(pid){
+  if(!S._members)return;
+  if(S._members.has(pid))S._members.delete(pid);else S._members.add(pid);
+  var t=tripById(S._ntTripId);
+  if(t){var m=[];S._members.forEach(function(x){m.push(x);});t.members=m;save('dtp_trips',TRIPS);}
+  renderScreen_inplace2();
+}
+function ntAddPersonToTrip(){S._ntReturnTo='newtrip';addPersonToParty(S._ntPartyId);}
+function ntReturnFromPersonEdit(pid){
+  var prevNew=S._newPerson;S._ntReturnTo=null;S._newPerson=null;
+  if(pid){
+    if(!S._members)S._members=new Set();S._members.add(pid);
+    var t=tripById(S._ntTripId);
+    if(t){var m=[];S._members.forEach(function(x){m.push(x);});t.members=m;save('dtp_trips',TRIPS);}
+  }else{
+    if(prevNew&&person(prevNew)){FAMILY=FAMILY.filter(function(x){return x.id!==prevNew;});ALL_IDS=FAMILY.map(function(p){return p.id;});delete PACKING[prevNew];save('dtp_family',FAMILY);saveLists();}
+    var t2=tripById(S._ntTripId);S._members=new Set(t2?(t2.members||[]):[]);
+  }
+  S._formInit='newtrip';S._ntStep='people';
+  S.screen={type:'newtrip'};renderOverlay();
+  requestAnimationFrame(function(){var s=document.getElementById('screen-host').firstChild;if(s)s.classList.add('in');});
+}
+function ntFinish(silent){
+  var t=tripById(S._ntTripId);
+  if(t&&S._members){var m=[];S._members.forEach(function(x){m.push(x);});t.members=m;save('dtp_trips',TRIPS);}
+  var optIn=!silent&&S._notify;
+  var partyId=S._ntPartyId,id=S._ntTripId;
+  saveLists();
+  if(id){S.tripId=id;saveTripId();}
+  if(partyId){S.partyId=partyId;savePartyId();}
+  if(id)loadLists();
+  S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();S.tab='plan';
+  S._ntStep=null;S._ntPartyId=null;S._ntNewParty=false;S._ntProvParty=null;
+  S._ntTripId=null;S._ntFirstRun=false;S._ntReturnTo=null;S._members=null;S._formInit=null;
   closeScreen();render();
-  notifyMembership(tripObj,[],mem,optIn);
+  if(t&&!silent)notifyMembership(t,[],t.members,optIn);
+  if(!silent)toast('Trip created');
+}
+function ntCancel(){
+  if(S._ntStep==='invite'){ntFinish(true);return;}
+  if(S._ntTripId){
+    TRIPS=TRIPS.filter(function(x){return x.id!==S._ntTripId;});
+    DAYS=DAYS.filter(function(d){return d.trip!==S._ntTripId;});
+    try{localStorage.removeItem('dtp_packing_'+S._ntTripId);localStorage.removeItem('dtp_todo_'+S._ntTripId);}catch(e){}
+    save('dtp_trips',TRIPS);save('dtp_days',DAYS);
+  }
+  if(S._ntProvParty){
+    PARTIES=PARTIES.filter(function(x){return x.id!==S._ntProvParty;});
+    FAMILY.forEach(function(p){if(p.parties){p.parties=p.parties.filter(function(g){return g!==S._ntProvParty;});if(!p.parties.length&&PARTIES.length)p.parties=[(PARTIES[0]||{}).id];}});
+    saveParties();save('dtp_family',FAMILY);
+  }
+  S._ntStep=null;S._ntPartyId=null;S._ntNewParty=false;S._ntProvParty=null;
+  S._ntTripId=null;S._ntFirstRun=false;S._ntReturnTo=null;S._members=null;S._formInit=null;
+  closeScreen();
+}
+function scrNewTrip(){
+  ntInit();
+  var fr=S._ntFirstRun;
+  var cancelLabel=fr?false:'Cancel';
+  var cancelArg=fr?false:'ntCancel()';
+  var title=fr?'Set up':'New Trip';
+  var body='';
+  /* ── Step 1: PARTY ── */
+  if(S._ntStep==='party'){
+    if(fr)body+='<div style="text-align:center;padding:14px 6px 12px"><div style="font-family:\'Fraunces\',Georgia,serif;font-size:24px;font-weight:700;color:var(--ink)">Welcome to Baseline Tap</div><div class="body-empty" style="padding:6px 8px 0">Let\'s create your first trip. Start by setting up a planning party — the group of people on this trip.</div></div>';
+    if(!S._ntNewParty){
+      body+='<div class="hub-section-label" style="margin-left:0">Which planning party?</div>';
+      body+='<div class="gchips">';
+      for(var gi=0;gi<PARTIES.length;gi++){var gg=PARTIES[gi];var gon=(S._ntPartyId===gg.id);
+        body+='<button class="gchip'+(gon?' on':'')+'" onclick="ntPickParty(\''+gg.id+'\')">'+(gon?IC.checkw+' ':'')+esc(gg.name)+'</button>';}
+      body+='</div>';
+      if(S._ntPartyId){var _mem=partyPeople(S._ntPartyId);
+        body+='<div class="body-empty" style="text-align:left;padding:4px 2px 12px;font-size:13px">'+_mem.length+' '+(_mem.length===1?'person':'people')+' in <strong>'+esc((partyById(S._ntPartyId)||{}).name||'')+'</strong>.</div>';}
+      body+='<button class="btn-secondary" onclick="ntToggleNewParty()">+ Create a new party for this trip</button>';
+      body+='<button class="btn-secondary green" onclick="ntStep(\'trip\')">Next →</button>';
+    }else{
+      var hasParty=!!S._ntProvParty;
+      body+='<div class="hub-section-label" style="margin-left:0">'+(fr?'Name your planning party':'New planning party')+'</div>';
+      body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">A planning party is the group who\'ll be on this and future trips together.</div>';
+      body+='<div class="field"><input class="field-input" id="nt-pname" placeholder="e.g. Smith Family WDW" value="'+esc((partyById(S._ntPartyId)||{}).name||'')+'"></div>';
+      if(hasParty){
+        var pmem=partyPeople(S._ntProvParty);
+        if(pmem.length){
+          body+='<div class="hub-section-label" style="margin-left:0">Party members</div>';
+          for(var pi=0;pi<pmem.length;pi++){var pm=pmem[pi];
+            var removable=!pm.admin&&pm.id!==S.persona;
+            body+='<div class="hub-row" style="cursor:default"><div class="hub-icon" style="background:'+pm.color+'">'+esc(pm.name[0])+'</div>';
+            body+='<div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(pm.name)+(pm.admin?' · you':'')+'</div>';
+            body+='<div class="hub-sub">'+(pm.email?esc(pm.email):'no email')+'</div></div>';
+            if(removable)body+='<button class="btn-secondary" style="margin:0;width:auto;padding:6px 12px;min-height:0" onclick="partyRemoveMember(\''+S._ntProvParty+'\',\''+pm.id+'\')">Remove</button>';
+            body+='</div>';}
+        }
+        var notIn=FAMILY.filter(function(p){return !personInParty(p,S._ntProvParty);});
+        if(notIn.length){
+          body+='<div class="hub-section-label" style="margin-left:0">Add existing people</div>';
+          body+='<div class="whoselect">';
+          for(var ni=0;ni<notIn.length;ni++){var np=notIn[ni];
+            body+='<div class="who-opt" onclick="ntAddExisting(\''+np.id+'\')" style="cursor:pointer"><span class="wdot" style="background:'+np.color+'">'+esc(np.name[0])+'</span>'+esc(np.name)+'<span style="margin-left:auto;font-size:12px;color:var(--sub)">+ add</span></div>';}
+          body+='</div>';}
+        body+='<div class="hub-section-label" style="margin-left:0">Add someone new</div>';
+        body+='<div class="field"><input class="field-input" id="nt-iname" placeholder="Name"></div>';
+        body+='<div class="field"><input class="field-input" id="nt-iemail" type="email" inputmode="email" placeholder="Email (optional)"></div>';
+        body+='<button class="btn-secondary" onclick="ntAddInline()">Add person</button>';
+      }
+      if(!fr&&PARTIES.length>0)body+='<button class="btn-secondary" onclick="ntToggleNewParty()">← Use an existing party</button>';
+      body+='<button class="btn-secondary green" onclick="ntSaveNewParty()">'+(hasParty?'Next →':'Create party →')+'</button>';
+      if(fr)body+='<button class="btn-secondary" onclick="wizSkip()">Skip — I\'ll set up myself</button>';
+    }
+    return screenShell(title,body,null,null,cancelLabel,null,cancelArg);
+  }
+  /* ── Step 2: TRIP ── */
+  if(S._ntStep==='trip'){
+    body+='<div class="field"><label class="field-label">Trip name</label><input class="field-input" id="nt-name" placeholder="e.g. Thanksgiving 2026"></div>';
+    body+='<div class="field-row"><div class="field"><label class="field-label">Start date</label><input class="field-input" type="date" id="nt-start"></div>';
+    body+='<div class="field"><label class="field-label">End date</label><input class="field-input" type="date" id="nt-end"></div></div>';
+    var pmem2=partyPeople(S._ntPartyId);
+    body+='<div class="body-empty" style="text-align:left;padding:4px 2px 12px;font-size:13px">'+pmem2.length+' '+(pmem2.length===1?'person':'people')+' from <strong>'+esc((partyById(S._ntPartyId)||{}).name||'this party')+'</strong> will be on this trip.</div>';
+    body+='<button class="btn-secondary green" onclick="ntCreateTrip()">Create trip</button>';
+    body+='<button class="btn-secondary" onclick="ntBack()">← Back</button>';
+    return screenShell(title,body,null,null,cancelLabel,null,cancelArg);
+  }
+  /* ── Step 3: PEOPLE ── */
+  if(S._ntStep==='people'){
+    var t3=tripById(S._ntTripId);
+    if(!S._members&&t3)S._members=new Set(t3.members||[]);
+    var pmem3=partyPeople(S._ntPartyId);
+    body+='<div class="hub-section-label" style="margin-left:0">Who\'s on this trip?</div>';
+    body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Everyone from the party is pre-selected. Uncheck anyone sitting this one out.</div>';
+    body+='<div class="whoselect">';
+    for(var p3i=0;p3i<pmem3.length;p3i++){var p3=pmem3[p3i];
+      var p3on=S._members&&S._members.has(p3.id);
+      var locked=p3.id===S.persona;
+      body+='<div class="who-opt'+(p3on?' on':'')+(locked?' locked':'')+'" '+(locked?'':'onclick="ntToggleMember(\''+p3.id+'\')"')+'>';
+      body+='<span class="wdot" style="background:'+p3.color+'">'+esc(p3.name[0])+'</span>'+esc(p3.name);
+      if(p3on)body+='<span class="wcheck">'+IC.checkw+'</span>';
+      body+='</div>';}
+    body+='</div>';
+    body+='<button class="btn-secondary" onclick="ntAddPersonToTrip()">+ New person</button>';
+    body+='<button class="btn-secondary green" onclick="ntStep(\'invite\')">Next →</button>';
+    body+='<button class="btn-secondary" onclick="ntBack()">← Back</button>';
+    return screenShell(title,body,null,null,cancelLabel,null,cancelArg);
+  }
+  /* ── Step 4: INVITE ── */
+  var inviteable=partyPeople(S._ntPartyId).filter(function(p){return !p.uid;});
+  body+='<div class="hub-section-label" style="margin-left:0">Invite your people</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Send links now or skip — invite later from Admin → Planning Party.</div>';
+  if(inviteable.length){
+    for(var ii=0;ii<inviteable.length;ii++){var ip=inviteable[ii];
+      body+='<div class="hub-row" style="cursor:default;flex-wrap:wrap;gap:6px">';
+      body+='<div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(ip.name)+'</div><div class="hub-sub">'+(ip.email?esc(ip.email):'no email — add from Admin → People')+'</div></div>';
+      body+='<button class="btn-secondary" style="margin:0;width:auto;padding:6px 10px;min-height:0" onclick="copyInviteLink(\''+ip.id+'\')">Copy link</button>';
+      if(ip.email)body+='<button class="btn-secondary" style="margin:0;width:auto;padding:6px 10px;min-height:0" onclick="emailInviteLink(\''+ip.id+'\')">Email</button>';
+      body+='</div>';}
+  }else{body+='<div class="body-empty" style="padding:8px 2px">Everyone\'s already joined — all set!</div>';}
+  body+='<div class="field" style="margin-top:12px"><label class="field-label">Notify joined members</label>';
+  body+='<div class="notify-row'+(S._notify?' on':'')+'" onclick="notifToggle()"><span class="notify-check">'+(S._notify?IC.checkw:'')+'</span><div><div class="notify-lbl">Tell people they\'re on this trip</div><div class="notify-sub">You\'ll choose who to notify when you finish.</div></div></div></div>';
+  body+='<button class="btn-secondary green" onclick="ntFinish()">Finish</button>';
+  body+='<button class="btn-secondary" onclick="ntBack()">← Back</button>';
+  return screenShell(title,body,null,null,cancelLabel,null,cancelArg);
 }
 
 
@@ -2882,53 +3091,13 @@ function resetToBlank(){
   S.persona=oid;S.partyId=gid;S.tripId=null;PACKING={};TODO=[];
   persist();save('dtp_persona',oid);savePartyId();saveTripId();
 }
-function startWizard(){S._wiz={step:'welcome'};openScreen({type:'wizard'});}
-function wizStart(){
-  resetToBlank();
-  if(window.CLOUD&&window.CLOUD.inParty&&!window.CLOUD.inParty()&&window.CLOUD.createParty){
-    window.CLOUD.createParty('My Trip').then(function(){S._wiz.step='party';renderScreen_inplace2();}).catch(function(e){toast(e.message||'Could not start');S._wiz.step='party';renderScreen_inplace2();});
-  }else{S._wiz.step='party';renderScreen_inplace2();}
-}
+function startWizard(){openScreen({type:'newtrip'});}
 function wizSkip(){
   resetToBlank();
   var done=function(){closeScreen();S.tab='home';render();};
-  if(window.CLOUD&&window.CLOUD.inParty&&!window.CLOUD.inParty()&&window.CLOUD.createParty){window.CLOUD.createParty('My Trip').then(done,done);}
+  if(window.CLOUD&&window.CLOUD.inParty&&!window.CLOUD.inParty()&&window.CLOUD.createParty){window.CLOUD.createParty('My Planning Party').then(done,done);}
   else done();
 }
-function wizSaveParty(){
-  var nm=val('wiz-party');if(!nm){toast('Name your party');return;}
-  var g=activeParty();if(g){g.name=nm;saveParties();}
-  if(window.CLOUD&&window.CLOUD.renameParty)window.CLOUD.renameParty(nm).catch(function(){});
-  S._wiz.step='trip';renderScreen_inplace2();
-}
-function wizSaveTrip(){
-  var nm=val('wiz-trip'),s=val('wiz-start'),e=val('wiz-end');
-  if(!nm){toast('Name your trip');return;}
-  if(s&&e&&e<s){toast('End date is before the start');return;}
-  var id='t'+Date.now();
-  TRIPS.push({id:id,name:nm,start:s||'',end:e||'',by:S.persona,members:[S.persona],parties:[S.partyId||(PARTIES[0]||{}).id]});
-  save('dtp_trips',TRIPS);
-  if(s&&e){reconcileDays(id);save('dtp_days',DAYS);}
-  S.tripId=id;saveTripId();loadLists();
-  S._wiz.step='people';renderScreen_inplace2();
-}
-function wizAddPerson(){
-  var nm=val('wiz-pname'),em=val('wiz-pemail');
-  if(!nm){toast('Enter a name');return;}
-  var id='p'+Date.now();
-  FAMILY.push({id:id,name:nm,color:PALETTE[FAMILY.length%PALETTE.length][0],admin:false,parties:[S.partyId||(PARTIES[0]||{}).id],email:em||''});
-  ALL_IDS=FAMILY.map(function(p){return p.id;});
-  var t=tripById(S.tripId);if(t){if(!t.members)t.members=[];if(t.members.indexOf(id)<0)t.members.push(id);}
-  save('dtp_family',FAMILY);save('dtp_trips',TRIPS);
-  renderScreen_inplace2();
-}
-function wizRemovePerson(id){
-  FAMILY=FAMILY.filter(function(p){return p.id!==id;});ALL_IDS=FAMILY.map(function(p){return p.id;});
-  var t=tripById(S.tripId);if(t&&t.members)t.members=t.members.filter(function(x){return x!==id;});
-  save('dtp_family',FAMILY);save('dtp_trips',TRIPS);renderScreen_inplace2();
-}
-function wizToInvite(){S._wiz.step='invite';renderScreen_inplace2();}
-function wizFinish(){closeScreen();S.tab='home';render();toast('All set!');}
 function emailInviteLink(pid){
   var p=person(pid);if(!p)return;
   if(!(window.CLOUD&&window.CLOUD.inParty&&window.CLOUD.inParty())){toast('Start a party first');return;}
@@ -2937,58 +3106,6 @@ function emailInviteLink(pid){
   var bd=encodeURIComponent('Hi '+p.name+',\n\nI\'m planning our trip on Baseline Tap. Tap this link, sign in, and you\'ll be added automatically:\n\n'+url+'\n');
   location.href='mailto:'+encodeURIComponent(p.email||'')+'?subject='+subj+'&body='+bd;
 }
-function scrWizard(){
-  var w=S._wiz||(S._wiz={step:'welcome'});
-  var body;
-  if(w.step==='welcome'){
-    body='<div style="text-align:center;padding:18px 6px 4px"><div style="font-family:\'Fraunces\',Georgia,serif;font-size:26px;font-weight:700">Welcome to Baseline Tap</div><div class="body-empty" style="padding:10px 8px 16px">Let\'s set up your trip in a few quick steps — name it, add dates, and invite your people. Prefer to do it yourself? Skip anytime.</div></div>';
-    body+='<button class="btn-secondary green" onclick="wizStart()">Start setup</button>';
-    body+='<button class="btn-secondary" onclick="wizSkip()">Skip — I\'ll do it myself</button>';
-    return screenShell('Set up',body,null,null,false);
-  }
-  if(w.step==='party'){
-    var pn=(activeParty()||{}).name||'My Planning Party';
-    body='<div class="hub-section-label" style="margin-left:0">Step 1 · Name your party</div>';
-    body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">A name for this trip group — e.g. “Smith Family WDW”.</div>';
-    body+='<div class="field"><input class="field-input" id="wiz-party" value="'+esc(pn)+'"></div>';
-    body+='<button class="btn-secondary green" onclick="wizSaveParty()">Next</button>';
-    return screenShell('Set up',body,null,null,false);
-  }
-  if(w.step==='trip'){
-    body='<div class="hub-section-label" style="margin-left:0">Step 2 · Trip details</div>';
-    body+='<div class="field"><label class="field-label">Trip name</label><input class="field-input" id="wiz-trip" placeholder="Walt Disney World"></div>';
-    body+='<div class="field"><label class="field-label">Start date</label><input class="field-input" id="wiz-start" type="date"></div>';
-    body+='<div class="field"><label class="field-label">End date</label><input class="field-input" id="wiz-end" type="date"></div>';
-    body+='<button class="btn-secondary green" onclick="wizSaveTrip()">Next</button>';
-    return screenShell('Set up',body,null,null,false);
-  }
-  if(w.step==='people'){
-    body='<div class="hub-section-label" style="margin-left:0">Step 3 · Add your people</div>';
-    body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Add everyone on the trip. Include an email and they\'re matched automatically when they sign in.</div>';
-    for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i];
-      body+='<div class="hub-row" style="cursor:default"><div class="hub-icon" style="background:'+p.color+'">'+esc(p.name[0])+'</div><div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(p.name)+(p.admin?' · you':'')+'</div><div class="hub-sub">'+(p.email?esc(p.email):'no email')+'</div></div>'+(p.admin?'':'<button class="btn-secondary" style="margin:0;width:auto;padding:6px 12px;min-height:0" onclick="wizRemovePerson(\''+p.id+'\')">Remove</button>')+'</div>';
-    }
-    body+='<div class="field" style="margin-top:8px"><input class="field-input" id="wiz-pname" placeholder="Name"></div>';
-    body+='<div class="field"><input class="field-input" id="wiz-pemail" type="email" inputmode="email" placeholder="Email (optional)"></div>';
-    body+='<button class="btn-secondary" onclick="wizAddPerson()">Add person</button>';
-    body+='<button class="btn-secondary green" onclick="wizToInvite()">Next</button>';
-    return screenShell('Set up',body,null,null,false);
-  }
-  /* invite */
-  body='<div class="hub-section-label" style="margin-left:0">Step 4 · Invite your people</div>';
-  body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Send each person their link now, or skip and invite later from Admin → Planning Party.</div>';
-  var any=false;
-  for(var j=0;j<FAMILY.length;j++){var pp=FAMILY[j];if(pp.admin)continue;any=true;
-    body+='<div class="hub-row" style="cursor:default;flex-wrap:wrap;gap:6px"><div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(pp.name)+'</div><div class="hub-sub">'+(pp.email?esc(pp.email):'no email')+'</div></div>';
-    body+='<button class="btn-secondary" style="margin:0;width:auto;padding:6px 10px;min-height:0" onclick="copyInviteLink(\''+pp.id+'\')">Copy link</button>';
-    if(pp.email)body+='<button class="btn-secondary" style="margin:0;width:auto;padding:6px 10px;min-height:0" onclick="emailInviteLink(\''+pp.id+'\')">Email</button>';
-    body+='</div>';
-  }
-  if(!any)body+='<div class="body-empty" style="padding:8px 2px">No one to invite yet — you can add people later.</div>';
-  body+='<button class="btn-secondary green" onclick="wizFinish()">Finish</button>';
-  return screenShell('Set up',body,null,null,false);
-}
-
 /* ── Planning Party management (shown on the Account screen) ─ */
 function cloudSection(){
   if(!(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user))return '';
@@ -3099,7 +3216,7 @@ function scrParties(){
 function addParty(){var id='g'+Date.now();PARTIES.push({id:id,name:'New Party',by:S.persona});saveParties();S._newParty=id;S._formInit=null;openScreen({type:'partyedit',gid:id});}
 /* per-party editor: name + members (live) + the trips this party is on.
    Members and trip assignments commit immediately so you can tap through to a
-   person's profile or a trip without losing them; the name uses Save. */
+   person\'s profile or a trip without losing them; the name uses Save. */
 function scrPartyEdit(){
   if(!isAdmin())return screenShell('Edit Party','<div class="body-empty" style="padding:24px 12px">Admin only.</div>',null,null,'Done');
   var gid=(S.screen&&S.screen.gid),g=partyById(gid);
@@ -3164,7 +3281,7 @@ function openTripPlanning(tid){
   ensureActiveParty();ensureVisibleTrip();
   closeScreen();S.tab='home';S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();render();
 }
-/* one party per trip: assigning here replaces the trip's party */
+/* one party per trip: assigning here replaces the trip\'s party */
 function tripSetParty(tid,gid){var t=tripById(tid);if(!t)return;t.parties=[gid];save('dtp_trips',TRIPS);toast('Trip moved');renderScreen_inplace2();}
 
 /* ── Trips module (admin): every trip, regardless of active party ── */
@@ -3384,7 +3501,7 @@ function scrPersonDetails(){
   if(pid!==S.persona&&!isAdmin())return screenShell('Travel Details','<div class="body-empty" style="padding:24px 12px">You can only edit your own details.</div>',null,null,'Done');
   var body='<div class="body-empty" style="text-align:left;padding:0 2px 10px;font-size:13px">Used when booking flights and at check-in. Visible to you and admins.</div>';
   body+=personTravelFields(p,'pd');
-  return screenShell((pid===S.persona?'My Travel Details':esc(p.name)+'’s Travel Details'),body,'Save','savePersonDetails(\''+pid+'\')');
+  return screenShell((pid===S.persona?'My Travel Details':esc(p.name)+'\'s Travel Details'),body,'Save','savePersonDetails(\''+pid+'\')');
 }
 function savePersonDetails(pid){
   var p=person(pid);if(!p){closeScreen();return;}
@@ -3443,6 +3560,7 @@ function scrPersonEdit(){
 /* sub-editors return to their list, not all the way out to the Admin tab.
    A just-added record that was never saved (cancelled) is discarded here. */
 function backToPeople(){
+  if(S._ntReturnTo==='newtrip'){ntReturnFromPersonEdit(null);return;}
   if(S._newPerson){var nid=S._newPerson;S._newPerson=null;
     if(person(nid)){FAMILY=FAMILY.filter(function(x){return x.id!==nid;});ALL_IDS=FAMILY.map(function(p){return p.id;});delete PACKING[nid];save('dtp_family',FAMILY);saveLists();}}
   S._formInit=null;openScreen({type:'personas'});
@@ -3459,7 +3577,7 @@ function peToggleParty(gid){
   if(p){var gs=[];S._peParties.forEach(function(x){gs.push(x);});p.parties=gs;save('dtp_family',FAMILY);}
   renderScreen_inplace2();
 }
-/* commit the safe person fields then jump to a trip (so edits aren't lost) */
+/* commit the safe person fields then jump to a trip (so edits aren\'t lost) */
 function peGotoTrip(pid,tid){var p=person(pid);if(p){var nm=val('pe-name');if(nm)p.name=nm;var c=document.getElementById('pe-color');if(c&&c.value)p.color=c.value;var gs=[];if(S._peParties)S._peParties.forEach(function(x){gs.push(x);});if(gs.length)p.parties=gs;captureTravel(p,'pe');S._newPerson=null;save('dtp_family',FAMILY);}openTripPlanning(tid);}
 function savePersonEdit(pid){
   var p=person(pid);if(!p){closeScreen();return;}
@@ -3474,7 +3592,9 @@ function savePersonEdit(pid){
   captureTravel(p,'pe');
   ALL_IDS=FAMILY.map(function(x){return x.id;});
   S._newPerson=null;   /* committed */
-  save('dtp_family',FAMILY);toast('Saved');backToPeople();
+  save('dtp_family',FAMILY);toast('Saved');
+  if(S._ntReturnTo==='newtrip'){ntReturnFromPersonEdit(pid);return;}
+  backToPeople();
 }
 function peDelete(pid){
   var existed=!!person(pid);
@@ -3491,7 +3611,7 @@ function addPersona(){
   PACKING[id]=[];
   save('dtp_family',FAMILY);saveLists();
   S._newPerson=id;   /* provisional until saved — cancelling discards it */
-  S._formInit=null;openScreen({type:'personedit',pid:id});   /* jump straight into the new person's form */
+  S._formInit=null;openScreen({type:'personedit',pid:id});   /* jump straight into the new person\'s form */
 }
 /* create a new person already in a specific party (from the party page) */
 function addPersonToParty(gid){
@@ -3514,7 +3634,7 @@ function delPersona(id){
   FAMILY=FAMILY.filter(function(x){return x.id!==id;});
   ALL_IDS=FAMILY.map(function(x){return x.id;});
   delete PACKING[id];delete TODO_TMPL[id];delete PACKING_TMPL[id];saveTmpl();savePackTmpl();
-  /* drop this person's to-do items and strip them from any assignments */
+  /* drop this person\'s to-do items and strip them from any assignments */
   TODO=TODO.filter(function(t){return t.by!==id;});
   TODO.forEach(function(t){if(t.who)t.who=t.who.filter(function(m){return m!==id;});});
   /* strip them from any packing buyer assignments on others' items */
@@ -3534,7 +3654,7 @@ function delPersona(id){
 /* Trip member picker (assign global personas to a trip) */
 function memberSelectField(pre){
   if(!S._members){S._members=new Set(pre&&pre.length?pre:partyPeople(S.partyId).map(function(p){return p.id;}));}
-  /* offer the active party's people, plus anyone already selected */
+  /* offer the active party\'s people, plus anyone already selected */
   var pool=partyPeople(S.partyId).map(function(p){return p.id;});
   S._members.forEach(function(id){if(pool.indexOf(id)<0&&person(id))pool.push(id);});
   var h='<div class="field"><label class="field-label">People on this trip <span class="opt">(drives filters & assignments)</span></label><div class="whoselect">';
@@ -3558,7 +3678,7 @@ function scrPackList(){
 /* trip-wide Need to Buy — shared shopping list, grouped by buyer */
 function scrNeedBuy(){
   var entries=needBuyEntries();
-  var body=listContext()+'<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:16px;color:var(--ink)">Everything flagged <strong>Need to buy</strong>, grouped by who’s buying. The whole group can see this list.</div>';
+  var body=listContext()+'<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:16px;color:var(--ink)">Everything flagged <strong>Need to buy</strong>, grouped by who\'s buying. The whole group can see this list.</div>';
   if(!entries.length)return screenShell('Need to Buy',body+'<div class="body-empty">Nothing to buy right now. Flag a packing item “Need to buy” and it shows up here.</div>',null,null,'Done');
   var groups={},order=[];
   entries.forEach(function(e){var buyers=(e.it.who&&e.it.who.length)?e.it.who:[e.owner];buyers.forEach(function(b){if(!groups[b]){groups[b]=[];order.push(b);}groups[b].push(e);});});
@@ -3581,7 +3701,7 @@ function scrNeedBuy(){
 function scrTodoTmpl(){
   var me=person(S.persona);
   var list=TODO_TMPL[S.persona]||(TODO_TMPL[S.persona]=[]);
-  var body='<div class="body-empty" style="text-align:left;padding:0 2px 14px;font-size:16px;color:var(--ink)">Your reusable to-do master, '+esc(me?me.name:'')+'. It’s not tied to any trip — when you start a trip’s to-do list you can load these in.</div>';
+  var body='<div class="body-empty" style="text-align:left;padding:0 2px 14px;font-size:16px;color:var(--ink)">Your reusable to-do master, '+esc(me?me.name:'')+'. It\'s not tied to any trip — when you start a trip\'s to-do list you can load these in.</div>';
   body+='<div class="hub-section-label" style="margin-left:0">Template items</div>';
   body+='<div class="card" style="padding:6px 0 0">';
   if(!list.length)body+='<div class="body-empty" style="text-align:left;padding:6px 12px">No items yet — add a few below.</div>';
@@ -4049,7 +4169,7 @@ function scrTripEdit(){
   var t=tripById(S.screen.tripId||S.tripId);if(!t)return scrGeneric();
   if(!canEditTrip(t)){
     var who=(t.by&&person(t.by))?person(t.by).name:'an admin';
-    return screenShell('Trip','<div class="body-empty" style="text-align:left;padding:6px 2px">Only '+esc(who)+' or an admin can change this trip’s name, dates and members.</div>',null,null,'Done');
+    return screenShell('Trip','<div class="body-empty" style="text-align:left;padding:6px 2px">Only '+esc(who)+' or an admin can change this trip\'s name, dates and members.</div>',null,null,'Done');
   }
   if(S._formInit!=='trip'){S._formStatus.tr=t.status;S._formColor=t.color;S._formInit='trip';S._tpartyId=(t.parties&&t.parties[0])||S.partyId||(PARTIES[0]||{}).id;}
   var body='<div class="field"><label class="field-label">Trip name</label><input class="field-input" id="tr-name" value="'+esc(t.name)+'"></div>';
@@ -4069,12 +4189,12 @@ function scrTripEdit(){
   }
   body+=memberSelectField(t.members);
   body+='<div class="field"><label class="field-label">Notifications</label>';
-  body+='<div class="notify-row'+(S._notify?' on':'')+'" onclick="notifToggle()"><span class="notify-check">'+(S._notify?IC.checkw:'')+'</span><div><div class="notify-lbl">Notify members of changes</div><div class="notify-sub">'+(t.status==='active'?'You’ll choose who to tell about anyone added or removed.':'This trip is still planning — switch on to notify people you add or remove.')+'</div></div></div></div>';
+  body+='<div class="notify-row'+(S._notify?' on':'')+'" onclick="notifToggle()"><span class="notify-check">'+(S._notify?IC.checkw:'')+'</span><div><div class="notify-lbl">Notify members of changes</div><div class="notify-sub">'+(t.status==='active'?'You\'ll choose who to tell about anyone added or removed.':'This trip is still planning — switch on to notify people you add or remove.')+'</div></div></div></div>';
   var own=(t.by&&person(t.by))?person(t.by):null;
   body+='<div class="field"><label class="field-label">Trip owner</label>';
   if(own){
     body+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0"><span class="wdot" style="background:'+own.color+'">'+esc(own.name[0])+'</span><strong>'+esc(own.name)+'</strong>'+(own.id===S.persona?' (you)':'')+'</div>';
-    body+='<div class="body-empty" style="text-align:left;padding:2px 2px 0;font-size:12px">The owner organises this trip — they and any admin can edit it and see everyone’s lists.</div>';
+    body+='<div class="body-empty" style="text-align:left;padding:2px 2px 0;font-size:12px">The owner organises this trip — they and any admin can edit it and see everyone\'s lists.</div>';
   }else{
     body+='<div class="body-empty" style="text-align:left;padding:2px 2px 0;font-size:12px">No owner recorded for this trip — only admins can manage it.</div>';
   }
@@ -4113,13 +4233,13 @@ function delTrip(id){
 }
 function doDelTrip(id){
   TRIPS=TRIPS.filter(function(x){return x.id!==id;});
-  // remove this trip's days and items
+  // remove this trip\'s days and items
   function drop(coll){for(var i=coll.length-1;i>=0;i--)if(coll[i].trip===id)coll.splice(i,1);}
   [DAYS,VISITS,PARKHOURS,DINING,LLS,SHOWS,FLIGHTS,RESORTS,PARKRES,REBOOKS].forEach(drop);
   for(var c=CHAT.length-1;c>=0;c--)if(CHAT[c].trip===id)CHAT.splice(c,1);
   try{localStorage.removeItem('dtp_packing_'+id);localStorage.removeItem('dtp_todo_'+id);}catch(e){}
   if(S.tripId===id){
-    /* deleting the trip you're viewing drops you to the no-trip landing — don't
+    /* deleting the trip you\'re viewing drops you to the no-trip landing — don\'t
        silently teleport into another trip; the user purposely picks the next one */
     S.tripId=null;S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();
   }
@@ -4158,7 +4278,7 @@ function render(){
   if(noTripSelected()){
     document.getElementById('strip-host').innerHTML='';
     document.getElementById('filter-host').innerHTML='';
-    /* the Admin console (people/parties/trips) doesn't need a selected trip —
+    /* the Admin console (people/parties/trips) doesn\'t need a selected trip —
        keep it reachable so an empty tenant is still manageable */
     document.getElementById('app').innerHTML=(S.tab==='admin'&&isAdmin())?renderAdminHub():renderNoTrip();
     document.getElementById('app').style.padding='';
