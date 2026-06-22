@@ -154,8 +154,12 @@
   C.createParty=function(name){
     if(!C.user)return Promise.reject(new Error('Sign in first'));
     var wid=newCode(), nm=(name||'Planning Party');
+    /* the tenant's stable label = the owner's display name (not the party name) */
+    var tn=null;
+    try{var fam=JSON.parse(localStorage.getItem('dtp_family')||'[]');var a=fam.filter(function(p){return p.admin;})[0]||fam[0];if(a&&a.name)tn=a.name;}catch(e){}
+    if(!tn)tn=(C.user.email||'').split('@')[0]||null;
     var wref=db().doc('workspaces/'+wid);
-    return wref.set({name:nm,by:C.user.uid,byEmail:C.user.email||null,createdAt:Date.now()})
+    return wref.set({name:nm,tenantName:tn,by:C.user.uid,byEmail:C.user.email||null,createdAt:Date.now()})
       .then(function(){ return wref.collection('members').doc(C.user.uid).set({email:C.user.email||null,joinedAt:Date.now()}); })
       .then(function(){ setLocalWid(wid); C.partyName=nm; return profileRef().set({wid:wid},{merge:true}); })
       .then(function(){ return reconcile('merge'); })   /* push your data up into the new party */
@@ -210,11 +214,23 @@
       var jobs=[];
       snap.forEach(function(d){
         var w=d.data()||{};
-        jobs.push(d.ref.collection('members').get().then(function(ms){
+        jobs.push(Promise.all([
+          d.ref.collection('members').get(),
+          d.ref.collection('kv').doc('dtp_family').get(),
+          d.ref.collection('kv').doc('dtp_parties').get()
+        ]).then(function(res){
+          var ms=res[0];
           var owner=w.byEmail||null;
           ms.forEach(function(m){if(m.id===w.by&&m.data().email)owner=m.data().email;});
-          return {wid:d.id,name:w.name||'(unnamed)',by:w.by||null,byEmail:owner,memberCount:ms.size,createdAt:w.createdAt||0};
-        }).catch(function(){return {wid:d.id,name:w.name||'(unnamed)',by:w.by||null,byEmail:w.byEmail||null,memberCount:0,createdAt:w.createdAt||0};}));
+          var fam=[],parties=[];
+          try{if(res[1].exists)fam=JSON.parse(res[1].data().v)||[];}catch(e){}
+          try{if(res[2].exists)parties=JSON.parse(res[2].data().v)||[];}catch(e){}
+          var ownerName=w.tenantName||null;
+          if(!ownerName){var a=fam.filter(function(p){return p.admin;})[0]||fam[0];if(a&&a.name)ownerName=a.name;}
+          if(!ownerName&&owner)ownerName=owner.split('@')[0];
+          var partyNames=parties.map(function(g){return g&&g.name;}).filter(Boolean);
+          return {wid:d.id,name:w.name||'(unnamed)',ownerName:ownerName||'(unnamed)',by:w.by||null,byEmail:owner,parties:partyNames,memberCount:ms.size,createdAt:w.createdAt||0};
+        }).catch(function(){return {wid:d.id,name:w.name||'(unnamed)',ownerName:w.tenantName||(w.byEmail||'').split('@')[0]||'(unnamed)',by:w.by||null,byEmail:w.byEmail||null,parties:[],memberCount:0,createdAt:w.createdAt||0};}));
       });
       return Promise.all(jobs).then(function(list){return list.sort(function(a,b){return (b.createdAt||0)-(a.createdAt||0);});});
     });
