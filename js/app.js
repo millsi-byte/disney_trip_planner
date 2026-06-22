@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='106';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='107';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -927,6 +927,7 @@ function unclaimPersona(id){
 }
 /* sign out — cloud sign-out when available, else just forget the local persona */
 function logoutPersona(){
+  try{if(window.CLOUD&&window.CLOUD.adminWid){localStorage.removeItem('dtp_adminWid');}}catch(e){}   /* never sign out stranded in someone else's space */
   if(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user){
     window.CLOUD.signOut();   /* triggers onCloudSignedOut → sign-in screen */
     return;
@@ -1580,7 +1581,7 @@ function renderAdminHub(){
 }
 /* nuke everything (cloud + local) and re-seed a blank account with just you */
 function startOver(){
-  if(!isAdmin()){toast('Admin only');return;}
+  if(!isAdmin()&&!(window.CLOUD&&window.CLOUD.isSuper)){toast('Admin only');return;}
   if(!confirm('Start over? This permanently deletes ALL trips, people and lists, leaving only you. It cannot be undone.'))return;
   if(!confirm('Last chance — wipe everything and start fresh?'))return;
   toast('Starting over…');
@@ -2823,7 +2824,25 @@ function scrClaim(){
   body+='</div>';
   body+='<div class="hub-section-label" style="margin-left:0">Account</div>';
   body+='<button class="btn-secondary" onclick="window.CLOUD.signOut()">Sign in as someone else</button>';
+  body+=recoveryEscapes();
   return screenShell('Who are you?',body,null,null,false);
+}
+/* escape hatches for a device stuck on a sign-in/claim/no-access loop */
+function recoveryEscapes(){
+  var h='<div class="hub-section-label" style="margin-left:0">Stuck?</div>';
+  h+='<button class="btn-secondary" onclick="resetDevice()">Reset this device</button>';
+  h+='<div class="body-empty" style="text-align:left;padding:4px 2px 0;font-size:12px">Clears this device\'s local copy and reloads from the cloud. Safe — your cloud data is untouched.</div>';
+  if(window.CLOUD&&window.CLOUD.isSuper){
+    h+='<button class="btn-danger-link" onclick="startOver()">Something\'s wrong — reset my account</button>';
+    h+='<div class="body-empty" style="text-align:left;padding:0 2px 0;font-size:12px">Super-admin: wipes your own space and starts fresh with just you.</div>';
+  }
+  return h;
+}
+/* non-destructive: drop the local cache and reload (re-pulls from cloud) */
+function resetDevice(){
+  if(!confirm('Reset this device? Clears the local copy and reloads from the cloud. Your cloud data is not deleted.'))return;
+  try{Object.keys(localStorage).forEach(function(k){if(k.indexOf('dtp_')===0)localStorage.removeItem(k);});}catch(e){}
+  location.reload();
 }
 
 /* ── Not on the guest list (invite-only) ─────────────────── */
@@ -2833,6 +2852,7 @@ function scrNoAccess(){
   body+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:24px;font-weight:700">You\'re not on the guest list</div>';
   body+='<div class="body-empty" style="padding:12px 6px">'+(email?'Signed in as <strong>'+esc(email)+'</strong>. ':'')+'Baseline Tap is invite-only. Ask whoever invited you for your sign-in link, or have the admin add your email.</div></div>';
   body+='<button class="btn-secondary" onclick="window.CLOUD.signOut()">Sign in with a different account</button>';
+  body+=recoveryEscapes();
   return screenShell('No access',body,null,null,false);
 }
 
@@ -4010,9 +4030,9 @@ function renderNoTrip(){
 /* super-admin impersonation bar — shown while managing another family */
 function impersonationBanner(){
   if(!(window.CLOUD&&window.CLOUD.adminWid))return '';
-  return '<div style="background:#7C2D12;color:#fff;padding:8px 12px;display:flex;align-items:center;justify-content:space-between;font-size:13px;font-weight:600">'
-    +'<span>Managing '+esc(window.CLOUD.partyName||'a family')+' as super-admin</span>'
-    +'<button onclick="exitTenant()" style="background:#fff;color:#7C2D12;border:0;border-radius:8px;padding:5px 12px;font-weight:700">Exit</button></div>';
+  return '<div style="background:#7C2D12;color:#fff;padding:calc(8px + env(safe-area-inset-top)) 12px 8px;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;font-weight:600;position:sticky;top:0;z-index:200">'
+    +'<span style="flex:1;min-width:0">Managing '+esc(window.CLOUD.partyName||'a family')+' as super-admin</span>'
+    +'<button onclick="exitTenant()" style="background:#fff;color:#7C2D12;border:0;border-radius:8px;padding:8px 16px;font-weight:700;flex-shrink:0">Exit</button></div>';
 }
 function render(){
   /* normalise stale/unauthorised tabs (Overview removed; Admin is admin-only) */

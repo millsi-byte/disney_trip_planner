@@ -66,7 +66,7 @@
 
   /* ── sync engine ───────────────────────────────────────── */
   /* keys that must stay device-local */
-  var LOCAL_ONLY={dtp_persona:1,dtp_tripId:1,dtp_partyId:1,dtp_chatseen:1,dtp_emailForSignIn:1,dtp_ver:1,dtp_wid:1,dtp_invite:1};
+  var LOCAL_ONLY={dtp_persona:1,dtp_tripId:1,dtp_partyId:1,dtp_chatseen:1,dtp_emailForSignIn:1,dtp_ver:1,dtp_wid:1,dtp_invite:1,dtp_adminWid:1};
   function syncable(k){return !!k&&k.indexOf('dtp_')===0&&k.indexOf('dtp__')!==0&&!LOCAL_ONLY[k];}
   /* the active key/value collection: family workspace if joined, else personal */
   /* the active key/value collection. adminWid (super-admin impersonation) wins,
@@ -232,11 +232,13 @@
   C.enterWorkspace=function(wid){
     if(!C.isSuper)return Promise.reject(new Error('Super-admin only'));
     stopListener();C.adminWid=wid;
+    try{localStorage.setItem('dtp_adminWid',wid);}catch(e){}   /* survive a restart → crash-safe */
     return reconcile('adopt');   /* loads tenant data locally + rehydrates + restarts listener */
   };
   /* switch back to the super's own space */
   C.exitWorkspace=function(){
     stopListener();C.adminWid=null;
+    try{localStorage.removeItem('dtp_adminWid');}catch(e){}
     return reconcile('adopt');
   };
   /* permanently delete a tenant workspace (kv + members + doc). Super-admin only,
@@ -264,7 +266,15 @@
         if(C.isSuper){C.isOwner=true;return;}
         return db().doc('owners/'+emailKey(C.user.email)).get().then(function(d){C.isOwner=d.exists;}).catch(function(){C.isOwner=false;});
       })
-      .then(function(){ return reconcile('merge'); });
+      .then(function(){
+        /* crash-safety: if we force-quit mid-impersonation, dtp_adminWid is set.
+           Don't resume into the other family — discard their leftover local data
+           and pull our OWN space (adopt is pull-only, so it can never push their
+           data into our cloud). Normal startup uses merge. */
+        var stranded=null;try{stranded=localStorage.getItem('dtp_adminWid');}catch(e){}
+        if(stranded){try{localStorage.removeItem('dtp_adminWid');}catch(e){}C.adminWid=null;return reconcile('adopt');}
+        return reconcile('merge');
+      });
   }
 
   /* reflect auth state in the UI and drive sync on/off */
