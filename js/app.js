@@ -54,7 +54,7 @@ var S = {
   screen:null,         // slide-in screen def
   sheet:null,          // bottom sheet def
   importStep:1,
-  newTmpl:"mine",
+  newTmpl:"blank",
   formLegs:1
 };
 function defOpen(){return {flight:true,itin:true,ll:true,strat:false,din:true,shows:true};}
@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='110';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='111';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2759,21 +2759,11 @@ function scrNewTrip(){
   body+='</div>';
   var _np=partyPeople(S._ntPartyId);
   body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0;font-size:12px">'+_np.length+' '+(_np.length===1?'person':'people')+' from <strong>'+esc((partyById(S._ntPartyId)||{}).name||'')+'</strong> will be on this trip. Manage members in Admin → Planning Parties.</div></div>';
-  body+='<div class="hub-section-label" style="margin-left:0">Start from your template?</div>';
-  body+=tmplCard('mine','My template','Each person\'s packing & to-do pre-loaded',true);
-  body+=tmplCard('blank','Blank trip','Start completely fresh',false);
   body+='<div class="field"><label class="field-label">Notifications</label>';
   body+='<div class="notify-row'+(S._notify?' on':'')+'" onclick="notifToggle()"><span class="notify-check">'+(S._notify?IC.checkw:'')+'</span><div><div class="notify-lbl">Tell people they’re on this trip</div><div class="notify-sub">When you create it, you’ll choose who to notify that they’ve been added.</div></div></div></div>';
   body+='<button class="btn-primary" onclick="createTrip()">Create trip</button>';
   body+='<button class="btn-secondary" onclick="closeScreen();openScreen({type:\'import\'})">Import details from a file instead</button>';
   return screenShell('New Trip',body,null,null,'Cancel');
-}
-function tmplCard(id,title,sub,people){
-  var on=S.newTmpl===id;
-  var h='<div class="tmpl-card'+(on?' on':'')+'" onclick="S.newTmpl=\''+id+'\';renderScreen_inplace2()"><div class="tmpl-radio"></div>';
-  h+='<div class="tmpl-main"><div class="tmpl-title">'+title+'</div><div class="tmpl-sub">'+sub+'</div>';
-  if(people){h+='<div class="tmpl-people">';for(var i=0;i<FAMILY.length;i++)h+='<span class="wdot" style="width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;background:'+FAMILY[i].color+'">'+FAMILY[i].name[0]+'</span>';h+='</div>';}
-  return h+'</div></div>';
 }
 function pickNewTripParty(gid){S._ntPartyId=gid;renderScreen_inplace2();}
 function createTrip(){
@@ -2789,16 +2779,11 @@ function createTrip(){
   TRIPS.push(tripObj);
   genDays(id);
   var np={},nt=[];
-  mem.forEach(function(pid){
-    np[pid]=(S.newTmpl==='mine'&&PACKING_TMPL[pid])
-      ? PACKING_TMPL[pid].map(function(c){return {cat:c.cat,items:(c.items||[]).map(function(it){return {n:it.n,qty:it.qty,l:!!it.l,done:false,needBuy:false,who:[]};})};})
-      : [];
-    if(S.newTmpl==='mine'&&TODO_TMPL[pid])TODO_TMPL[pid].forEach(function(t,i){nt.push({id:'td'+Date.now()+'_'+pid+'_'+i,trip:id,by:pid,done:false,n:t.n,when:t.when||'',who:[]});});
-  });
+  mem.forEach(function(pid){ np[pid]=[]; });
   save('dtp_packing_'+id,np);save('dtp_todo_'+id,nt);
   save('dtp_trips',TRIPS);save('dtp_days',DAYS);
   var optIn=S._notify;S._members=null;S._ntPartyId=null;S._formInit=null;
-  toast('Trip created'+(S.newTmpl==='mine'?' from your template':''));
+  toast('Trip created');
   /* land on the new trip's Plan page — switch to its party so it's visible */
   saveLists();S.tripId=id;saveTripId();S.partyId=partyId;savePartyId();loadLists();S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();S.tab='plan';
   closeScreen();render();
