@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='113';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='114';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -788,7 +788,7 @@ function openScreen(def){
   S.pkForm=null;S.pkScope='mine';S._delsect=null;S._pksect=null;ADD.psect=null;
   S._formLoc=null;S._formTier=null;S._formInit=null;S._members=null;S._formColor=null;
   S._notify=notifDefault();
-  if(def.type==='newtrip'){S._notify=true;S._formInit=null;S._ntStep=null;S._ntPartyId=null;S._ntNewParty=false;S._ntProvParty=null;S._ntTripId=null;S._ntFirstRun=false;}
+  if(def.type==='newtrip'){S._notify=true;S._formInit=null;S._ntStep=null;S._ntPartyId=null;S._ntWhoMode=null;S._ntProvParty=null;S._ntTripId=null;S._ntFirstRun=false;S._ntPeople=null;S._ntPeopleCount=1;S._ntExpandedParty=null;S._ntTripName=null;S._ntStart=null;S._ntEnd=null;}
   else if(def.type==='tripedit'){var _et=tripById(def.tripId);S._notify=!!(_et&&_et.status==='active');}
   if(def.type==='addflight'){S.formLegs=def.edit?((FLIGHTS.filter(function(f){return f.id===def.edit;})[0]||{legs:[0]}).legs.length):1;}
   else{S.formLegs=1;}
@@ -2743,216 +2743,235 @@ function reviewItem(kind,type,val,extra){
   return h+'</div></div>';
 }
 
-/* ── New Trip Wizard ─────────────────────────────────────── */
+/* ── New Trip Wizard (Build 114) ─────────────────────────── */
 function ntInit(){
   if(S._formInit==='newtrip')return;
-  S._ntFirstRun=!PARTIES.length;
-  if(S._ntFirstRun){
-    resetToBlank();
-    if(window.CLOUD&&window.CLOUD.inParty&&!window.CLOUD.inParty()&&window.CLOUD.createParty)
-      window.CLOUD.createParty('My Planning Party').catch(function(){});
-    S._ntProvParty=(PARTIES[0]||{}).id||null;
-  }
-  S._ntStep='party';
-  S._ntNewParty=S._ntFirstRun;
-  S._ntPartyId=S._ntFirstRun?((PARTIES[0]||{}).id||null):(S.partyId||(PARTIES[0]||{}).id||null);
-  if(!S._ntProvParty)S._ntProvParty=null;
-  S._members=null;
   S._formInit='newtrip';
+  S._ntFirstRun=!PARTIES.length;
+  S._ntStep='trip';
+  S._ntWhoMode=null;
 }
-function ntStep(s){S._ntStep=s;renderScreen_inplace2();}
-function ntPickParty(gid){S._ntPartyId=gid;S._ntNewParty=false;renderScreen_inplace2();}
-function ntToggleNewParty(){
-  S._ntNewParty=!S._ntNewParty;
-  if(!S._ntNewParty&&S._ntProvParty){
-    PARTIES=PARTIES.filter(function(x){return x.id!==S._ntProvParty;});
-    FAMILY.forEach(function(p){if(p.parties){p.parties=p.parties.filter(function(g){return g!==S._ntProvParty;});if(!p.parties.length&&PARTIES.length)p.parties=[(PARTIES[0]||{}).id];}});
-    saveParties();save('dtp_family',FAMILY);
-    S._ntProvParty=null;S._ntPartyId=S.partyId||(PARTIES[0]||{}).id||null;
-  }
+function ntGoToWho(){
+  var nm=val('nt-name');if(!nm){toast('Give your trip a name');return;}
+  var start=val('nt-start'),end=val('nt-end');
+  if(start&&end&&end<start){toast('End date is before the start');return;}
+  S._ntTripName=nm;S._ntStart=start;S._ntEnd=end;
+  S._ntStep='who';renderScreen_inplace2();
+}
+function ntSelectWho(mode){S._ntWhoMode=mode;if(!mode)S._ntPartyId=null;renderScreen_inplace2();}
+function ntPickParty(gid){S._ntPartyId=(S._ntPartyId===gid?null:gid);renderScreen_inplace2();}
+function ntPeek(gid){S._ntExpandedParty=(S._ntExpandedParty===gid?null:gid);renderScreen_inplace2();}
+function ntAddPerson(){S._ntPeopleCount=(S._ntPeopleCount||1)+1;renderScreen_inplace2();}
+function ntRemovePerson(i){
+  var people=ntReadPeople();people.splice(i,1);
+  S._ntPeople=people;S._ntPeopleCount=Math.max(1,people.length);
   renderScreen_inplace2();
 }
-function ntSaveNewParty(){
-  var nm=val('nt-pname');
-  if(!nm){toast('Name your party');return;}
-  if(!S._ntProvParty){
-    var gid='g'+Date.now();
-    PARTIES.push({id:gid,name:nm,by:S.persona});
-    var me=person(S.persona);
-    if(me){if(!Array.isArray(me.parties))me.parties=[];if(me.parties.indexOf(gid)<0)me.parties.push(gid);}
-    S._ntProvParty=gid;S._ntPartyId=gid;
-    saveParties();save('dtp_family',FAMILY);
-    renderScreen_inplace2();
-  }else{
-    var g=partyById(S._ntProvParty);
-    if(g&&nm!==g.name){g.name=nm;saveParties();if(window.CLOUD&&window.CLOUD.renameParty&&S._ntFirstRun)window.CLOUD.renameParty(nm).catch(function(){});}
-    S._ntStep='trip';renderScreen_inplace2();
-  }
+function ntReadPeople(){
+  var arr=[],n=S._ntPeopleCount||1;
+  for(var i=0;i<n;i++){var nm=val('nt-name-'+i),em=val('nt-email-'+i);if(nm||em)arr.push({name:nm||'',email:em||''});}
+  return arr;
 }
-function ntAddExisting(pid){partyAddMember(S._ntPartyId,pid);}
-function ntAddInline(){
-  var nm=val('nt-iname'),em=val('nt-iemail');
-  if(!nm){toast('Enter a name');return;}
-  var used={};FAMILY.forEach(function(p){used[p.color]=1;});
-  var col=PALETTE[FAMILY.length%PALETTE.length][0];
-  for(var i=0;i<PALETTE.length;i++)if(!used[PALETTE[i][0]]){col=PALETTE[i][0];break;}
-  var id='p'+Date.now();
-  FAMILY.push({id:id,name:nm,color:col,admin:false,parties:[S._ntPartyId],email:em||'',uid:null});
-  ALL_IDS=FAMILY.map(function(p){return p.id;});
-  PACKING[id]=[];
-  save('dtp_family',FAMILY);saveLists();
-  renderScreen_inplace2();
+function ntGoToGroup(){
+  var people=ntReadPeople();
+  if(!people.length||!people[0].name){toast('Add at least one name');return;}
+  S._ntPeople=people;S._ntStep='group';renderScreen_inplace2();
 }
 function ntBack(){
-  if(S._ntStep==='invite'){
+  if(S._ntStep==='notify'){
     if(S._ntTripId){
       TRIPS=TRIPS.filter(function(x){return x.id!==S._ntTripId;});
       DAYS=DAYS.filter(function(d){return d.trip!==S._ntTripId;});
       try{localStorage.removeItem('dtp_packing_'+S._ntTripId);localStorage.removeItem('dtp_todo_'+S._ntTripId);}catch(e){}
-      save('dtp_trips',TRIPS);save('dtp_days',DAYS);
-      S._ntTripId=null;S._members=null;
+      save('dtp_trips',TRIPS);save('dtp_days',DAYS);S._ntTripId=null;S._members=null;
     }
-    S._ntStep='trip';renderScreen_inplace2();return;
+    S._ntStep='who';S._ntWhoMode='existing';renderScreen_inplace2();return;
   }
-  if(S._ntStep==='trip'){S._ntStep='party';renderScreen_inplace2();return;}
-  if(S._ntStep==='party'&&S._ntNewParty&&PARTIES.length>0&&!S._ntFirstRun){S._ntNewParty=false;renderScreen_inplace2();}
+  if(S._ntStep==='group'){S._ntPeopleCount=S._ntPeople?S._ntPeople.length:1;S._ntStep='who';renderScreen_inplace2();return;}
+  if(S._ntStep==='who'){S._ntStep='trip';S._ntWhoMode=null;renderScreen_inplace2();return;}
 }
-function ntCreateTrip(){
-  var nm=val('nt-name');if(!nm){toast('Name your trip');return;}
-  var start=val('nt-start'),end=val('nt-end');
-  if(start&&end&&end<start){toast('End date is before the start');return;}
-  var partyId=S._ntPartyId||S.partyId||(PARTIES[0]||{}).id;
-  var mem=partyPeople(partyId).map(function(p){return p.id;});
-  if(mem.indexOf(S.persona)<0)mem.push(S.persona);
-  var col=PALETTE[TRIPS.length%PALETTE.length][0];
-  var id='t'+Date.now();
+function ntMakeTrip(partyId,mem){
+  var nm=S._ntTripName||'My Trip',col=PALETTE[TRIPS.length%PALETTE.length][0],id='t'+Date.now();
+  var start=S._ntStart||'',end=S._ntEnd||'';
   var dates=(start&&end)?(monOf(start)+' '+(+start.slice(8))+' – '+monOf(end)+' '+(+end.slice(8))+', '+start.slice(0,4)):'Dates TBD';
-  var tripObj={id:id,name:nm,sub:'Walt Disney World',status:'planning',start:start||'',end:end||'',dates:dates,color:col,members:mem,by:S.persona,parties:[partyId]};
-  TRIPS.push(tripObj);
-  genDays(id);
-  var np={},nt=[];
-  mem.forEach(function(pid){np[pid]=[];});
-  save('dtp_packing_'+id,np);save('dtp_todo_'+id,nt);
-  save('dtp_trips',TRIPS);save('dtp_days',DAYS);
+  TRIPS.push({id:id,name:nm,sub:'Walt Disney World',status:'planning',start:start,end:end,dates:dates,color:col,members:mem,by:S.persona,parties:[partyId]});
+  genDays(id);var np={},nt=[];mem.forEach(function(pid){np[pid]=[];});
+  save('dtp_packing_'+id,np);save('dtp_todo_'+id,nt);save('dtp_trips',TRIPS);save('dtp_days',DAYS);
   S._ntTripId=id;S._members=new Set(mem);
-  S._ntStep='invite';renderScreen_inplace2();
+}
+function ntCreateTripExisting(){
+  if(!S._ntPartyId){toast('Pick a group first');return;}
+  var mem=partyPeople(S._ntPartyId).map(function(p){return p.id;});
+  if(mem.indexOf(S.persona)<0)mem.push(S.persona);
+  ntMakeTrip(S._ntPartyId,mem);
+  S._ntStep='notify';renderScreen_inplace2();
+}
+function ntCreateTripFromGroup(){
+  var gname=val('nt-gname');if(!gname){toast('Give your group a name');return;}
+  var people=S._ntPeople||[],gid='g'+Date.now();
+  PARTIES.push({id:gid,name:gname,by:S.persona});
+  S._ntProvParty=gid;S._ntPartyId=gid;
+  var me=person(S.persona);if(me&&Array.isArray(me.parties)&&me.parties.indexOf(gid)<0)me.parties.push(gid);
+  var mem=[S.persona];
+  people.forEach(function(p){
+    if(!p.name)return;
+    var pid='p'+Date.now()+Math.random().toString(36).slice(2,5);
+    var used={};FAMILY.forEach(function(x){used[x.color]=1;});
+    var col=PALETTE[FAMILY.length%PALETTE.length][0];
+    for(var ci=0;ci<PALETTE.length;ci++)if(!used[PALETTE[ci][0]]){col=PALETTE[ci][0];break;}
+    FAMILY.push({id:pid,name:p.name,email:p.email||'',color:col,admin:false,uid:null,parties:[gid]});
+    ALL_IDS.push(pid);PACKING[pid]=[];mem.push(pid);
+  });
+  save('dtp_family',FAMILY);saveParties();saveLists();
+  if(window.CLOUD&&window.CLOUD.inParty&&!window.CLOUD.inParty()&&window.CLOUD.createParty)
+    window.CLOUD.createParty(gname).catch(function(){});
+  ntMakeTrip(gid,mem);ntFinish(false);
+}
+function ntCreateTripSkip(){
+  var partyId=S.partyId||(PARTIES[0]||{}).id||'none';
+  ntMakeTrip(partyId,[S.persona]);ntFinish(true);
 }
 function ntFinish(silent){
-  var t=tripById(S._ntTripId);
-  if(t&&S._members){var m=[];S._members.forEach(function(x){m.push(x);});t.members=m;save('dtp_trips',TRIPS);}
-  var optIn=!silent&&S._notify;
-  var partyId=S._ntPartyId,id=S._ntTripId;
+  var t=tripById(S._ntTripId),optIn=!silent&&S._notify;
+  var partyId=S._ntPartyId||S._ntProvParty,id=S._ntTripId;
   saveLists();
   if(id){S.tripId=id;saveTripId();}
-  if(partyId){S.partyId=partyId;savePartyId();}
+  if(partyId&&partyId!=='none'){S.partyId=partyId;savePartyId();}
   if(id)loadLists();
   S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();S.tab='plan';
-  S._ntStep=null;S._ntPartyId=null;S._ntNewParty=false;S._ntProvParty=null;
+  S._ntStep=null;S._ntWhoMode=null;S._ntPartyId=null;S._ntProvParty=null;
   S._ntTripId=null;S._ntFirstRun=false;S._members=null;S._formInit=null;
+  S._ntPeople=null;S._ntExpandedParty=null;S._ntTripName=null;S._ntStart=null;S._ntEnd=null;
   closeScreen();render();
   if(t&&!silent)notifyMembership(t,[],t.members,optIn);
   if(!silent)toast('Trip created');
 }
 function ntCancel(){
-  if(S._ntStep==='invite'){ntFinish(true);return;}
+  if(S._ntStep==='notify'){ntFinish(true);return;}
+  if(S._ntProvParty){
+    PARTIES=PARTIES.filter(function(x){return x.id!==S._ntProvParty;});
+    FAMILY=FAMILY.filter(function(p){return !(p.parties&&p.parties.length===1&&p.parties[0]===S._ntProvParty&&!p.admin);});
+    ALL_IDS=FAMILY.map(function(p){return p.id;});
+    save('dtp_family',FAMILY);saveParties();saveLists();
+  }
   if(S._ntTripId){
     TRIPS=TRIPS.filter(function(x){return x.id!==S._ntTripId;});
     DAYS=DAYS.filter(function(d){return d.trip!==S._ntTripId;});
     try{localStorage.removeItem('dtp_packing_'+S._ntTripId);localStorage.removeItem('dtp_todo_'+S._ntTripId);}catch(e){}
     save('dtp_trips',TRIPS);save('dtp_days',DAYS);
   }
-  if(S._ntProvParty){
-    PARTIES=PARTIES.filter(function(x){return x.id!==S._ntProvParty;});
-    FAMILY.forEach(function(p){if(p.parties){p.parties=p.parties.filter(function(g){return g!==S._ntProvParty;});if(!p.parties.length&&PARTIES.length)p.parties=[(PARTIES[0]||{}).id];}});
-    saveParties();save('dtp_family',FAMILY);
-  }
-  S._ntStep=null;S._ntPartyId=null;S._ntNewParty=false;S._ntProvParty=null;
+  S._ntStep=null;S._ntWhoMode=null;S._ntPartyId=null;S._ntProvParty=null;
   S._ntTripId=null;S._ntFirstRun=false;S._members=null;S._formInit=null;
+  S._ntPeople=null;S._ntExpandedParty=null;S._ntTripName=null;S._ntStart=null;S._ntEnd=null;
   closeScreen();
 }
 function scrNewTrip(){
   ntInit();
-  var fr=S._ntFirstRun;
-  var cancelLabel=fr?false:'Cancel';
-  var cancelArg=fr?false:'ntCancel()';
-  var title=fr?'Set up':'New Trip';
-  var body='';
-  /* ── Step 1: PARTY ── */
-  if(S._ntStep==='party'){
-    if(fr)body+='<div style="text-align:center;padding:14px 6px 12px"><div style="font-family:\'Fraunces\',Georgia,serif;font-size:24px;font-weight:700;color:var(--ink)">Welcome to Baseline Tap</div><div class="body-empty" style="padding:6px 8px 0">Let\'s create your first trip. Start by setting up a planning party — the group of people on this trip.</div></div>';
-    if(!S._ntNewParty){
-      body+='<div class="hub-section-label" style="margin-left:0">Which planning party?</div>';
-      body+='<div class="gchips">';
-      for(var gi=0;gi<PARTIES.length;gi++){var gg=PARTIES[gi];var gon=(S._ntPartyId===gg.id);
-        body+='<button class="gchip'+(gon?' on':'')+'" onclick="ntPickParty(\''+gg.id+'\')">'+(gon?IC.checkw+' ':'')+esc(gg.name)+'</button>';}
-      body+='</div>';
-      if(S._ntPartyId){var _mem=partyPeople(S._ntPartyId);
-        body+='<div class="body-empty" style="text-align:left;padding:4px 2px 12px;font-size:13px">'+_mem.length+' '+(_mem.length===1?'person':'people')+' in <strong>'+esc((partyById(S._ntPartyId)||{}).name||'')+'</strong>.</div>';}
-      body+='<button class="btn-secondary" onclick="ntToggleNewParty()">+ Create a new party for this trip</button>';
-      body+='<button class="btn-secondary green" onclick="ntStep(\'trip\')">Next →</button>';
-    }else{
-      var hasParty=!!S._ntProvParty;
-      body+='<div class="hub-section-label" style="margin-left:0">'+(fr?'Name your planning party':'New planning party')+'</div>';
-      body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">A planning party is the group who\'ll be on this and future trips together.</div>';
-      body+='<div class="field"><input class="field-input" id="nt-pname" placeholder="e.g. Smith Family WDW" value="'+esc((partyById(S._ntPartyId)||{}).name||'')+'"></div>';
-      if(hasParty){
-        var pmem=partyPeople(S._ntProvParty);
-        if(pmem.length){
-          body+='<div class="hub-section-label" style="margin-left:0">Party members</div>';
-          for(var pi=0;pi<pmem.length;pi++){var pm=pmem[pi];
-            var removable=!pm.admin&&pm.id!==S.persona;
-            body+='<div class="hub-row" style="cursor:default"><div class="hub-icon" style="background:'+pm.color+'">'+esc(pm.name[0])+'</div>';
-            body+='<div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(pm.name)+(pm.admin?' · you':'')+'</div>';
-            body+='<div class="hub-sub">'+(pm.email?esc(pm.email):'no email')+'</div></div>';
-            if(removable)body+='<button class="btn-secondary" style="margin:0;width:auto;padding:6px 12px;min-height:0" onclick="partyRemoveMember(\''+S._ntProvParty+'\',\''+pm.id+'\')">Remove</button>';
-            body+='</div>';}
-        }
-        var notIn=FAMILY.filter(function(p){return !personInParty(p,S._ntProvParty);});
-        if(notIn.length){
-          body+='<div class="hub-section-label" style="margin-left:0">Add existing people</div>';
-          body+='<div class="whoselect">';
-          for(var ni=0;ni<notIn.length;ni++){var np=notIn[ni];
-            body+='<div class="who-opt" onclick="ntAddExisting(\''+np.id+'\')" style="cursor:pointer"><span class="wdot" style="background:'+np.color+'">'+esc(np.name[0])+'</span>'+esc(np.name)+'<span style="margin-left:auto;font-size:12px;color:var(--sub)">+ add</span></div>';}
-          body+='</div>';}
-        body+='<div class="hub-section-label" style="margin-left:0">Add someone new</div>';
-        body+='<div class="field"><input class="field-input" id="nt-iname" placeholder="Name"></div>';
-        body+='<div class="field"><input class="field-input" id="nt-iemail" type="email" inputmode="email" placeholder="Email (optional)"></div>';
-        body+='<button class="btn-secondary" onclick="ntAddInline()">Add person</button>';
-      }
-      if(!fr&&PARTIES.length>0)body+='<button class="btn-secondary" onclick="ntToggleNewParty()">← Use an existing party</button>';
-      body+='<button class="btn-secondary green" onclick="ntSaveNewParty()">'+(hasParty?'Next →':'Create party →')+'</button>';
-      if(fr)body+='<button class="btn-secondary" onclick="wizSkip()">Skip — I\'ll set up myself</button>';
-    }
-    return screenShell(title,body,null,null,cancelLabel,null,cancelArg);
-  }
-  /* ── Step 2: TRIP ── */
+  var fr=S._ntFirstRun,body='';
+  var cancelLabel=fr?null:'Cancel',cancelArg=fr?null:'ntCancel()';
+
+  /* ── Step 1: Trip name + dates ── */
   if(S._ntStep==='trip'){
-    body+='<div class="field"><label class="field-label">Trip name</label><input class="field-input" id="nt-name" placeholder="e.g. Thanksgiving 2026"></div>';
-    body+='<div class="field-row"><div class="field"><label class="field-label">Start date</label><input class="field-input" type="date" id="nt-start"></div>';
-    body+='<div class="field"><label class="field-label">End date</label><input class="field-input" type="date" id="nt-end"></div></div>';
-    var pmem2=partyPeople(S._ntPartyId);
-    body+='<div class="body-empty" style="text-align:left;padding:4px 2px 12px;font-size:13px">'+pmem2.length+' '+(pmem2.length===1?'person':'people')+' from <strong>'+esc((partyById(S._ntPartyId)||{}).name||'this party')+'</strong> will be on this trip.</div>';
-    body+='<button class="btn-secondary green" onclick="ntCreateTrip()">Create trip</button>';
-    body+='<button class="btn-secondary" onclick="ntBack()">← Back</button>';
-    return screenShell(title,body,null,null,cancelLabel,null,cancelArg);
+    if(fr)body+='<div style="padding:0 2px 16px"><div style="font-family:\'Fraunces\',Georgia,serif;font-size:22px;font-weight:700;color:var(--ink);margin-bottom:6px">Welcome!</div><div class="body-empty" style="padding:0;font-size:14px">Let\'s get your first trip on the books.</div></div>';
+    body+='<div class="field"><label class="field-label">Trip name</label><input class="field-input" id="nt-name" placeholder="e.g. Disney World 2027" value="'+esc(S._ntTripName||'')+'"></div>';
+    body+='<div class="field-row"><div class="field"><label class="field-label">Start date</label><input class="field-input" type="date" id="nt-start" value="'+esc(S._ntStart||'')+'"></div>';
+    body+='<div class="field"><label class="field-label">End date</label><input class="field-input" type="date" id="nt-end" value="'+esc(S._ntEnd||'')+'"></div></div>';
+    body+='<button class="btn-secondary green" onclick="ntGoToWho()">Next →</button>';
+    if(fr)body+='<button class="btn-secondary" style="color:var(--muted);font-size:13px" onclick="wizSkip()">Skip — I\'ll set up manually</button>';
+    return screenShell('Plan a Trip',body,null,null,cancelLabel,null,cancelArg);
   }
-  /* ── Step 3: INVITE ── */
-  var inviteable=partyPeople(S._ntPartyId).filter(function(p){return !p.uid;});
-  body+='<div class="hub-section-label" style="margin-left:0">Invite your people</div>';
-  body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Send links now or skip — invite later from Admin → Planning Party.</div>';
-  if(inviteable.length){
-    for(var ii=0;ii<inviteable.length;ii++){var ip=inviteable[ii];
+
+  /* ── Step 2: Who's coming? ── */
+  if(S._ntStep==='who'){
+    var tn=S._ntTripName||'your trip';
+    body+='<div class="hub-section-label" style="margin-left:0">Who\'s coming on '+esc(tn)+'?</div>';
+
+    if(!S._ntWhoMode){
+      if(PARTIES.length)body+='<button class="btn-secondary" style="text-align:left;justify-content:flex-start" onclick="ntSelectWho(\'existing\')">Use an existing group</button>';
+      body+='<button class="btn-secondary" style="text-align:left;justify-content:flex-start" onclick="ntSelectWho(\'add\')">Add people now</button>';
+      body+='<button class="btn-secondary" style="text-align:left;justify-content:flex-start;color:var(--muted)" onclick="ntCreateTripSkip()">Just me — I\'ll add people later</button>';
+      body+='<button class="btn-secondary" onclick="ntBack()">← Back</button>';
+      return screenShell('Plan a Trip',body,null,null,cancelLabel,null,cancelArg);
+    }
+
+    if(S._ntWhoMode==='existing'){
+      body+='<div class="body-empty" style="text-align:left;padding:0 2px 10px;font-size:13px">Pick your group:</div>';
+      for(var gi=0;gi<PARTIES.length;gi++){
+        var gp=PARTIES[gi],sel=S._ntPartyId===gp.id;
+        body+='<div class="hub-row'+(sel?' on':'')+'" onclick="ntPickParty(\''+gp.id+'\')" style="flex-wrap:wrap;gap:4px;cursor:pointer">';
+        body+='<div class="hub-main"><div class="hub-title">'+esc(gp.name)+(sel?' ✓':'')+'</div></div>';
+        body+='<button class="btn-secondary" style="margin:0;width:auto;padding:4px 10px;min-height:0;font-size:12px" onclick="event.stopPropagation();ntPeek(\''+gp.id+'\')">See who\'s in it</button>';
+        body+='</div>';
+        if(S._ntExpandedParty===gp.id){
+          var mems=partyPeople(gp.id);
+          body+='<div style="padding:4px 12px 10px;display:flex;flex-wrap:wrap;gap:6px">';
+          for(var mi=0;mi<mems.length;mi++){var mp=mems[mi];
+            body+='<span style="background:var(--chip-bg);border-radius:99px;padding:3px 10px;font-size:13px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+mp.color+';margin-right:5px;vertical-align:middle"></span>'+esc(mp.name)+'</span>';}
+          body+='</div>';
+        }
+      }
+      body+='<div style="height:4px"></div>';
+      body+='<button class="btn-secondary" onclick="ntSelectWho(null)">← All options</button>';
+      return screenShell('Plan a Trip',body,S._ntPartyId?'Create trip →':null,S._ntPartyId?'ntCreateTripExisting()':null,cancelLabel,null,cancelArg);
+    }
+
+    if(S._ntWhoMode==='add'){
+      body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Enter everyone who\'s coming:</div>';
+      var pc=S._ntPeopleCount||1;
+      for(var pi=0;pi<pc;pi++){
+        var pre=(S._ntPeople&&S._ntPeople[pi])||{};
+        body+='<div style="display:flex;gap:6px;margin-bottom:6px;align-items:center">';
+        body+='<input id="nt-name-'+pi+'" type="text" class="field-input" placeholder="Name" style="flex:1;margin:0" autocomplete="off" value="'+esc(pre.name||'')+'">';
+        body+='<input id="nt-email-'+pi+'" type="email" class="field-input" placeholder="Email (optional)" style="flex:1.4;margin:0" autocomplete="off" value="'+esc(pre.email||'')+'">';
+        if(pc>1)body+='<button class="btn-icon" onclick="ntRemovePerson('+pi+')" style="flex:none">×</button>';
+        body+='</div>';
+      }
+      body+='<button class="btn-secondary" onclick="ntAddPerson()">+ Add another person</button>';
+      body+='<button class="btn-secondary" onclick="ntSelectWho(null)">← All options</button>';
+      return screenShell('Plan a Trip',body,'Next →','ntGoToGroup()',cancelLabel,null,cancelArg);
+    }
+  }
+
+  /* ── Step 3: Name the group (add-people path only) ── */
+  if(S._ntStep==='group'){
+    var ppl=S._ntPeople||[];
+    body+='<div class="hub-section-label" style="margin-left:0">One more thing…</div>';
+    if(ppl.length){
+      body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">You\'re going with:</div>';
+      body+='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">';
+      ppl.forEach(function(p){if(p.name)body+='<span style="background:var(--chip-bg);border-radius:99px;padding:3px 10px;font-size:13px">'+esc(p.name)+'</span>';});
+      body+='</div>';
+    }
+    body+='<div class="field"><label class="field-label">What do you want to call this group?</label><input class="field-input" id="nt-gname" placeholder="e.g. Smith Family" autocomplete="off"></div>';
+    body+='<button class="btn-secondary" onclick="ntBack()">← Back</button>';
+    return screenShell('Plan a Trip',body,'Create trip →','ntCreateTripFromGroup()',cancelLabel,null,cancelArg);
+  }
+
+  /* ── Step 4: All set / notify (existing-group path only) ── */
+  var party4=partyById(S._ntPartyId)||{},pname4=party4.name||'your group';
+  var notJoined4=partyPeople(S._ntPartyId||'').filter(function(p){return !p.uid&&p.id!==S.persona;});
+  var alreadyIn4=partyPeople(S._ntPartyId||'').filter(function(p){return !!p.uid&&p.id!==S.persona;});
+  body+='<div class="hub-section-label" style="margin-left:0">Your trip is ready!</div>';
+  if(!notJoined4.length){
+    body+='<div class="body-empty" style="padding:4px 2px 14px;font-size:13px">Everyone in <strong>'+esc(pname4)+'</strong> already has the app — they\'ll see this trip as soon as you\'re done.</div>';
+  }else{
+    body+='<div class="body-empty" style="padding:4px 2px 10px;font-size:13px">These people don\'t have the app yet. Send them a link and they\'ll land right in your trip:</div>';
+    for(var ii=0;ii<notJoined4.length;ii++){var ip=notJoined4[ii];
       body+='<div class="hub-row" style="cursor:default;flex-wrap:wrap;gap:6px">';
-      body+='<div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(ip.name)+'</div><div class="hub-sub">'+(ip.email?esc(ip.email):'no email — add from Admin → People')+'</div></div>';
-      body+='<button class="btn-secondary" style="margin:0;width:auto;padding:6px 10px;min-height:0" onclick="copyInviteLink(\''+ip.id+'\')">Copy link</button>';
-      if(ip.email)body+='<button class="btn-secondary" style="margin:0;width:auto;padding:6px 10px;min-height:0" onclick="emailInviteLink(\''+ip.id+'\')">Email</button>';
-      body+='</div>';}
-  }else{body+='<div class="body-empty" style="padding:8px 2px">Everyone\'s already joined — all set!</div>';}
-  body+='<div class="field" style="margin-top:12px"><label class="field-label">Notify joined members</label>';
-  body+='<div class="notify-row'+(S._notify?' on':'')+'" onclick="notifToggle()"><span class="notify-check">'+(S._notify?IC.checkw:'')+'</span><div><div class="notify-lbl">Tell people they\'re on this trip</div><div class="notify-sub">You\'ll choose who to notify when you finish.</div></div></div></div>';
-  body+='<button class="btn-secondary green" onclick="ntFinish()">Finish</button>';
-  body+='<button class="btn-secondary" onclick="ntBack()">← Back</button>';
-  return screenShell(title,body,null,null,cancelLabel,null,cancelArg);
+      body+='<div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(ip.name)+'</div>';
+      body+='<div class="hub-sub">'+(ip.email?esc(ip.email):'no email on file — add from Admin → People')+'</div></div>';
+      if(ip.email){
+        body+='<button class="btn-secondary" style="margin:0;width:auto;padding:6px 10px;min-height:0;font-size:13px" onclick="copyInviteLink(\''+ip.id+'\')">Copy link</button>';
+        body+='<button class="btn-secondary" style="margin:0;width:auto;padding:6px 10px;min-height:0;font-size:13px" onclick="emailInviteLink(\''+ip.id+'\')">Email</button>';
+      }
+      body+='</div>';
+    }
+  }
+  if(alreadyIn4.length){
+    body+='<div style="margin:10px 0 4px"><label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer"><input type="checkbox" id="nt-notify" '+(S._notify?'checked':'')+' onchange="S._notify=this.checked"> Notify '+esc(pname4)+' that a new trip is ready</label></div>';
+  }
+  body+='<button class="btn-secondary" onclick="ntBack()">← Change group</button>';
+  return screenShell('Plan a Trip',body,'Done','ntFinish()',null,null,null);
 }
 
 
