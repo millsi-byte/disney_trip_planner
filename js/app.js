@@ -38,7 +38,8 @@ var IC = {
   send:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
   upload:'<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
   bell:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
-  users:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
+  users:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  cal:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'
 };
 
 /* ── State ─────────────────────────────────────────────────── */
@@ -68,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='130';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='131';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2754,16 +2755,18 @@ function ntCalPick(d){
   else{S._ntEnd=d;}
   renderScreen_inplace2();
 }
-function renderNtCal(){
+/* generic range-picker calendar. Caller supplies the displayed year/month, the
+   selected start/end, and the names of the prev/next/pick handlers — so the
+   wizard and the trip editor share one renderer. */
+function renderCalGrid(y,m,s,e,pickFn,prevFn,nextFn){
   var MN=['January','February','March','April','May','June','July','August','September','October','November','December'];
   var DN=['Su','Mo','Tu','We','Th','Fr','Sa'];
-  var y=S._ntCalYear,m=S._ntCalMonth,s=S._ntStart,e=S._ntEnd;
   var now=new Date(),todayStr=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');
   var out='<div style="margin:4px 0 8px">';
   out+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">';
-  out+='<button class="btn-icon" onclick="ntCalPrev()" style="font-size:20px;line-height:1;padding:2px 10px">‹</button>';
+  out+='<button class="btn-icon" onclick="'+prevFn+'()" style="font-size:20px;line-height:1;padding:2px 10px">‹</button>';
   out+='<span style="font-weight:600;font-size:15px">'+MN[m]+' '+y+'</span>';
-  out+='<button class="btn-icon" onclick="ntCalNext()" style="font-size:20px;line-height:1;padding:2px 10px">›</button>';
+  out+='<button class="btn-icon" onclick="'+nextFn+'()" style="font-size:20px;line-height:1;padding:2px 10px">›</button>';
   out+='</div>';
   out+='<div style="display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:3px">';
   DN.forEach(function(n){out+='<div style="text-align:center;font-size:11px;color:var(--muted);padding:2px 0">'+n+'</div>';});
@@ -2777,7 +2780,7 @@ function renderNtCal(){
     var isSel=ds===s||ds===e,inRng=!!(s&&e&&ds>s&&ds<e),isToday=ds===todayStr;
     var bg=isSel?'var(--ink)':inRng?'rgba(27,43,74,0.10)':'transparent';
     var col=isSel?'#fff':isToday?'var(--mk)':'inherit';
-    out+='<div onclick="ntCalPick(\''+ds+'\')" style="text-align:center;padding:7px 1px;border-radius:'+(isSel?'50%':'5px')+';cursor:pointer;background:'+bg+';color:'+col+';font-weight:'+(isSel||isToday?'700':'400')+';font-size:14px">'+d+'</div>';
+    out+='<div onclick="'+pickFn+'(\''+ds+'\')" style="text-align:center;padding:7px 1px;border-radius:'+(isSel?'50%':'5px')+';cursor:pointer;background:'+bg+';color:'+col+';font-weight:'+(isSel||isToday?'700':'400')+';font-size:14px">'+d+'</div>';
   }
   out+='</div>';
   out+='<div style="margin-top:8px;font-size:13px;color:var(--muted);text-align:center;min-height:18px">';
@@ -2787,6 +2790,7 @@ function renderNtCal(){
   out+='</div></div>';
   return out;
 }
+function renderNtCal(){return renderCalGrid(S._ntCalYear,S._ntCalMonth,S._ntStart,S._ntEnd,'ntCalPick','ntCalPrev','ntCalNext');}
 function ntGoToWho(){
   var nm=val('nt-name');if(!nm){toast('Give your trip a name');return;}
   S._ntTripName=nm;
@@ -4205,16 +4209,46 @@ function delResort(id){
 
 /* ── Trip name & dates ─────────────────────────────────────── */
 function tripById(id){for(var i=0;i<TRIPS.length;i++)if(TRIPS[i].id===id)return TRIPS[i];return null;}
+/* trip-editor date calendar — same range picker as the wizard, but collapsed
+   to a summary line until the user taps it open. */
+function teCalToggle(){
+  S._teCalOpen=!S._teCalOpen;
+  if(S._teCalOpen&&!S._teCalYear){
+    if(S._teStart){S._teCalYear=+S._teStart.slice(0,4);S._teCalMonth=+S._teStart.slice(5,7)-1;}
+    else{var _n=new Date();S._teCalYear=_n.getFullYear();S._teCalMonth=_n.getMonth();}
+  }
+  renderScreen_inplace2();
+}
+function teCalPrev(){S._teCalMonth--;if(S._teCalMonth<0){S._teCalMonth=11;S._teCalYear--;}renderScreen_inplace2();}
+function teCalNext(){S._teCalMonth++;if(S._teCalMonth>11){S._teCalMonth=0;S._teCalYear++;}renderScreen_inplace2();}
+function teCalPick(d){
+  if(!S._teStart||(S._teStart&&S._teEnd)||d<S._teStart){S._teStart=d;S._teEnd=null;}
+  else if(d===S._teStart){S._teStart=null;S._teEnd=null;}
+  else{S._teEnd=d;}
+  renderScreen_inplace2();
+}
+function teDatesLabel(){
+  var s=S._teStart,e=S._teEnd;
+  if(s&&e)return monOf(s)+' '+Number(s.slice(8))+' – '+monOf(e)+' '+Number(e.slice(8))+', '+s.slice(0,4);
+  if(s)return monOf(s)+' '+Number(s.slice(8))+', '+s.slice(0,4)+' — tap to set end date';
+  return 'Set trip dates';
+}
 function scrTripEdit(){
   var t=tripById(S.screen.tripId||S.tripId);if(!t)return scrGeneric();
   if(!canEditTrip(t)){
     var who=(t.by&&person(t.by))?person(t.by).name:'an admin';
     return screenShell('Trip','<div class="body-empty" style="text-align:left;padding:6px 2px">Only '+esc(who)+' or an admin can change this trip\'s name, dates and members.</div>',null,null,'Done');
   }
-  if(S._formInit!=='trip'){S._formStatus.tr=t.status;S._formColor=t.color;S._formInit='trip';S._tpartyId=(t.parties&&t.parties[0])||S.partyId||(PARTIES[0]||{}).id;}
+  if(S._formInit!=='trip'){S._formStatus.tr=t.status;S._formColor=t.color;S._formInit='trip';S._tpartyId=(t.parties&&t.parties[0])||S.partyId||(PARTIES[0]||{}).id;S._teStart=t.start||'';S._teEnd=t.end||'';S._teCalOpen=false;S._teCalYear=null;S._teCalMonth=null;}
   var body='<div class="field"><label class="field-label">Trip name</label><input class="field-input" id="tr-name" value="'+esc(t.name)+'"></div>';
-  body+='<div class="field-row"><div class="field"><label class="field-label">Start date</label><input class="field-input" type="date" id="tr-start" value="'+esc(t.start||'')+'"></div>';
-  body+='<div class="field"><label class="field-label">End date</label><input class="field-input" type="date" id="tr-end" value="'+esc(t.end||'')+'"></div></div>';
+  body+='<div class="field"><label class="field-label">Dates</label>';
+  if(S._teCalOpen){
+    body+=renderCalGrid(S._teCalYear,S._teCalMonth,S._teStart,S._teEnd,'teCalPick','teCalPrev','teCalNext');
+    body+='<button class="btn-secondary" onclick="teCalToggle()" style="margin-top:2px">Done</button>';
+  }else{
+    body+='<button class="field-input" onclick="teCalToggle()" style="text-align:left;cursor:pointer;background:#fff;display:flex;align-items:center;justify-content:space-between"><span'+(S._teStart?'':' style="color:var(--muted)"')+'>'+esc(teDatesLabel())+'</span>'+IC.cal+'</button>';
+  }
+  body+='</div>';
   body+='<div class="field"><label class="field-label">Status</label><div class="seg">';
   body+='<button class="seg-btn'+(S._formStatus.tr==='active'?' on book':'')+'" onclick="pickStatus(\'tr\',\'active\')">Active</button>';
   body+='<button class="seg-btn'+(S._formStatus.tr==='planning'?' on':'')+'" onclick="pickStatus(\'tr\',\'planning\')">Planning</button>';
@@ -4250,7 +4284,7 @@ function saveTrip(){
   var t=tripById(S.screen.tripId||S.tripId);if(!t){closeScreen();return;}
   if(!canEditTrip(t)){toast('Only the trip creator or an admin can edit this trip');closeScreen();return;}
   var nm=val('tr-name');if(nm)t.name=nm;
-  var st=val('tr-start'),en=val('tr-end');
+  var st=S._teStart||'',en=S._teEnd||'';
   if(st&&en){
     t.start=st;t.end=en;
     t.dates=monOf(st)+' '+(+st.slice(8))+' – '+monOf(en)+' '+(+en.slice(8))+', '+st.slice(0,4);
