@@ -34,14 +34,19 @@
 <div id="screen-host"></div>
 <div id="toast" class="toast"></div>
 
-<script src="js/data.js"></script>
-<script src="js/app.js"></script>
+<!-- All deferred: scripts download in the background and execute in order
+     after the page has parsed, so a slow CDN (the Firebase SDK on a poor
+     network/proxy) can never block the login screen from rendering. defer
+     preserves order, so data.js → app.js → firebase → cloud.js still load in
+     sequence and dependencies hold. -->
+<script defer src="js/data.js"></script>
+<script defer src="js/app.js"></script>
 <!-- Firebase cloud sync (optional — app falls back to local if these don't load) -->
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="js/firebase-config.js"></script>
-<script src="js/cloud.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script defer src="js/firebase-config.js"></script>
+<script defer src="js/cloud.js"></script>
 <script>
 if('serviceWorker' in navigator){
   window.addEventListener('load',function(){
