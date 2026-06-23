@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='119';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='120';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2950,7 +2950,7 @@ function scrNewTrip(){
       for(var pi=0;pi<pc;pi++){
         var pre=(S._ntPeople&&S._ntPeople[pi])||{};
         body+='<div style="display:flex;gap:6px;margin-bottom:6px;align-items:center">';
-        body+='<input id="nt-name-'+pi+'" type="text" class="field-input" placeholder="Name" style="flex:1;margin:0" autocomplete="off" value="'+esc(pre.name||'')+'">';
+        body+='<input id="nt-name-'+pi+'" type="text" class="field-input" placeholder="First name" style="flex:1;margin:0" autocomplete="off" value="'+esc(pre.name||'')+'">';
         body+='<input id="nt-email-'+pi+'" type="email" class="field-input" placeholder="Email (optional)" style="flex:1.4;margin:0" autocomplete="off" value="'+esc(pre.email||'')+'">';
         if(pc>1)body+='<button class="btn-icon" onclick="ntRemovePerson('+pi+')" style="flex:none">×</button>';
         body+='</div>';
@@ -3555,7 +3555,7 @@ function scrPersonEdit(){
   var pid=(S.screen&&S.screen.pid),p=person(pid);
   if(!p)return screenShell('Edit Person','<div class="body-empty" style="padding:24px 12px">Person not found.</div>',null,null,'Done');
   if(S._formInit!=='person:'+pid){S._peAdmin=!!p.admin;S._peParties=new Set(p.parties||[]);S._formInit='person:'+pid;}
-  var body='<div class="field"><label class="field-label">Name</label><input class="field-input" id="pe-name" value="'+esc(p.name)+'"></div>';
+  var body='<div class="field"><label class="field-label">First name</label><input class="field-input" id="pe-name" value="'+esc(p.name)+'"></div>';
   body+='<div class="field"><label class="field-label">Color</label><select class="field-select" id="pe-color">'+colorOptions(p.color)+'</select></div>';
   /* role */
   body+='<div class="field"><label class="field-label">Role</label>';
@@ -3585,8 +3585,12 @@ function scrPersonEdit(){
     body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0;font-size:12px">'
       +(p.email?'When <strong>'+esc(p.email)+'</strong> signs in, they\'re matched to '+esc(p.name)+' automatically.'
                :'Add an email under Travel details so they\'re matched automatically at sign-in — or send an invite link.')+'</div>';
-    if(window.CLOUD&&window.CLOUD.inParty&&window.CLOUD.inParty())
-      body+='<button class="btn-secondary" style="margin-top:8px" onclick="copyInviteLink(\''+pid+'\')">Copy invite link for '+esc(p.name)+'</button>';
+    if(window.CLOUD&&window.CLOUD.inParty&&window.CLOUD.inParty()){
+      body+='<div style="display:flex;gap:8px;margin-top:8px">';
+      body+='<button class="btn-secondary" style="margin:0;flex:1" onclick="copyInviteLink(\''+pid+'\')">Copy invite link</button>';
+      if(p.email)body+='<button class="btn-secondary" style="margin:0;flex:1" onclick="emailInviteLink(\''+pid+'\')">Email invite</button>';
+      body+='</div>';
+    }
   }
   body+='</div>';
   /* travel details */
