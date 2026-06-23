@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='123';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='124';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -783,7 +783,7 @@ function switchTrip(id){saveLists();S.tripId=id;saveTripId();var _st=tripById(id
 function openScreen(def){
   S.screen=def;S._who=null;S._formStatus={};S._delpk=null;S._deltd=null;S.tdForm=null;S.tdScope='mine';S._tdPriv=false;
   S.pkForm=null;S.pkScope='mine';S._delsect=null;S._pksect=null;ADD.psect=null;
-  S._formLoc=null;S._formTier=null;S._formInit=null;S._members=null;S._formColor=null;
+  S._formLoc=null;S._formTier=null;S._formInit=null;S._formColor=null;
   S._notify=notifDefault();
   if(def.type==='newtrip'){S._notify=true;S._formInit=null;S._ntStep=null;S._ntPartyId=null;S._ntWhoMode=null;S._ntProvParty=null;S._ntTripId=null;S._ntFirstRun=false;S._ntPeople=null;S._ntInvite=null;S._ntPeopleCount=1;S._ntExpandedParty=null;S._ntTripName=null;S._ntStart=null;S._ntEnd=null;S._ntCalYear=null;S._ntCalMonth=null;}
   else if(def.type==='tripedit'){var _et=tripById(def.tripId);S._notify=!!(_et&&_et.status==='active');}
@@ -1561,7 +1561,7 @@ function renderAdminHub(){
     +'<div class="hub-main"><div class="hub-title">AI Import</div><div class="hub-sub">Paste structured details from Claude</div></div><div class="chev">'+IC.chev+'</div></button>';
   o+='<button class="hub-row" onclick="openScreen({type:\'csvimport\'})"><div class="hub-icon" style="background:#0F766E">'+IC.upload+'</div>'
     +'<div class="hub-main"><div class="hub-title">CSV Import</div><div class="hub-sub">Seed a trip from a spreadsheet</div></div><div class="chev">'+IC.chev+'</div></button>';
-  o+='<div class="hub-section-label">People & Parties</div>';
+  o+='<div class="hub-section-label">Manage</div>';
   o+='<button class="hub-row" onclick="openScreen({type:\'parties\'})"><div class="hub-icon" style="background:#6B4FA0">'+IC.home+'</div>'
     +'<div class="hub-main"><div class="hub-title">Planning Parties</div><div class="hub-sub">'+PARTIES.length+' '+(PARTIES.length===1?'party':'parties')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
   o+='<button class="hub-row" onclick="openScreen({type:\'personas\'})"><div class="hub-icon" style="background:#1C3A5E">'+IC.users+'</div>'
@@ -2732,11 +2732,11 @@ function reviewItem(kind,type,val,extra){
   return h+'</div></div>';
 }
 
-/* ── New Trip Wizard (Build 115) ─────────────────────────── */
+/* ── New Trip Wizard (Build 124) ─────────────────────────── */
 function ntInit(){
   if(S._formInit==='newtrip')return;
   S._formInit='newtrip';
-  S._ntFirstRun=!PARTIES.length;
+  S._ntFirstRun=!TRIPS.length;
   S._ntStep='trip';
   S._ntWhoMode=null;
   if(!S._ntCalYear){var _n=new Date();S._ntCalYear=_n.getFullYear();S._ntCalMonth=_n.getMonth();}
@@ -2935,7 +2935,7 @@ function scrNewTrip(){
           var mems=partyPeople(gp.id);
           body+='<div style="padding:4px 12px 10px;display:flex;flex-wrap:wrap;gap:6px">';
           for(var mi=0;mi<mems.length;mi++){var mp=mems[mi];
-            body+='<span style="background:var(--chip-bg);border-radius:99px;padding:3px 10px;font-size:13px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+mp.color+';margin-right:5px;vertical-align:middle"></span>'+esc(mp.name)+'</span>';}
+            body+='<span style="background:var(--cream);border-radius:99px;padding:3px 10px;font-size:13px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+mp.color+';margin-right:5px;vertical-align:middle"></span>'+esc(mp.name)+'</span>';}
           body+='</div>';
         }
       }
@@ -2968,10 +2968,10 @@ function scrNewTrip(){
     if(ppl.length){
       body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">You\'re going with:</div>';
       body+='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">';
-      ppl.forEach(function(p){if(p.name)body+='<span style="background:var(--chip-bg);border-radius:99px;padding:3px 10px;font-size:13px">'+esc(p.name)+'</span>';});
+      ppl.forEach(function(p){if(p.name)body+='<span style="background:var(--cream);border-radius:99px;padding:3px 10px;font-size:13px">'+esc(p.name)+'</span>';});
       body+='</div>';
     }
-    body+='<div class="field"><label class="field-label">What do you want to call this group?</label><input class="field-input" id="nt-gname" placeholder="e.g. Smith Family" autocomplete="off"></div>';
+    body+='<div class="field"><label class="field-label">What do you want to call this group?</label><input class="field-input" id="nt-gname" placeholder="e.g. Smith Family" autocomplete="off"><div style="font-size:12px;color:var(--muted);margin-top:6px">This group becomes your Planning Party — a reusable list of travel companions you can use for future trips.</div></div>';
     body+='<button class="btn-secondary" onclick="ntBack()">← Back</button>';
     return screenShell('Plan a Trip',body,'Create trip →','ntCreateTripFromGroup()',cancelLabel,null,cancelArg);
   }
@@ -3211,7 +3211,7 @@ function scrPersona(){
     var me=person(S.persona);
     var body='<div class="hub-section-label" style="margin-left:0">Your account</div>';
     body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px">You\'re '+esc(me?me.name:'')+(isAdmin()?' · Admin':'')+'.</div>';
-    body+='<button class="btn-secondary green" onclick="openScreen({type:\'newtrip\'})">Plan a new trip</button>';
+    body+='<button class="btn-secondary green" onclick="openScreen({type:\'newtrip\'})">'+IC.plus+' Plan a new trip</button>';
     body+='<button class="btn-secondary" onclick="openScreen({type:\'persondetails\',pid:\''+S.persona+'\'})">My travel details</button>';
     body+=cloudSection();
     if(!(window.CLOUD&&window.CLOUD.enabled)){
@@ -3359,7 +3359,7 @@ function scrTripParties(){
   body+='<div class="hub-section-label" style="margin-left:0">This trip</div>';
   body+='<button class="btn-secondary green" onclick="openTripPlanning(\''+t.id+'\')">Open trip planning</button>';
   body+='<button class="btn-secondary" onclick="openScreen({type:\'tripedit\',tripId:\''+t.id+'\'})" style="margin-top:8px">Edit name &amp; dates</button>';
-  return screenShell(esc(t.name),body,null,null,'Back',null,'openScreen({type:\'alltrips\'})');
+  return screenShell(esc(t.name),body,null,null,'← Back',null,'openScreen({type:\'alltrips\'})');
 }
 function partyDelete(gid){
   if(PARTIES.length<=1){toast('Keep at least one party');return;}
@@ -3394,7 +3394,7 @@ function scrPersonas(){
       +'<div class="hub-icon" style="background:'+p.color+'">'+esc(p.name[0])+'</div>'
       +'<div class="hub-main"><div class="hub-title">'+esc(p.name)+'</div><div class="hub-sub">'+bits.join(' · ')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
   }
-  body+='<div class="body-empty" style="text-align:left;padding:10px 2px 0;font-size:12px">Tap a person to edit their details or copy their invite link. Assign people to trips from the trip editor.</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:10px 2px 0;font-size:12px">Tap a person to edit their details or copy their invite link. Trip membership is managed through planning parties.</div>';
   return screenShell('People',body,null,null,'Done','<button class="sec-add" onclick="addPersona()">Add person</button>');
 }
 
@@ -3698,19 +3698,6 @@ function delPersona(id){
   renderScreen_inplace2();
 }
 
-/* Trip member picker (assign global personas to a trip) */
-function memberSelectField(pre){
-  if(!S._members){S._members=new Set(pre&&pre.length?pre:partyPeople(S.partyId).map(function(p){return p.id;}));}
-  /* offer the active party\'s people, plus anyone already selected */
-  var pool=partyPeople(S.partyId).map(function(p){return p.id;});
-  S._members.forEach(function(id){if(pool.indexOf(id)<0&&person(id))pool.push(id);});
-  var h='<div class="field"><label class="field-label">People on this trip <span class="opt">(drives filters & assignments)</span></label><div class="whoselect">';
-  for(var i=0;i<pool.length;i++){var p=person(pool[i]);if(!p)continue;var on=S._members.has(p.id);
-    h+='<div class="who-opt'+(on?' on':'')+'" onclick="toggleMember(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+'<span class="wcheck">'+IC.checkw.replace('currentColor','#15803D')+'</span></div>';
-  }
-  return h+'</div></div>';
-}
-function toggleMember(id){if(!S._members)S._members=new Set();if(S._members.has(id))S._members.delete(id);else S._members.add(id);renderScreen_inplace2();}
 function pickTripParty(gid){S._tpartyId=gid;renderScreen_inplace2();}
 
 /* legacy packing list (kept for the old combined route, now unused) */
@@ -4229,12 +4216,17 @@ function scrTripEdit(){
   body+='<button class="seg-btn'+(S._formStatus.tr==='archived'?' on':'')+'" onclick="pickStatus(\'tr\',\'archived\')">Archived</button></div></div>';
   body+='<div class="field"><label class="field-label">Color</label><select class="field-select" id="tr-color">'+colorOptions(S._formColor)+'</select></div>';
   if(isAdmin()){
-    body+='<div class="field"><label class="field-label">Planning Party <span class="opt">(who this trip is walled to)</span></label><div class="gchips">';
+    body+='<div class="field"><label class="field-label">Planning Party <span class="opt">(members of this party will be on the trip)</span></label><div class="gchips">';
     for(var gi=0;gi<PARTIES.length;gi++){var gg=PARTIES[gi],gon=(S._tpartyId===gg.id);
       body+='<button class="gchip'+(gon?' on':'')+'" onclick="pickTripParty(\''+gg.id+'\')">'+esc(gg.name)+'</button>';}
     body+='</div></div>';
   }
-  body+=memberSelectField(t.members);
+  var _memPid=S._tpartyId||S.partyId;
+  var _memPpl=partyPeople(_memPid);
+  body+='<div class="field"><label class="field-label">Trip Members</label>';
+  body+='<div style="font-size:13px;color:var(--muted);margin-bottom:8px">All members of the selected planning party are on this trip.</div>';
+  if(_memPpl.length){body+='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:2px">';for(var _mi=0;_mi<_memPpl.length;_mi++){var _mp=_memPpl[_mi];body+='<span style="background:var(--cream);border-radius:99px;padding:3px 10px;font-size:13px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+_mp.color+';margin-right:5px;vertical-align:middle"></span>'+esc(_mp.name)+'</span>';}body+='</div>';}
+  body+='</div>';
   body+='<div class="field"><label class="field-label">Notifications</label>';
   body+='<div class="notify-row'+(S._notify?' on':'')+'" onclick="notifToggle()"><span class="notify-check">'+(S._notify?IC.checkw:'')+'</span><div><div class="notify-lbl">Notify members of changes</div><div class="notify-sub">'+(t.status==='active'?'You\'ll choose who to tell about anyone added or removed.':'This trip is still planning — switch on to notify people you add or remove.')+'</div></div></div></div>';
   var own=(t.by&&person(t.by))?person(t.by):null;
@@ -4263,13 +4255,13 @@ function saveTrip(){
   }
   t.status=S._formStatus.tr||t.status;
   var c=val('tr-color');if(c)t.color=c;
+  var effectivePartyId=(isAdmin()&&S._tpartyId)?S._tpartyId:S.partyId;
   if(isAdmin()&&S._tpartyId){t.parties=[S._tpartyId];}
   var oldMem=(t.members||[]).slice();
-  t.members=S._members?FAMILY.map(function(p){return p.id;}).filter(function(id){return S._members.has(id);}):t.members;
-  if(!t.members||!t.members.length)t.members=partyPeople(S.partyId).map(function(p){return p.id;});
+  t.members=partyPeople(effectivePartyId).map(function(p){return p.id;});
   if(t.status==='active')for(var j=0;j<TRIPS.length;j++)if(TRIPS[j].id!==t.id&&TRIPS[j].status==='active')TRIPS[j].status='planning';
   if(t.id===S.tripId){S.fmode='all';S.filter.clear();}
-  save('dtp_trips',TRIPS);var optIn=S._notify;var newMem=t.members.slice();S._members=null;toast('Trip updated');closeScreen();render();
+  save('dtp_trips',TRIPS);var optIn=S._notify;var newMem=t.members.slice();toast('Trip updated');closeScreen();render();
   notifyMembership(t,oldMem,newMem,optIn);
 }
 function delTrip(id){
@@ -4290,7 +4282,7 @@ function doDelTrip(id){
        silently teleport into another trip; the user purposely picks the next one */
     S.tripId=null;S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();
   }
-  ensureVisibleTrip();saveTripId();persist();S._members=null;toast('Trip deleted');closeScreen();render();
+  ensureVisibleTrip();saveTripId();persist();toast('Trip deleted');closeScreen();render();
 }
 
 /* ============================================================

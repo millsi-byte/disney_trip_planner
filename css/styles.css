@@ -11,6 +11,7 @@
   --hd-flight:#1B2B4A;--hd-plan:#0F5F73;--hd-ll:#92400E;--hd-strat:#166534;
   --hd-din:#7C2D12;--hd-show:#4C1D95;--hd-resort:#1C3A5E;
   --navline:#B8B2A8;
+  --chip-bg:var(--cream);
 }
 html,body{margin:0;padding:0}
 body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:var(--cream);color:var(--ink);max-width:430px;margin:0 auto;position:relative;min-height:100vh}
