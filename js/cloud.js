@@ -18,6 +18,14 @@
   }
   try{ firebase.initializeApp(FIREBASE_CONFIG); }catch(e){ /* already initialized */ }
   var auth=firebase.auth();
+  /* Force Firestore to auto-detect long-polling. Its default WebChannel
+     transport gets blocked by Edge/Safari tracking prevention and some
+     incognito modes, so the very first read after sign-in hangs forever — and
+     since the app only leaves the sign-in screen once that read returns, you
+     end up authenticated but stuck behind the gate. Auto-detect falls back to
+     long-polling when WebChannel is blocked. Must run before any other
+     Firestore call. */
+  try{ firebase.firestore().settings({experimentalAutoDetectLongPolling:true,merge:true}); }catch(e){}
   var C={enabled:true,user:null,ready:false,synced:false,applyingRemote:false,wid:null,partyName:null,isSuper:false,isOwner:false,adminWid:null};
   var SUPER_EMAIL='millsi@gmail.com';   /* the one account that authorizes everyone else */
   function emailKey(e){return (e||'').trim().toLowerCase();}
