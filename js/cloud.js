@@ -322,10 +322,15 @@
   auth.onAuthStateChanged(function(u){
     C.user=u; C.ready=true;
     if(u){
-      startSync().then(function(){
+      /* Route the user in whether or not the first sync succeeds. The app is
+         local-first and the super-admin/owner check is just an email lookup —
+         a stumbling Firestore read (blocked transport, transient permission
+         error) must NOT trap a signed-in user on the login screen. onCloudSynced
+         runs either way; sync retries on its own afterward. */
+      startSync().catch(function(e){ console.warn('initial cloud sync deferred:',e&&e.message); }).then(function(){
         try{ if(typeof onCloudSynced==='function')onCloudSynced(); }catch(e){}
         try{ if(window.S&&S.screen&&typeof renderScreen_inplace2==='function')renderScreen_inplace2(); }catch(e){}
-      }).catch(function(e){ console.warn('cloud sync',e&&e.message); });
+      });
     }else{
       stopListener(); C.synced=false; C.wid=null;
       try{ if(typeof onCloudSignedOut==='function')onCloudSignedOut(); }catch(e){}
