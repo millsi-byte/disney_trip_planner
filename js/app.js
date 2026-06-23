@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='126';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='127';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -453,6 +453,8 @@ var CAT_OF={adddining:'Dining',llbook:'Lightning Lane',addll:'Lightning Lane',pr
   showedit:'Show',addflight:'Flight',resortedit:'Resort',visedit:'Park visit'};
 
 function pname(id){var p=person(id);return p?p.name:'Someone';}
+/* display full name: first + last when a last name is set, else just first */
+function pfullname(p){if(!p)return '';return (p.lastName?(p.name+' '+p.lastName):p.name)||'';}
 /* a who-bearing item\'s responsible person: its creator, else the trip owner */
 function creatorOf(item,tid){
   if(item&&item.by)return item.by;
@@ -3396,7 +3398,7 @@ function scrPersonas(){
     bits.push(p.uid?'signed in':'not joined');
     body+='<button class="hub-row" onclick="openScreen({type:\'personedit\',pid:\''+p.id+'\'})">'
       +'<div class="hub-icon" style="background:'+p.color+'">'+esc(p.name[0])+'</div>'
-      +'<div class="hub-main"><div class="hub-title">'+esc(p.name)+'</div><div class="hub-sub">'+bits.join(' · ')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
+      +'<div class="hub-main"><div class="hub-title">'+esc(pfullname(p))+'</div><div class="hub-sub">'+bits.join(' · ')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
   }
   body+='<div class="body-empty" style="text-align:left;padding:10px 2px 0;font-size:12px">Tap a person to edit their details or copy their invite link. Trip membership is managed through planning parties.</div>';
   return screenShell('People',body,null,null,'Done','<button class="sec-add" onclick="addPersona()">Add person</button>');
