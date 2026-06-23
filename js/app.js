@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='136';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='137';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -3474,7 +3474,7 @@ function scrTenant(){
   for(var i=0;i<parties.length;i++)body+='<div class="hub-row" style="cursor:default"><div class="hub-icon" style="background:#6B4FA0">'+IC.home+'</div><div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(parties[i].name||'(unnamed)')+'</div></div></div>';
   body+='<div class="hub-section-label" style="margin-left:0">People ('+fam.length+')</div>';
   for(var j=0;j<fam.length;j++){var p=fam[j];var bits=[];if(p.admin)bits.push('Admin');if(p.email)bits.push(esc(p.email));bits.push(p.uid?'signed in':'not joined');
-    body+='<div class="hub-row" style="cursor:default"><div class="hub-icon" style="background:'+(p.color||'#475569')+'">'+esc((p.name||'?')[0])+'</div><div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(p.name||'(unnamed)')+'</div><div class="hub-sub">'+bits.join(' · ')+'</div></div></div>';}
+    body+='<div class="hub-row" style="cursor:default"><div class="hub-icon" style="background:'+(p.color||'#475569')+'">'+esc((p.name||'?')[0])+'</div><div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(pfullname(p)||'(unnamed)')+'</div><div class="hub-sub">'+bits.join(' · ')+'</div></div></div>';}
   body+='<div class="hub-section-label" style="margin-left:0">Trips ('+trips.length+')</div>';
   for(var k=0;k<trips.length;k++){var t=trips[k];var mc=(t.members||[]).length;
     body+='<div class="hub-row" style="cursor:default"><div class="hub-icon" style="background:'+(t.color||'#475569')+'">'+IC.map+'</div><div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(t.name||'(unnamed)')+'</div><div class="hub-sub">'+esc(t.dates||(t.start||'')+(t.end?' – '+t.end:''))+' · '+mc+' '+(mc===1?'person':'people')+'</div></div></div>';}
