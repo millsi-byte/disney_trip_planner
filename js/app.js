@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='118';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='119';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -785,7 +785,7 @@ function openScreen(def){
   S.pkForm=null;S.pkScope='mine';S._delsect=null;S._pksect=null;ADD.psect=null;
   S._formLoc=null;S._formTier=null;S._formInit=null;S._members=null;S._formColor=null;
   S._notify=notifDefault();
-  if(def.type==='newtrip'){S._notify=true;S._formInit=null;S._ntStep=null;S._ntPartyId=null;S._ntWhoMode=null;S._ntProvParty=null;S._ntTripId=null;S._ntFirstRun=false;S._ntPeople=null;S._ntPeopleCount=1;S._ntExpandedParty=null;S._ntTripName=null;S._ntStart=null;S._ntEnd=null;S._ntCalYear=null;S._ntCalMonth=null;}
+  if(def.type==='newtrip'){S._notify=true;S._formInit=null;S._ntStep=null;S._ntPartyId=null;S._ntWhoMode=null;S._ntProvParty=null;S._ntTripId=null;S._ntFirstRun=false;S._ntPeople=null;S._ntInvite=null;S._ntPeopleCount=1;S._ntExpandedParty=null;S._ntTripName=null;S._ntStart=null;S._ntEnd=null;S._ntCalYear=null;S._ntCalMonth=null;}
   else if(def.type==='tripedit'){var _et=tripById(def.tripId);S._notify=!!(_et&&_et.status==='active');}
   if(def.type==='addflight'){S.formLegs=def.edit?((FLIGHTS.filter(function(f){return f.id===def.edit;})[0]||{legs:[0]}).legs.length):1;}
   else{S.formLegs=1;}
@@ -2841,7 +2841,7 @@ function ntCreateTripFromGroup(){
   PARTIES.push({id:gid,name:gname,by:S.persona});
   S._ntProvParty=gid;S._ntPartyId=gid;
   var me=person(S.persona);if(me&&Array.isArray(me.parties)&&me.parties.indexOf(gid)<0)me.parties.push(gid);
-  var mem=[S.persona];
+  var mem=[S.persona],added=[];
   people.forEach(function(p){
     if(!p.name)return;
     var pid='p'+Date.now()+Math.random().toString(36).slice(2,5);
@@ -2849,12 +2849,13 @@ function ntCreateTripFromGroup(){
     var col=PALETTE[FAMILY.length%PALETTE.length][0];
     for(var ci=0;ci<PALETTE.length;ci++)if(!used[PALETTE[ci][0]]){col=PALETTE[ci][0];break;}
     FAMILY.push({id:pid,name:p.name,email:p.email||'',color:col,admin:false,uid:null,parties:[gid]});
-    ALL_IDS.push(pid);PACKING[pid]=[];mem.push(pid);
+    ALL_IDS.push(pid);PACKING[pid]=[];mem.push(pid);added.push(pid);
   });
   save('dtp_family',FAMILY);saveParties();saveLists();
   if(window.CLOUD&&window.CLOUD.inParty&&!window.CLOUD.inParty()&&window.CLOUD.createParty)
     window.CLOUD.createParty(gname).catch(function(){});
-  ntMakeTrip(gid,mem);ntFinish(false);
+  ntMakeTrip(gid,mem);
+  S._ntInvite=added;S._ntStep='invite';renderScreen_inplace2();
 }
 function ntCreateTripSkip(){
   ntMakeTrip(null,[S.persona]);ntFinish(true);
@@ -2869,13 +2870,13 @@ function ntFinish(silent){
   S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();S.tab='plan';
   S._ntStep=null;S._ntWhoMode=null;S._ntPartyId=null;S._ntProvParty=null;
   S._ntTripId=null;S._ntFirstRun=false;S._members=null;S._formInit=null;
-  S._ntPeople=null;S._ntExpandedParty=null;S._ntTripName=null;S._ntStart=null;S._ntEnd=null;S._ntCalYear=null;S._ntCalMonth=null;
+  S._ntPeople=null;S._ntInvite=null;S._ntExpandedParty=null;S._ntTripName=null;S._ntStart=null;S._ntEnd=null;S._ntCalYear=null;S._ntCalMonth=null;
   closeScreen();render();
   if(t&&!silent)notifyMembership(t,[],t.members,optIn);
   if(!silent)toast('Trip created');
 }
 function ntCancel(){
-  if(S._ntStep==='notify'){ntFinish(true);return;}
+  if(S._ntStep==='notify'||S._ntStep==='invite'){ntFinish(true);return;}
   if(S._ntProvParty){
     PARTIES=PARTIES.filter(function(x){return x.id!==S._ntProvParty;});
     FAMILY=FAMILY.filter(function(p){return !(p.parties&&p.parties.length===1&&p.parties[0]===S._ntProvParty&&!p.admin);});
@@ -2890,7 +2891,7 @@ function ntCancel(){
   }
   S._ntStep=null;S._ntWhoMode=null;S._ntPartyId=null;S._ntProvParty=null;
   S._ntTripId=null;S._ntFirstRun=false;S._members=null;S._formInit=null;
-  S._ntPeople=null;S._ntExpandedParty=null;S._ntTripName=null;S._ntStart=null;S._ntEnd=null;S._ntCalYear=null;S._ntCalMonth=null;
+  S._ntPeople=null;S._ntInvite=null;S._ntExpandedParty=null;S._ntTripName=null;S._ntStart=null;S._ntEnd=null;S._ntCalYear=null;S._ntCalMonth=null;
   closeScreen();
 }
 function scrNewTrip(){
@@ -2973,6 +2974,28 @@ function scrNewTrip(){
     body+='<div class="field"><label class="field-label">What do you want to call this group?</label><input class="field-input" id="nt-gname" placeholder="e.g. Smith Family" autocomplete="off"></div>';
     body+='<button class="btn-secondary" onclick="ntBack()">← Back</button>';
     return screenShell('Plan a Trip',body,'Create trip →','ntCreateTripFromGroup()',cancelLabel,null,cancelArg);
+  }
+
+  /* ── Step: Invite the people you just added (add-people path) ── */
+  if(S._ntStep==='invite'){
+    var invP=(S._ntInvite||[]).map(function(id){return person(id);}).filter(Boolean);
+    var invMail=invP.filter(function(p){return p.email;});
+    body+='<div class="hub-section-label" style="margin-left:0">Invite your group</div>';
+    body+='<div class="body-empty" style="text-align:left;padding:4px 2px 12px;font-size:13px">Your trip is saved. Send each person a personal link — they tap it, sign in, and land right in your trip. (No one is emailed automatically.)</div>';
+    if(invMail.length>1){
+      body+='<button class="btn-secondary green" onclick="emailInviteAll()">Email everyone with an address ('+invMail.length+')</button>';
+      body+='<div style="height:6px"></div>';
+    }
+    for(var vi=0;vi<invP.length;vi++){var vp=invP[vi];
+      body+='<div class="hub-row" style="cursor:default;flex-wrap:wrap;gap:6px">';
+      body+='<div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(vp.name)+'</div>';
+      body+='<div class="hub-sub">'+(vp.email?esc(vp.email):'no email — copy a link to share')+'</div></div>';
+      body+='<button class="btn-secondary" style="margin:0;width:auto;padding:6px 10px;min-height:0;font-size:13px" onclick="copyInviteLink(\''+vp.id+'\')">Copy link</button>';
+      if(vp.email)body+='<button class="btn-secondary" style="margin:0;width:auto;padding:6px 10px;min-height:0;font-size:13px" onclick="emailInviteLink(\''+vp.id+'\')">Email</button>';
+      body+='</div>';
+    }
+    body+='<div class="body-empty" style="text-align:left;padding:10px 2px 0;font-size:12px;color:var(--muted)">You can always send these links later from Admin → People.</div>';
+    return screenShell('Plan a Trip',body,'Done','ntFinish(true)',null,null,null);
   }
 
   /* ── Step 4: All set / notify (existing-group path only) ── */
@@ -3108,6 +3131,18 @@ function emailInviteLink(pid){
   var subj=encodeURIComponent('Join our trip on Baseline Tap');
   var bd=encodeURIComponent('Hi '+p.name+',\n\nI\'m planning our trip on Baseline Tap. Tap this link, sign in, and you\'ll be added automatically:\n\n'+url+'\n');
   location.href='mailto:'+encodeURIComponent(p.email||'')+'?subject='+subj+'&body='+bd;
+}
+/* one email to everyone with an address — a generic join link they each
+   open and pick their own name (no per-person &as= in a shared message) */
+function emailInviteAll(ids){
+  if(!(window.CLOUD&&window.CLOUD.inParty&&window.CLOUD.inParty())){toast('Start a Planning Party first (Account → Sync)');return;}
+  var list=ids||S._ntInvite||[];
+  var emails=list.map(function(id){return person(id);}).filter(function(p){return p&&p.email;}).map(function(p){return p.email;});
+  if(!emails.length){toast('No email addresses to send to');return;}
+  var url=location.origin+location.pathname+'#join='+window.CLOUD.partyCode();
+  var subj=encodeURIComponent('Join our trip on Baseline Tap');
+  var bd=encodeURIComponent('Hi,\n\nI\'m planning our trip on Baseline Tap. Tap this link, sign in, and pick your name to join:\n\n'+url+'\n');
+  location.href='mailto:?bcc='+encodeURIComponent(emails.join(','))+'&subject='+subj+'&body='+bd;
 }
 /* ── Planning Party management (shown on the Account screen) ─ */
 function cloudSection(){
