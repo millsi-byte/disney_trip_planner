@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='125';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='126';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -3529,23 +3529,31 @@ function exitTenant(){
 
 /* shared travel-detail inputs (booking metadata) — used by both the self-service
    editor and the admin person editor. `pre` is the id prefix (pd / pe). */
-function personTravelFields(p,pre){
+function personTravelFields(p,pre,opts){
   var h='';
   h+='<div class="field"><label class="field-label">Email</label><input class="field-input" id="'+pre+'-email" type="email" inputmode="email" value="'+esc(p.email||'')+'" placeholder="name@example.com"></div>';
-  h+='<div class="field"><label class="field-label">First name <span class="opt">(as on ID)</span></label><input class="field-input" id="'+pre+'-first" value="'+esc(p.name||'')+'" placeholder="e.g. Nancy"></div>';
-  h+='<div class="field"><label class="field-label">Last name <span class="opt">(as on ID)</span></label><input class="field-input" id="'+pre+'-last" value="'+esc(p.lastName||'')+'" placeholder="e.g. Mills"></div>';
+  /* The admin editor already shows First/Last name in its identity section, so it
+     passes noName to avoid a duplicate pair. The self-service editor has no such
+     section and renders them here. */
+  if(!(opts&&opts.noName)){
+    h+='<div class="field"><label class="field-label">First name <span class="opt">(as on ID)</span></label><input class="field-input" id="'+pre+'-first" value="'+esc(p.name||'')+'" placeholder="e.g. Nancy"></div>';
+    h+='<div class="field"><label class="field-label">Last name <span class="opt">(as on ID)</span></label><input class="field-input" id="'+pre+'-last" value="'+esc(p.lastName||'')+'" placeholder="e.g. Mills"></div>';
+  }
   h+='<div class="field"><label class="field-label">TSA PreCheck / Known Traveler #</label><input class="field-input" id="'+pre+'-ktn" inputmode="numeric" value="'+esc(p.ktn||'')+'"></div>';
   h+='<div class="field"><label class="field-label">Passport # <span class="opt">(international travel only)</span></label><input class="field-input" id="'+pre+'-passport" value="'+esc(p.passport||'')+'"></div>';
   h+='<div class="field"><label class="field-label">Frequent flyer numbers <span class="opt">(one per line)</span></label><textarea class="field-input" id="'+pre+'-ff" rows="3" style="resize:vertical" placeholder="e.g. Delta 1234567890">'+esc(p.frequentFlyer||'')+'</textarea></div>';
   return h;
 }
-function captureTravel(p,pre){
+function captureTravel(p,pre,opts){
   if(!p)return;
   p.email=val(pre+'-email');
   /* First name is the same field the wizard sets (p.name) — only overwrite when
-     a value is given so clearing the box can't leave a person nameless. */
-  var _first=val(pre+'-first');if(_first)p.name=_first;
-  p.lastName=val(pre+'-last');
+     a value is given so clearing the box can't leave a person nameless. When the
+     caller renders the name fields itself (noName), don't read them here. */
+  if(!(opts&&opts.noName)){
+    var _first=val(pre+'-first');if(_first)p.name=_first;
+    p.lastName=val(pre+'-last');
+  }
   p.fullName=((p.name||'')+' '+(p.lastName||'')).trim();   /* derived legal name */
   p.ktn=val(pre+'-ktn');p.passport=val(pre+'-passport');
   var ff=document.getElementById(pre+'-ff');p.frequentFlyer=(ff&&typeof ff.value==='string')?ff.value.trim():'';
@@ -3574,6 +3582,7 @@ function scrPersonEdit(){
   if(!p)return screenShell('Edit Person','<div class="body-empty" style="padding:24px 12px">Person not found.</div>',null,null,'Done');
   if(S._formInit!=='person:'+pid){S._peAdmin=!!p.admin;S._peParties=new Set(p.parties||[]);S._formInit='person:'+pid;}
   var body='<div class="field"><label class="field-label">First name</label><input class="field-input" id="pe-name" value="'+esc(p.name)+'"></div>';
+  body+='<div class="field"><label class="field-label">Last name <span class="opt">(as on ID)</span></label><input class="field-input" id="pe-last" value="'+esc(p.lastName||'')+'" placeholder="e.g. Mills"></div>';
   body+='<div class="field"><label class="field-label">Color</label><select class="field-select" id="pe-color">'+colorOptions(p.color)+'</select></div>';
   /* role */
   body+='<div class="field"><label class="field-label">Role</label>';
@@ -3613,7 +3622,7 @@ function scrPersonEdit(){
   body+='</div>';
   /* travel details */
   body+='<div class="hub-section-label" style="margin-left:0">Travel details</div>';
-  body+=personTravelFields(p,'pe');
+  body+=personTravelFields(p,'pe',{noName:true});
   body+='<button class="btn-danger-link" onclick="peDelete(\''+pid+'\')">Remove this person</button>';
   return screenShell('Edit '+esc(p.name),body,'Save','savePersonEdit(\''+pid+'\')','Cancel',null,'backToPeople()');
 }
@@ -3641,6 +3650,7 @@ function peGotoTrip(pid,tid){var p=person(pid);if(p){var nm=val('pe-name');if(nm
 function savePersonEdit(pid){
   var p=person(pid);if(!p){closeScreen();return;}
   var nm=val('pe-name');if(nm)p.name=nm;
+  p.lastName=val('pe-last');
   var c=document.getElementById('pe-color');if(c&&c.value)p.color=c.value;
   /* admin — keep at least one admin */
   if(!S._peAdmin&&p.admin&&!FAMILY.filter(function(x){return x.admin&&x.id!==pid;}).length){toast('Keep at least one admin');return;}
