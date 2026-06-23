@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='127';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='128';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -3533,7 +3533,10 @@ function exitTenant(){
    editor and the admin person editor. `pre` is the id prefix (pd / pe). */
 function personTravelFields(p,pre,opts){
   var h='';
-  h+='<div class="field"><label class="field-label">Email</label><input class="field-input" id="'+pre+'-email" type="email" inputmode="email" value="'+esc(p.email||'')+'" placeholder="name@example.com"></div>';
+  /* the admin editor renders email up in its identity section, so it passes
+     noEmail; the self-service editor renders it here. */
+  if(!(opts&&opts.noEmail))
+    h+='<div class="field"><label class="field-label">Email</label><input class="field-input" id="'+pre+'-email" type="email" inputmode="email" value="'+esc(p.email||'')+'" placeholder="name@example.com"></div>';
   /* The admin editor already shows First/Last name in its identity section, so it
      passes noName to avoid a duplicate pair. The self-service editor has no such
      section and renders them here. */
@@ -3585,6 +3588,25 @@ function scrPersonEdit(){
   if(S._formInit!=='person:'+pid){S._peAdmin=!!p.admin;S._peParties=new Set(p.parties||[]);S._formInit='person:'+pid;}
   var body='<div class="field"><label class="field-label">First name</label><input class="field-input" id="pe-name" value="'+esc(p.name)+'"></div>';
   body+='<div class="field"><label class="field-label">Last name <span class="opt">(as on ID)</span></label><input class="field-input" id="pe-last" value="'+esc(p.lastName||'')+'" placeholder="e.g. Mills"></div>';
+  /* email + sign-in link — kept near the top with the person's identity */
+  body+='<div class="field"><label class="field-label">Email</label><input class="field-input" id="pe-email" type="email" inputmode="email" value="'+esc(p.email||'')+'" placeholder="name@example.com"></div>';
+  body+='<div class="field"><label class="field-label">Sign-in</label>';
+  body+='<div style="display:flex;align-items:center;justify-content:space-between;font-size:14px">';
+  body+='<span style="color:#6B7280">'+(p.uid?'Linked'+(p.email?' · '+esc(p.email):''):'Not yet joined')+'</span>';
+  if(p.uid)body+='<button class="btn-secondary" style="margin:0;width:auto;padding:8px 14px;min-height:0" onclick="unclaimPersona(\''+pid+'\')">Unlink</button>';
+  body+='</div>';
+  if(!p.uid){
+    body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0;font-size:12px">'
+      +(p.email?'When <strong>'+esc(p.email)+'</strong> signs in, they\'re matched to '+esc(p.name)+' automatically.'
+               :'Add an email above so they\'re matched automatically at sign-in — or send an invite link.')+'</div>';
+    if(window.CLOUD&&window.CLOUD.inParty&&window.CLOUD.inParty()){
+      body+='<div style="display:flex;gap:8px;margin-top:8px">';
+      body+='<button class="btn-secondary" style="margin:0;flex:1" onclick="copyInviteLink(\''+pid+'\')">Copy invite link</button>';
+      if(p.email)body+='<button class="btn-secondary" style="margin:0;flex:1" onclick="emailInviteLink(\''+pid+'\')">Email invite</button>';
+      body+='</div>';
+    }
+  }
+  body+='</div>';
   body+='<div class="field"><label class="field-label">Color</label><select class="field-select" id="pe-color">'+colorOptions(p.color)+'</select></div>';
   /* role */
   body+='<div class="field"><label class="field-label">Role</label>';
@@ -3604,27 +3626,9 @@ function scrPersonEdit(){
     body+='<button class="hub-row" onclick="peGotoTrip(\''+pid+'\',\''+pt.id+'\')"><div class="hub-icon" style="background:'+(pt.color||'#0E7490')+'">'+IC.map+'</div>'
       +'<div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(pt.name)+'</div><div class="hub-sub">'+(pg?esc(pg.name):'No party')+(pt.dates?' · '+esc(pt.dates):'')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
   }
-  /* sign-in link */
-  body+='<div class="field"><label class="field-label">Sign-in</label>';
-  body+='<div style="display:flex;align-items:center;justify-content:space-between;font-size:14px">';
-  body+='<span style="color:#6B7280">'+(p.uid?'Linked'+(p.email?' · '+esc(p.email):''):'Not yet joined')+'</span>';
-  if(p.uid)body+='<button class="btn-secondary" style="margin:0;width:auto;padding:8px 14px;min-height:0" onclick="unclaimPersona(\''+pid+'\')">Unlink</button>';
-  body+='</div>';
-  if(!p.uid){
-    body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0;font-size:12px">'
-      +(p.email?'When <strong>'+esc(p.email)+'</strong> signs in, they\'re matched to '+esc(p.name)+' automatically.'
-               :'Add an email under Travel details so they\'re matched automatically at sign-in — or send an invite link.')+'</div>';
-    if(window.CLOUD&&window.CLOUD.inParty&&window.CLOUD.inParty()){
-      body+='<div style="display:flex;gap:8px;margin-top:8px">';
-      body+='<button class="btn-secondary" style="margin:0;flex:1" onclick="copyInviteLink(\''+pid+'\')">Copy invite link</button>';
-      if(p.email)body+='<button class="btn-secondary" style="margin:0;flex:1" onclick="emailInviteLink(\''+pid+'\')">Email invite</button>';
-      body+='</div>';
-    }
-  }
-  body+='</div>';
   /* travel details */
   body+='<div class="hub-section-label" style="margin-left:0">Travel details</div>';
-  body+=personTravelFields(p,'pe',{noName:true});
+  body+=personTravelFields(p,'pe',{noName:true,noEmail:true});
   body+='<button class="btn-danger-link" onclick="peDelete(\''+pid+'\')">Remove this person</button>';
   return screenShell('Edit '+esc(p.name),body,'Save','savePersonEdit(\''+pid+'\')','Cancel',null,'backToPeople()');
 }
