@@ -3,7 +3,7 @@
    controlled entirely by Firestore security rules, not by hiding this. */
 var FIREBASE_CONFIG = {
   apiKey: "AIzaSyC1xaBoepKpSws0L-c-ksY5y6TxD8ySidw",
-  authDomain: "disney-trip-planner-447d7.firebaseapp.com",
+  authDomain: "disney-trip-planner-447d7.web.app",
   projectId: "disney-trip-planner-447d7",
   storageBucket: "disney-trip-planner-447d7.firebasestorage.app",
   messagingSenderId: "1017541221969",
