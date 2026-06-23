@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='132';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='133';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -4264,9 +4264,9 @@ function scrTripEdit(){
   body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px"><strong>Active</strong> is the trip you\'re currently focused on — it shows up first and drives the home screen. Only one trip is active at a time. <strong>Planning</strong> is an upcoming trip you\'re still building out. <strong>Archived</strong> is a past or cancelled trip, kept for reference but tucked out of the way.</div></div>';
   body+='<div class="field"><label class="field-label">Color</label><select class="field-select" id="tr-color">'+colorOptions(S._formColor)+'</select></div>';
   if(isAdmin()){
-    body+='<div class="field"><label class="field-label">Planning Party <span class="opt">(members of this party will be on the trip)</span></label><div class="gchips">';
+    body+='<div class="field"><label class="field-label">Planning Party <span class="opt">(members of this party will be on the trip)</span></label><div class="whoselect">';
     for(var gi=0;gi<PARTIES.length;gi++){var gg=PARTIES[gi],gon=(S._tpartyId===gg.id);
-      body+='<button class="gchip'+(gon?' on':'')+'" onclick="pickTripParty(\''+gg.id+'\')"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:'+(gg.color||'#6B4FA0')+';margin-right:6px;vertical-align:middle"></span>'+esc(gg.name)+'</button>';}
+      body+='<div class="who-opt'+(gon?' on':'')+'" onclick="pickTripParty(\''+gg.id+'\')"><span class="wdot" style="background:'+(gg.color||'#6B4FA0')+'">'+esc((gg.name[0]||'').toUpperCase())+'</span>'+esc(gg.name)+'<span class="wcheck">'+IC.checkw.replace('currentColor','#15803D')+'</span></div>';}
     body+='</div></div>';
   }
   var _memPid=S._tpartyId||S.partyId;
