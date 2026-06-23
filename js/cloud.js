@@ -27,20 +27,17 @@
   /* ── auth ──────────────────────────────────────────────── */
   C.signInGoogle=function(){
     var provider=new firebase.auth.GoogleAuthProvider();
-    /* Popups are unreliable in incognito / embedded webviews: the auth domain
-       is a third-party origin, so blocked third-party storage makes the popup
-       close with no result (looks like "nothing happens"). Fall back to a
-       full-page redirect, which signs in first-party. The stashed invite lives
-       in localStorage, so it survives the round-trip. */
-    return auth.signInWithPopup(provider).catch(function(e){
-      var code=(e&&e.code)||'';
-      if(code==='auth/popup-blocked'||code==='auth/popup-closed-by-user'||
-         code==='auth/cancelled-popup-request'||code==='auth/web-storage-unsupported'||
-         code==='auth/operation-not-supported-in-this-environment'){
-        return auth.signInWithRedirect(provider);
-      }
-      throw e;
-    });
+    provider.setCustomParameters({prompt:'select_account'});
+    /* Use a full-page redirect, NOT a popup. In incognito and embedded
+       webviews, signInWithPopup doesn't fail with an error we can catch — it
+       just hangs: the popup opens but Chrome's storage partitioning breaks the
+       opener↔popup handshake, so the Google prompt never appears and the promise
+       never settles. A top-level redirect navigates the whole tab to Google's
+       sign-in (always prompts) and returns the credential in the URL, so it
+       works without third-party cookies. The stashed invite lives in
+       localStorage and survives the round-trip; getRedirectResult() (below)
+       completes the sign-in on return. */
+    return auth.signInWithRedirect(provider);
   };
   C.sendEmailLink=function(email){
     var settings={url:location.href.split('#')[0],handleCodeInApp:true};
