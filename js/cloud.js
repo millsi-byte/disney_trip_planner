@@ -41,8 +41,12 @@
        or an embedded webview that can't open one). */
     return auth.signInWithPopup(provider).catch(function(e){
       var code=(e&&e.code)||'';
-      if(code==='auth/popup-blocked'||code==='auth/operation-not-supported-in-this-environment'||code==='auth/cancelled-popup-request')
+      if(code==='auth/popup-blocked'||code==='auth/operation-not-supported-in-this-environment'||code==='auth/cancelled-popup-request'){
+        /* mark that we're leaving via a redirect so the next load knows to
+           collect the result (and only then loads the auth helper iframe) */
+        try{sessionStorage.setItem('dtp_redirecting','1');}catch(_){}
         return auth.signInWithRedirect(provider);
+      }
       throw e;   /* popup-closed-by-user etc. → surface to the caller */
     });
   };
@@ -331,9 +335,17 @@
     try{ if(typeof render==='function')render(); }catch(e){}
     try{ if(window.S&&S.screen&&typeof renderScreen_inplace2==='function')renderScreen_inplace2(); }catch(e){}
   });
-  /* finish a redirect-based Google sign-in if we just came back from one
-     (onAuthStateChanged also fires, but this surfaces any redirect error) */
-  if(auth.getRedirectResult){
+  /* Finish a redirect-based Google sign-in ONLY if we actually left via one.
+     getRedirectResult() spins up Firebase's cross-origin auth helper iframe;
+     Edge/Safari tracking-prevention can stall that iframe for minutes, hanging
+     the whole page on a spinner before it times out. Since we sign in by popup
+     by default (which never needs this), we skip it on normal loads and call it
+     only when our redirect fallback set the flag. onAuthStateChanged still
+     restores already-signed-in users from local IndexedDB without the iframe. */
+  var _cameFromRedirect=false;
+  try{_cameFromRedirect=sessionStorage.getItem('dtp_redirecting')==='1';}catch(_){}
+  if(_cameFromRedirect&&auth.getRedirectResult){
+    try{sessionStorage.removeItem('dtp_redirecting');}catch(_){}
     auth.getRedirectResult().then(function(r){
       if(r&&r.user&&typeof toast==='function')toast('Signed in');
     }).catch(function(e){
