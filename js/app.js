@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='133';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='134';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -3717,6 +3717,9 @@ function delPersona(id){
 }
 
 function pickTripParty(gid){S._tpartyId=gid;renderScreen_inplace2();}
+/* jump from the trip editor to the selected planning party's editor to add or
+   remove members (trip membership = party membership). */
+function editTripMembers(){var gid=S._tpartyId||S.partyId;if(!gid){toast('Pick a planning party first');return;}S._formInit=null;openScreen({type:'partyedit',gid:gid});}
 
 /* legacy packing list (kept for the old combined route, now unused) */
 function listScreenBody(which){return renderFilter()+renderLists(which);}
@@ -4271,8 +4274,10 @@ function scrTripEdit(){
   }
   var _memPid=S._tpartyId||S.partyId;
   var _memPpl=partyPeople(_memPid);
-  body+='<div class="field"><label class="field-label">Trip Members</label>';
-  body+='<div style="font-size:13px;color:var(--muted);margin-bottom:8px">All members of the selected planning party are on this trip.</div>';
+  body+='<div class="field"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><label class="field-label" style="margin:0">Trip Members</label>';
+  if(isAdmin())body+='<button class="btn-secondary" style="margin:0;width:auto;padding:6px 12px;min-height:0;font-size:13px;flex-shrink:0" onclick="editTripMembers()">Edit members</button>';
+  body+='</div>';
+  body+='<div style="font-size:13px;color:var(--muted);margin:8px 0">All members of the selected planning party are on this trip.</div>';
   if(_memPpl.length){body+='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:2px">';for(var _mi=0;_mi<_memPpl.length;_mi++){var _mp=_memPpl[_mi];body+='<span style="background:var(--cream);border-radius:99px;padding:3px 10px;font-size:13px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+_mp.color+';margin-right:5px;vertical-align:middle"></span>'+esc(_mp.name)+'</span>';}body+='</div>';}
   body+='</div>';
   body+='<div class="field"><label class="field-label">Notifications</label>';
