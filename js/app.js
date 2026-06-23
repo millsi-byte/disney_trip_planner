@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='139';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='140';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -285,10 +285,9 @@ function noTripSelected(){
   for(var i=0;i<vt.length;i++)if(vt[i].id===S.tripId)return false;
   return true;
 }
-/* validate the active selection without auto-jumping into another trip. A valid,
-   visible selection is kept; anything else is blanked so render() shows the
-   no-trip landing and the user purposely picks the trip they want. */
-function ensureVisibleTrip(){ if(noTripSelected())S.tripId=null; }
+/* validate the active selection; auto-select the first visible trip if nothing
+   is currently selected or the stored id no longer exists. */
+function ensureVisibleTrip(){if(noTripSelected()){var vt=visibleTrips();S.tripId=(vt[0]&&vt[0].id)||null;}}
 /* who may edit a trip\'s details: admins or the person who created it */
 function canEditTrip(t){t=t||trip();return isAdmin()||!!(t&&t.by&&t.by===S.persona);}
 /* personas assigned to the current trip (drives filters + who-select) */
@@ -4333,11 +4332,7 @@ function doDelTrip(id){
   [DAYS,VISITS,PARKHOURS,DINING,LLS,SHOWS,FLIGHTS,RESORTS,PARKRES,REBOOKS].forEach(drop);
   for(var c=CHAT.length-1;c>=0;c--)if(CHAT[c].trip===id)CHAT.splice(c,1);
   try{localStorage.removeItem('dtp_packing_'+id);localStorage.removeItem('dtp_todo_'+id);}catch(e){}
-  if(S.tripId===id){
-    /* deleting the trip you\'re viewing drops you to the no-trip landing — don\'t
-       silently teleport into another trip; the user purposely picks the next one */
-    S.tripId=null;S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();
-  }
+  if(S.tripId===id){S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();}
   ensureVisibleTrip();saveTripId();persist();toast('Trip deleted');closeScreen();render();
 }
 
