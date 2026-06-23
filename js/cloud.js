@@ -164,7 +164,7 @@
   /* create a party from your current data and switch onto it */
   C.createParty=function(name){
     if(!C.user)return Promise.reject(new Error('Sign in first'));
-    var wid=newCode(), nm=(name||'Planning Party');
+    var wid=newCode(), nm=(name||'My Group');
     /* the tenant's stable label = the owner's display name (not the party name) */
     var tn=null;
     try{var fam=JSON.parse(localStorage.getItem('dtp_family')||'[]');var a=fam.filter(function(p){return p.admin;})[0]||fam[0];if(a&&a.name)tn=a.name+(a.lastName?' '+a.lastName:'');}catch(e){}
@@ -184,7 +184,7 @@
     if(!code)return Promise.reject(new Error('Enter a code'));
     var wref=db().doc('workspaces/'+code);
     return wref.get().then(function(s){
-      if(!s.exists)throw new Error('No party with that code');
+      if(!s.exists)throw new Error('No group with that code');
       C.partyName=s.data().name||null;
       return wref.collection('members').doc(C.user.uid).set({email:C.user.email||null,joinedAt:Date.now()});
     }).then(function(){ setLocalWid(code); return profileRef().set({wid:code},{merge:true}); })
@@ -194,7 +194,7 @@
 
   /* rename the party you're in */
   C.renameParty=function(name){
-    if(!C.user||!C.wid)return Promise.reject(new Error('Not in a party'));
+    if(!C.user||!C.wid)return Promise.reject(new Error('Not in a group'));
     name=(name||'').trim();if(!name)return Promise.reject(new Error('Enter a name'));
     return db().doc('workspaces/'+C.wid).set({name:name},{merge:true}).then(function(){ C.partyName=name; return name; });
   };
