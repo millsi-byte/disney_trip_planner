@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='114';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='115';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -788,7 +788,7 @@ function openScreen(def){
   S.pkForm=null;S.pkScope='mine';S._delsect=null;S._pksect=null;ADD.psect=null;
   S._formLoc=null;S._formTier=null;S._formInit=null;S._members=null;S._formColor=null;
   S._notify=notifDefault();
-  if(def.type==='newtrip'){S._notify=true;S._formInit=null;S._ntStep=null;S._ntPartyId=null;S._ntWhoMode=null;S._ntProvParty=null;S._ntTripId=null;S._ntFirstRun=false;S._ntPeople=null;S._ntPeopleCount=1;S._ntExpandedParty=null;S._ntTripName=null;S._ntStart=null;S._ntEnd=null;}
+  if(def.type==='newtrip'){S._notify=true;S._formInit=null;S._ntStep=null;S._ntPartyId=null;S._ntWhoMode=null;S._ntProvParty=null;S._ntTripId=null;S._ntFirstRun=false;S._ntPeople=null;S._ntPeopleCount=1;S._ntExpandedParty=null;S._ntTripName=null;S._ntStart=null;S._ntEnd=null;S._ntCalYear=null;S._ntCalMonth=null;}
   else if(def.type==='tripedit'){var _et=tripById(def.tripId);S._notify=!!(_et&&_et.status==='active');}
   if(def.type==='addflight'){S.formLegs=def.edit?((FLIGHTS.filter(function(f){return f.id===def.edit;})[0]||{legs:[0]}).legs.length):1;}
   else{S.formLegs=1;}
@@ -2743,19 +2743,59 @@ function reviewItem(kind,type,val,extra){
   return h+'</div></div>';
 }
 
-/* ── New Trip Wizard (Build 114) ─────────────────────────── */
+/* ── New Trip Wizard (Build 115) ─────────────────────────── */
 function ntInit(){
   if(S._formInit==='newtrip')return;
   S._formInit='newtrip';
   S._ntFirstRun=!PARTIES.length;
   S._ntStep='trip';
   S._ntWhoMode=null;
+  if(!S._ntCalYear){var _n=new Date();S._ntCalYear=_n.getFullYear();S._ntCalMonth=_n.getMonth();}
+}
+function ntCalPrev(){S._ntCalMonth--;if(S._ntCalMonth<0){S._ntCalMonth=11;S._ntCalYear--;}renderScreen_inplace2();}
+function ntCalNext(){S._ntCalMonth++;if(S._ntCalMonth>11){S._ntCalMonth=0;S._ntCalYear++;}renderScreen_inplace2();}
+function ntCalPick(d){
+  if(!S._ntStart||(S._ntStart&&S._ntEnd)||d<S._ntStart){S._ntStart=d;S._ntEnd=null;}
+  else if(d===S._ntStart){S._ntStart=null;S._ntEnd=null;}
+  else{S._ntEnd=d;}
+  renderScreen_inplace2();
+}
+function renderNtCal(){
+  var MN=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var DN=['Su','Mo','Tu','We','Th','Fr','Sa'];
+  var y=S._ntCalYear,m=S._ntCalMonth,s=S._ntStart,e=S._ntEnd;
+  var now=new Date(),todayStr=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');
+  var out='<div style="margin:4px 0 8px">';
+  out+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">';
+  out+='<button class="btn-icon" onclick="ntCalPrev()" style="font-size:20px;line-height:1;padding:2px 10px">‹</button>';
+  out+='<span style="font-weight:600;font-size:15px">'+MN[m]+' '+y+'</span>';
+  out+='<button class="btn-icon" onclick="ntCalNext()" style="font-size:20px;line-height:1;padding:2px 10px">›</button>';
+  out+='</div>';
+  out+='<div style="display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:3px">';
+  DN.forEach(function(n){out+='<div style="text-align:center;font-size:11px;color:var(--muted);padding:2px 0">'+n+'</div>';});
+  out+='</div>';
+  out+='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">';
+  var first=new Date(y,m,1).getDay();
+  for(var i=0;i<first;i++)out+='<div></div>';
+  var dmax=new Date(y,m+1,0).getDate();
+  for(var d=1;d<=dmax;d++){
+    var ds=y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+    var isSel=ds===s||ds===e,inRng=!!(s&&e&&ds>s&&ds<e),isToday=ds===todayStr;
+    var bg=isSel?'var(--accent)':inRng?'var(--chip-bg)':'transparent';
+    var col=isSel?'#fff':isToday?'var(--accent)':'inherit';
+    out+='<div onclick="ntCalPick(\''+ds+'\')" style="text-align:center;padding:7px 1px;border-radius:'+(isSel?'50%':'5px')+';cursor:pointer;background:'+bg+';color:'+col+';font-weight:'+(isSel||isToday?'700':'400')+';font-size:14px">'+d+'</div>';
+  }
+  out+='</div>';
+  out+='<div style="margin-top:8px;font-size:13px;color:var(--muted);text-align:center;min-height:18px">';
+  if(s&&e)out+=monOf(s)+' '+Number(s.slice(8))+' – '+monOf(e)+' '+Number(e.slice(8))+', '+s.slice(0,4);
+  else if(s)out+=monOf(s)+' '+Number(s.slice(8))+' — now tap your end date';
+  else out+='Tap a start date';
+  out+='</div></div>';
+  return out;
 }
 function ntGoToWho(){
   var nm=val('nt-name');if(!nm){toast('Give your trip a name');return;}
-  var start=val('nt-start'),end=val('nt-end');
-  if(start&&end&&end<start){toast('End date is before the start');return;}
-  S._ntTripName=nm;S._ntStart=start;S._ntEnd=end;
+  S._ntTripName=nm;
   S._ntStep='who';renderScreen_inplace2();
 }
 function ntSelectWho(mode){S._ntWhoMode=mode;if(!mode)S._ntPartyId=null;renderScreen_inplace2();}
@@ -2841,7 +2881,7 @@ function ntFinish(silent){
   S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();S.tab='plan';
   S._ntStep=null;S._ntWhoMode=null;S._ntPartyId=null;S._ntProvParty=null;
   S._ntTripId=null;S._ntFirstRun=false;S._members=null;S._formInit=null;
-  S._ntPeople=null;S._ntExpandedParty=null;S._ntTripName=null;S._ntStart=null;S._ntEnd=null;
+  S._ntPeople=null;S._ntExpandedParty=null;S._ntTripName=null;S._ntStart=null;S._ntEnd=null;S._ntCalYear=null;S._ntCalMonth=null;
   closeScreen();render();
   if(t&&!silent)notifyMembership(t,[],t.members,optIn);
   if(!silent)toast('Trip created');
@@ -2862,7 +2902,7 @@ function ntCancel(){
   }
   S._ntStep=null;S._ntWhoMode=null;S._ntPartyId=null;S._ntProvParty=null;
   S._ntTripId=null;S._ntFirstRun=false;S._members=null;S._formInit=null;
-  S._ntPeople=null;S._ntExpandedParty=null;S._ntTripName=null;S._ntStart=null;S._ntEnd=null;
+  S._ntPeople=null;S._ntExpandedParty=null;S._ntTripName=null;S._ntStart=null;S._ntEnd=null;S._ntCalYear=null;S._ntCalMonth=null;
   closeScreen();
 }
 function scrNewTrip(){
@@ -2874,8 +2914,8 @@ function scrNewTrip(){
   if(S._ntStep==='trip'){
     if(fr)body+='<div style="padding:0 2px 16px"><div style="font-family:\'Fraunces\',Georgia,serif;font-size:22px;font-weight:700;color:var(--ink);margin-bottom:6px">Welcome!</div><div class="body-empty" style="padding:0;font-size:14px">Let\'s get your first trip on the books.</div></div>';
     body+='<div class="field"><label class="field-label">Trip name</label><input class="field-input" id="nt-name" placeholder="e.g. Disney World 2027" value="'+esc(S._ntTripName||'')+'"></div>';
-    body+='<div class="field-row"><div class="field"><label class="field-label">Start date</label><input class="field-input" type="date" id="nt-start" value="'+esc(S._ntStart||'')+'"></div>';
-    body+='<div class="field"><label class="field-label">End date</label><input class="field-input" type="date" id="nt-end" value="'+esc(S._ntEnd||'')+'"></div></div>';
+    body+='<div class="field-label" style="margin:10px 0 2px">Dates <span style="opacity:.5;font-weight:400;font-size:12px">(optional)</span></div>';
+    body+=renderNtCal();
     body+='<button class="btn-secondary green" onclick="ntGoToWho()">Next →</button>';
     if(fr)body+='<button class="btn-secondary" style="color:var(--muted);font-size:13px" onclick="wizSkip()">Skip — I\'ll set up manually</button>';
     return screenShell('Plan a Trip',body,null,null,cancelLabel,null,cancelArg);
