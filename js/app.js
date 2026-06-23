@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='124';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='125';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -132,7 +132,11 @@ function ensurePartyTags(){
   }
   var pid=PARTIES[0].id;
   for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i];
-    if(!Array.isArray(p.parties)||!p.parties.length)p.parties=(Array.isArray(p.groups)&&p.groups.length)?p.groups.slice():[pid];}
+    if(!Array.isArray(p.parties)||!p.parties.length)p.parties=(Array.isArray(p.groups)&&p.groups.length)?p.groups.slice():[pid];
+    /* split legacy single-field full legal name into first (p.name) + last name.
+       Everything after the first token becomes the last name so middle names
+       aren't dropped; p.name (the casual first name) is left untouched. */
+    if(p.lastName===undefined&&p.fullName){var _sp=String(p.fullName).trim().split(/\s+/);p.lastName=_sp.length>1?_sp.slice(1).join(' '):'';}}
   for(var j=0;j<TRIPS.length;j++){var t=TRIPS[j];
     if(!Array.isArray(t.parties)||!t.parties.length)t.parties=(Array.isArray(t.groups)&&t.groups.length)?t.groups.slice():[pid];}
 }
@@ -3528,7 +3532,8 @@ function exitTenant(){
 function personTravelFields(p,pre){
   var h='';
   h+='<div class="field"><label class="field-label">Email</label><input class="field-input" id="'+pre+'-email" type="email" inputmode="email" value="'+esc(p.email||'')+'" placeholder="name@example.com"></div>';
-  h+='<div class="field"><label class="field-label">Full legal name <span class="opt">(as on ID)</span></label><input class="field-input" id="'+pre+'-fullname" value="'+esc(p.fullName||'')+'" placeholder="e.g. Nancy Jane Mills"></div>';
+  h+='<div class="field"><label class="field-label">First name <span class="opt">(as on ID)</span></label><input class="field-input" id="'+pre+'-first" value="'+esc(p.name||'')+'" placeholder="e.g. Nancy"></div>';
+  h+='<div class="field"><label class="field-label">Last name <span class="opt">(as on ID)</span></label><input class="field-input" id="'+pre+'-last" value="'+esc(p.lastName||'')+'" placeholder="e.g. Mills"></div>';
   h+='<div class="field"><label class="field-label">TSA PreCheck / Known Traveler #</label><input class="field-input" id="'+pre+'-ktn" inputmode="numeric" value="'+esc(p.ktn||'')+'"></div>';
   h+='<div class="field"><label class="field-label">Passport # <span class="opt">(international travel only)</span></label><input class="field-input" id="'+pre+'-passport" value="'+esc(p.passport||'')+'"></div>';
   h+='<div class="field"><label class="field-label">Frequent flyer numbers <span class="opt">(one per line)</span></label><textarea class="field-input" id="'+pre+'-ff" rows="3" style="resize:vertical" placeholder="e.g. Delta 1234567890">'+esc(p.frequentFlyer||'')+'</textarea></div>';
@@ -3536,7 +3541,13 @@ function personTravelFields(p,pre){
 }
 function captureTravel(p,pre){
   if(!p)return;
-  p.email=val(pre+'-email');p.fullName=val(pre+'-fullname');p.ktn=val(pre+'-ktn');p.passport=val(pre+'-passport');
+  p.email=val(pre+'-email');
+  /* First name is the same field the wizard sets (p.name) — only overwrite when
+     a value is given so clearing the box can't leave a person nameless. */
+  var _first=val(pre+'-first');if(_first)p.name=_first;
+  p.lastName=val(pre+'-last');
+  p.fullName=((p.name||'')+' '+(p.lastName||'')).trim();   /* derived legal name */
+  p.ktn=val(pre+'-ktn');p.passport=val(pre+'-passport');
   var ff=document.getElementById(pre+'-ff');p.frequentFlyer=(ff&&typeof ff.value==='string')?ff.value.trim():'';
 }
 /* Per-person travel details — self-service editor (account screen) */
