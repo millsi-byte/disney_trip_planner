@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='155';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='156';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -3061,13 +3061,20 @@ function scrSignIn(){
   body+='<div class="field"><input class="field-input" id="cloud-email" type="email" inputmode="email" placeholder="you@email.com"></div>';
   body+='<button class="btn-secondary green" onclick="cloudEmailLink()">Email me a sign-in link</button>';
   body+='<div class="hub-section-label" style="margin-left:0">Or use Google</div>';
-  body+='<button class="btn-secondary" onclick="window.CLOUD.signInGoogle().catch(function(e){toast(e.message||\'Sign-in failed\')})">Sign in with Google</button>';
+  body+='<button class="btn-secondary" onclick="cloudGoogleSignIn()">Sign in with Google</button>';
   body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0;font-size:12px;color:var(--muted)">A Google sign-in window will pop up. If your browser blocks pop-ups, allow it for this site — or use the email link above.</div>';
   return screenShell('Sign in',body,null,null,false);
 }
 function cloudEmailLink(){
   var v=val('cloud-email');if(!v){toast('Enter your email');return;}
+  if(!(window.CLOUD&&window.CLOUD.sendEmailLink)){toast('Still connecting — try again in a moment');return;}
   window.CLOUD.sendEmailLink(v).then(function(){toast('Link sent — check your email');}).catch(function(e){toast(e.message||'Could not send link');});
+}
+/* The Firebase SDK loads in the background after the page paints, so window.CLOUD
+   may not exist yet if someone clicks immediately. Guard rather than throw. */
+function cloudGoogleSignIn(){
+  if(!(window.CLOUD&&window.CLOUD.signInGoogle)){toast('Still connecting — try again in a moment');return;}
+  window.CLOUD.signInGoogle().catch(function(e){toast(e.message||'Sign-in failed');});
 }
 
 /* ── Claim your persona (one time per account) ───────────── */
@@ -4408,24 +4415,33 @@ try{
 }catch(e){}
 
 /* front door. cloud.js loads after this file (and pulls the Firebase SDK from a
-   CDN first), so window.CLOUD may not exist for the first few ticks. We must NOT
-   guess in that window — falling through to the legacy persona chooser is what
-   made the old "who are you?" screen flash before sign-in. So: if cloud is
-   enabled, the auth callbacks (onCloudSynced/onCloudSignedOut) drive the screen
-   and we only show the Sign-in gate until they fire; if cloud is explicitly
-   disabled we use the local persona chooser; if window.CLOUD isn't set yet we
-   wait and retry rather than rendering anything. */
+   CDN first), so window.CLOUD may not exist for the first few ticks — and on a
+   slow/throttled network that CDN can take MINUTES. We must not keep the page
+   blank that whole time. The sign-in screen is pure HTML (it only touches
+   window.CLOUD when a button is actually clicked), so we paint it IMMEDIATELY
+   and let Firebase finish loading in the background. Once window.CLOUD is set we
+   route definitively: signed-in users are moved off the gate by the auth
+   callbacks (onCloudSynced); if Firebase turns out to be disabled entirely we
+   fall back to the local persona chooser. */
 var _bootTries=0;
 function bootFrontDoor(){
   try{
-    if(!window.CLOUD){if(_bootTries++<200)setTimeout(bootFrontDoor,30);return;}   /* cloud.js not ready — wait (capped) */
-    if(window.CLOUD.enabled){
-      if(window.CLOUD.user)return;                            /* signed in → auth callbacks route */
-      if(!(S.screen&&(S.screen.type==='signin'||S.screen.type==='claim')))
-        openScreen({type:'signin'});
-    }else if(!localStorage.getItem('dtp_persona')){
-      openScreen({type:'persona'});                           /* no firebase at all → local mode */
+    if(window.CLOUD){
+      if(window.CLOUD.enabled){
+        if(window.CLOUD.user)return;                          /* signed in → auth callbacks route */
+        if(!(S.screen&&(S.screen.type==='signin'||S.screen.type==='claim')))
+          openScreen({type:'signin'});
+      }else if(!localStorage.getItem('dtp_persona')){
+        openScreen({type:'persona'});                         /* no firebase at all → local mode */
+      }
+      return;   /* CLOUD resolved — stop polling */
     }
+    /* CLOUD not loaded yet: show the sign-in gate NOW so a slow Firebase CDN
+       can't leave the page blank, then keep polling so we can correct to the
+       local persona chooser in the rare case Firebase is actually disabled. */
+    if(!(S.screen&&(S.screen.type==='signin'||S.screen.type==='claim')))
+      openScreen({type:'signin'});
+    if(_bootTries++<200)setTimeout(bootFrontDoor,30);
   }catch(e){}
 }
 setTimeout(bootFrontDoor,0);
