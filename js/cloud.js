@@ -167,7 +167,7 @@
     var wid=newCode(), nm=(name||'Planning Party');
     /* the tenant's stable label = the owner's display name (not the party name) */
     var tn=null;
-    try{var fam=JSON.parse(localStorage.getItem('dtp_family')||'[]');var a=fam.filter(function(p){return p.admin;})[0]||fam[0];if(a&&a.name)tn=a.name;}catch(e){}
+    try{var fam=JSON.parse(localStorage.getItem('dtp_family')||'[]');var a=fam.filter(function(p){return p.admin;})[0]||fam[0];if(a&&a.name)tn=a.name+(a.lastName?' '+a.lastName:'');}catch(e){}
     if(!tn)tn=(C.user.email||'').split('@')[0]||null;
     var wref=db().doc('workspaces/'+wid);
     return wref.set({name:nm,tenantName:tn,by:C.user.uid,byEmail:C.user.email||null,createdAt:Date.now()})
@@ -236,8 +236,13 @@
           var fam=[],parties=[];
           try{if(res[1].exists)fam=JSON.parse(res[1].data().v)||[];}catch(e){}
           try{if(res[2].exists)parties=JSON.parse(res[2].data().v)||[];}catch(e){}
-          var ownerName=w.tenantName||null;
-          if(!ownerName){var a=fam.filter(function(p){return p.admin;})[0]||fam[0];if(a&&a.name)ownerName=a.name;}
+          /* prefer the owner's full name composed from live family data so the
+             tenant label isn't stuck on a first-name-only value captured at
+             creation; fall back to the stored tenantName, then the email. */
+          var ownerName=null;
+          var a=fam.filter(function(p){return p.admin;})[0]||fam[0];
+          if(a&&a.name)ownerName=a.name+(a.lastName?' '+a.lastName:'');
+          if(!ownerName)ownerName=w.tenantName||null;
           if(!ownerName&&owner)ownerName=owner.split('@')[0];
           var partyNames=parties.map(function(g){return g&&g.name;}).filter(Boolean);
           return {wid:d.id,name:w.name||'(unnamed)',ownerName:ownerName||'(unnamed)',by:w.by||null,byEmail:owner,parties:partyNames,memberCount:ms.size,createdAt:w.createdAt||0};
