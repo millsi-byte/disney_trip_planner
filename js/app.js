@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='128';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='129';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2030,7 +2030,6 @@ function renderScreen(){
   if(t==='personedit') return scrPersonEdit();
   if(t==='persondetails') return scrPersonDetails();
   if(t==='alltrips')  return scrAllTrips();
-  if(t==='tripparties') return scrTripParties();
   if(t==='dayedit')   return scrDayEdit();
   if(t==='predit')    return scrPREdit();
   if(t==='visedit')   return scrVisitEdit();
@@ -3339,33 +3338,13 @@ function tripSetParty(tid,gid){var t=tripById(tid);if(!t)return;t.parties=[gid];
 function scrAllTrips(){
   if(!isAdmin())return screenShell('Trips','<div class="body-empty" style="padding:24px 12px">Admin only.</div>',null,null,'Done');
   var body='<div class="hub-section-label" style="margin-left:0">Trips</div>';
-  body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">Every trip in this tenant. Tap one to set which planning party it belongs to.</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">Every trip in this tenant. Tap one to edit its name, dates, planning party and more.</div>';
   for(var i=0;i<TRIPS.length;i++){var t=TRIPS[i];var g=partyById((t.parties||[])[0]);var mc=(t.members||[]).length;
     var sub=(g?esc(g.name):'No party')+' · '+mc+' '+(mc===1?'person':'people')+(t.dates?' · '+esc(t.dates):'');
-    body+='<button class="hub-row" onclick="openScreen({type:\'tripparties\',tripId:\''+t.id+'\'})"><div class="hub-icon" style="background:'+(t.color||'#0E7490')+'">'+IC.map+'</div>'
+    body+='<button class="hub-row" onclick="openScreen({type:\'tripedit\',tripId:\''+t.id+'\'})"><div class="hub-icon" style="background:'+(t.color||'#0E7490')+'">'+IC.map+'</div>'
       +'<div class="hub-main"><div class="hub-title">'+esc(t.name)+'</div><div class="hub-sub">'+sub+'</div></div><div class="chev">'+IC.chev+'</div></button>';
   }
   return screenShell('Trips',body,null,null,'Done','<button class="sec-add" onclick="openScreen({type:\'newtrip\'})">Add trip</button>');
-}
-/* per-trip: which planning party it belongs to (single), + jump-throughs */
-function scrTripParties(){
-  if(!isAdmin())return screenShell('Trip','<div class="body-empty" style="padding:24px 12px">Admin only.</div>',null,null,'Done');
-  var tid=(S.screen&&S.screen.tripId),t=tripById(tid);
-  if(!t)return screenShell('Trip','<div class="body-empty" style="padding:24px 12px">Trip not found.</div>',null,null,'Done');
-  var curId=(t.parties||[])[0];
-  var body='<div class="body-empty" style="text-align:left;padding:2px 2px 8px;font-size:12px">A trip belongs to exactly one planning party — its members are who can see and plan it.</div>';
-  body+='<div class="hub-section-label" style="margin-left:0">Planning party</div>';
-  for(var i=0;i<PARTIES.length;i++){var g=PARTIES[i],on=(g.id===curId);var np=partyPeople(g.id).length;
-    body+='<div class="hub-row" style="padding-right:10px">'
-      +'<button class="hub-main" style="background:none;border:0;text-align:left;padding:0;display:flex;align-items:center;gap:10px;flex:1;min-width:0" onclick="tripSetParty(\''+t.id+'\',\''+g.id+'\')">'
-      +'<span class="wdot" style="background:'+(on?'#15803D':'#CBD5E1')+';flex-shrink:0">'+(on?IC.checkw:'')+'</span>'
-      +'<span style="min-width:0"><span class="hub-title" style="font-size:14px">'+esc(g.name)+(on?' · current':'')+'</span><span class="hub-sub" style="display:block">'+np+' '+(np===1?'person':'people')+'</span></span></button>'
-      +'<button class="btn-secondary" style="margin:0;width:auto;padding:6px 12px;min-height:0;flex-shrink:0" onclick="openScreen({type:\'partyedit\',gid:\''+g.id+'\'})">Open</button></div>';
-  }
-  body+='<div class="hub-section-label" style="margin-left:0">This trip</div>';
-  body+='<button class="btn-secondary green" onclick="openTripPlanning(\''+t.id+'\')">Open trip planning</button>';
-  body+='<button class="btn-secondary" onclick="openScreen({type:\'tripedit\',tripId:\''+t.id+'\'})" style="margin-top:8px">Edit name &amp; dates</button>';
-  return screenShell(esc(t.name),body,null,null,'← Back',null,'openScreen({type:\'alltrips\'})');
 }
 function partyDelete(gid){
   if(PARTIES.length<=1){toast('Keep at least one party');return;}
