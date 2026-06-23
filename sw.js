@@ -1,7 +1,7 @@
 /* Baseline Tap — service worker
    Network-first so new versions show up on the next load; cache is the
    offline fallback only. */
-var CACHE = 'dtp-v146';
+var CACHE = 'dtp-v147';
 var ASSETS = [
   './',
   './index.html',
@@ -28,6 +28,13 @@ self.addEventListener('activate', function(e){
 
 self.addEventListener('fetch', function(e){
   if(e.request.method !== 'GET') return;
+  /* Never touch Firebase's reserved auth/handshake routes. On Firebase Hosting
+     the app and authDomain share one origin, so /__/auth/iframe and
+     /__/auth/handler are same-origin and would otherwise be caught here. Our
+     network-first + index.html fallback would hand back the app HTML instead of
+     the real handler, corrupting the OAuth handshake and hanging sign-in. Let
+     the browser fetch these directly. */
+  if(new URL(e.request.url).pathname.indexOf('/__/') === 0) return;
   e.respondWith(
     fetch(e.request).then(function(res){
       if(res && res.status === 200 && res.type === 'basic'){
