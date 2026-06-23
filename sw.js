@@ -1,7 +1,7 @@
 /* Baseline Tap — service worker
    Network-first so new versions show up on the next load; cache is the
    offline fallback only. */
-var CACHE = 'dtp-v151';
+var CACHE = 'dtp-v152';
 var ASSETS = [
   './',
   './index.html',
@@ -28,13 +28,20 @@ self.addEventListener('activate', function(e){
 
 self.addEventListener('fetch', function(e){
   if(e.request.method !== 'GET') return;
-  /* Never touch Firebase's reserved auth/handshake routes. On Firebase Hosting
-     the app and authDomain share one origin, so /__/auth/iframe and
+  var url = new URL(e.request.url);
+  /* Only ever handle our OWN static files. Anything cross-origin — Firestore's
+     API (firestore.googleapis.com), the Firebase SDK CDN, Google Fonts, the
+     auth endpoints — must pass straight through to the network untouched.
+     Intercepting Firestore's request stream broke its auth/transport, so the
+     first sync failed with "Missing or insufficient permissions" and the app
+     never got past the sign-in screen. */
+  if(url.origin !== self.location.origin) return;
+  /* Never touch Firebase's reserved auth/handshake routes either. On Firebase
+     Hosting the app and authDomain share one origin, so /__/auth/iframe and
      /__/auth/handler are same-origin and would otherwise be caught here. Our
      network-first + index.html fallback would hand back the app HTML instead of
-     the real handler, corrupting the OAuth handshake and hanging sign-in. Let
-     the browser fetch these directly. */
-  if(new URL(e.request.url).pathname.indexOf('/__/') === 0) return;
+     the real handler, corrupting the OAuth handshake. Let the browser fetch it. */
+  if(url.pathname.indexOf('/__/') === 0) return;
   e.respondWith(
     fetch(e.request).then(function(res){
       if(res && res.status === 200 && res.type === 'basic'){
