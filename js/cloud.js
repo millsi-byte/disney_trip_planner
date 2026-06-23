@@ -322,6 +322,15 @@
   auth.onAuthStateChanged(function(u){
     C.user=u; C.ready=true;
     if(u){
+      /* Set isSuper synchronously from the user's email — this is a plain string
+         comparison that never touches Firestore, so it can never fail or be delayed.
+         If startSync() later rejects (blocked transport, permission error) before
+         reaching its own isSuper assignment, the flag is already correct here and
+         onCloudSynced will route the user in correctly. Without this, a Firestore
+         failure before the isSuper assignment left the super-admin with isSuper=false
+         and they bounced back to the login screen every time. */
+      C.isSuper=C.isSuperAdmin();
+      if(C.isSuper) C.isOwner=true;
       /* Route the user in whether or not the first sync succeeds. The app is
          local-first and the super-admin/owner check is just an email lookup —
          a stumbling Firestore read (blocked transport, transient permission
