@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='117';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='118';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2823,7 +2823,7 @@ function ntMakeTrip(partyId,mem){
   var nm=S._ntTripName||'My Trip',col=PALETTE[TRIPS.length%PALETTE.length][0],id='t'+Date.now();
   var start=S._ntStart||'',end=S._ntEnd||'';
   var dates=(start&&end)?(monOf(start)+' '+(+start.slice(8))+' – '+monOf(end)+' '+(+end.slice(8))+', '+start.slice(0,4)):'Dates TBD';
-  TRIPS.push({id:id,name:nm,sub:'Walt Disney World',status:'planning',start:start,end:end,dates:dates,color:col,members:mem,by:S.persona,parties:[partyId]});
+  TRIPS.push({id:id,name:nm,sub:'Walt Disney World',status:'planning',start:start,end:end,dates:dates,color:col,members:mem,by:S.persona,parties:partyId?[partyId]:[]});
   genDays(id);var np={},nt=[];mem.forEach(function(pid){np[pid]=[];});
   save('dtp_packing_'+id,np);save('dtp_todo_'+id,nt);save('dtp_trips',TRIPS);save('dtp_days',DAYS);
   S._ntTripId=id;S._members=new Set(mem);
@@ -2857,8 +2857,7 @@ function ntCreateTripFromGroup(){
   ntMakeTrip(gid,mem);ntFinish(false);
 }
 function ntCreateTripSkip(){
-  var partyId=S.partyId||(PARTIES[0]||{}).id||'none';
-  ntMakeTrip(partyId,[S.persona]);ntFinish(true);
+  ntMakeTrip(null,[S.persona]);ntFinish(true);
 }
 function ntFinish(silent){
   var t=tripById(S._ntTripId),optIn=!silent&&S._notify;
