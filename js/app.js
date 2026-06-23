@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='116';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='117';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -255,14 +255,11 @@ function trip(){for(var i=0;i<TRIPS.length;i++)if(TRIPS[i].id===S.tripId)return 
    it, others only trips they own or are a member of (owning always wins) */
 /* a trip belongs to the active party (an untagged trip shows everywhere so
    data never silently disappears) */
-function tripInActiveParty(t){return !t.parties||!t.parties.length||t.parties.indexOf(S.partyId)>=0;}
 function visibleTrips(){
-  if(isAdmin())return TRIPS.filter(tripInActiveParty);
-  /* others: trips in the active party they\'re on, plus any trip they own
-     (you never lose your own trip, even if it lives in another party) */
+  if(isAdmin())return TRIPS.slice();
   return TRIPS.filter(function(t){
     if(t.by&&t.by===S.persona)return true;
-    return tripInActiveParty(t)&&(t.members&&t.members.indexOf(S.persona)>=0);
+    return t.members&&t.members.indexOf(S.persona)>=0;
   });
 }
 /* does the current persona have any trip they can see? */
@@ -780,7 +777,7 @@ function openSheet(def){S.sheet=def;renderOverlay();requestAnimationFrame(functi
 /* only tears down the sheet — must NOT re-render screen-host, or a screen
    opened right after (e.g. New trip) loses its slide-in and flies off */
 function closeSheet(){var host=document.getElementById('sheet-host');var b=host&&host.firstChild;if(b){b.classList.remove('in');setTimeout(function(){S.sheet=null;var hh=document.getElementById('sheet-host');if(hh)hh.innerHTML='';},240);}else{S.sheet=null;var h2=document.getElementById('sheet-host');if(h2)h2.innerHTML='';}}
-function switchTrip(id){saveLists();S.tripId=id;saveTripId();loadLists();S.dayIdx=0;S.tab="home";S.open=defOpen();S.fmode='all';S.filter.clear();closeSheet();toast("Switched to "+trip().name);render();}
+function switchTrip(id){saveLists();S.tripId=id;saveTripId();var _st=tripById(id);if(_st&&_st.parties&&_st.parties[0]&&partyById(_st.parties[0])){S.partyId=_st.parties[0];savePartyId();}loadLists();S.dayIdx=0;S.tab="home";S.open=defOpen();S.fmode='all';S.filter.clear();closeSheet();toast("Switched to "+trip().name);render();}
 
 /* screens (slide-in) */
 function openScreen(def){
@@ -1978,14 +1975,6 @@ function renderSheet(){
   var groups=[['active','Active'],['planning','Planning'],['archived','Archived']];
   var h='<div class="sheet-backdrop" onclick="if(event.target===this)closeSheet()"><div class="sheet">';
   h+='<div class="sheet-grip"></div><div class="sheet-title">Your Trips</div>';
-  /* party switcher — when this persona can see more than one party */
-  var vg=visibleParties();
-  if(vg.length>1){
-    h+='<div style="padding:0 18px 8px"><div class="field-label" style="margin-bottom:5px">Planning Party</div><div class="gchips">';
-    for(var gi=0;gi<vg.length;gi++){var gobj=vg[gi];
-      h+='<button class="gchip'+(gobj.id===S.partyId?' on':'')+'" onclick="switchParty(\''+gobj.id+'\')">'+esc(gobj.name)+'</button>';}
-    h+='</div></div>';
-  }
   h+='<button class="btn-secondary green" style="margin:4px 18px 8px;width:calc(100% - 36px)" onclick="closeSheet();openScreen({type:\'newtrip\'})">'+IC.plus+' Plan a new trip</button>';
   var vis=visibleTrips();
   if(!vis.length) h+='<div class="body-empty" style="text-align:left;padding:6px 2px 4px">No trips yet. '+(isAdmin()?'Tap “Plan a new trip” above.':'Ask an admin to add you to a trip.')+'</div>';
