@@ -28,16 +28,23 @@
   C.signInGoogle=function(){
     var provider=new firebase.auth.GoogleAuthProvider();
     provider.setCustomParameters({prompt:'select_account'});
-    /* Use a full-page redirect, NOT a popup. In incognito and embedded
-       webviews, signInWithPopup doesn't fail with an error we can catch — it
-       just hangs: the popup opens but Chrome's storage partitioning breaks the
-       opener↔popup handshake, so the Google prompt never appears and the promise
-       never settles. A top-level redirect navigates the whole tab to Google's
-       sign-in (always prompts) and returns the credential in the URL, so it
-       works without third-party cookies. The stashed invite lives in
-       localStorage and survives the round-trip; getRedirectResult() (below)
-       completes the sign-in on return. */
-    return auth.signInWithRedirect(provider);
+    /* Popup-first. Our app is served from github.io while authDomain is
+       firebaseapp.com, so signInWithRedirect's return trip must read its pending
+       handshake from firebaseapp.com storage — a third-party context that
+       Chrome's storage partitioning and Safari's ITP now block. The result:
+       getRedirectResult() comes back empty and a fresh browser loops back to the
+       sign-in screen forever (browsers that already authenticated keep working
+       because their token persists first-party in our own IndexedDB).
+       signInWithPopup completes the whole OAuth exchange inside a first-party
+       window, so it doesn't need that blocked cross-domain read. Fall back to a
+       full-page redirect only when the popup is physically unavailable (blocked,
+       or an embedded webview that can't open one). */
+    return auth.signInWithPopup(provider).catch(function(e){
+      var code=(e&&e.code)||'';
+      if(code==='auth/popup-blocked'||code==='auth/operation-not-supported-in-this-environment'||code==='auth/cancelled-popup-request')
+        return auth.signInWithRedirect(provider);
+      throw e;   /* popup-closed-by-user etc. → surface to the caller */
+    });
   };
   C.sendEmailLink=function(email){
     var settings={url:location.href.split('#')[0],handleCodeInApp:true};

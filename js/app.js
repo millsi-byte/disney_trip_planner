@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='143';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='144';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -3062,7 +3062,7 @@ function scrSignIn(){
   body+='<button class="btn-secondary green" onclick="cloudEmailLink()">Email me a sign-in link</button>';
   body+='<div class="hub-section-label" style="margin-left:0">Or use Google</div>';
   body+='<button class="btn-secondary" onclick="window.CLOUD.signInGoogle().catch(function(e){toast(e.message||\'Sign-in failed\')})">Sign in with Google</button>';
-  body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0;font-size:12px;color:var(--muted)">In a private/incognito window, Google sign-in may not finish — use the email link above instead.</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0;font-size:12px;color:var(--muted)">A Google sign-in window will pop up. If your browser blocks pop-ups, allow it for this site — or use the email link above.</div>';
   return screenShell('Sign in',body,null,null,false);
 }
 function cloudEmailLink(){
