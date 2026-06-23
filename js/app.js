@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='140';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='141';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1987,29 +1987,29 @@ function renderSheet(){
   if(S.sheet.type==='pfilter')return renderPfilterSheet();
   if(S.sheet.type!=='trips')return '';
   var today=new Date().toISOString().slice(0,10);
-  var h='<div class=”sheet-backdrop” onclick=”if(event.target===this)closeSheet()”><div class=”sheet”>';
-  h+='<div class=”sheet-grip”></div><div class=”sheet-title”>Your Trips</div>';
-  h+='<button class=”btn-secondary green” style=”margin:4px 18px 8px;width:calc(100% - 36px)” onclick=”closeSheet();openScreen({type:\'newtrip\'})”>'+IC.plus+' Plan a new trip</button>';
+  var h='<div class="sheet-backdrop" onclick="if(event.target===this)closeSheet()"><div class="sheet">';
+  h+='<div class="sheet-grip"></div><div class="sheet-title">Your Trips</div>';
+  h+='<button class="btn-secondary green" style="margin:4px 18px 8px;width:calc(100% - 36px)" onclick="closeSheet();openScreen({type:\'newtrip\'})">'+IC.plus+' Plan a new trip</button>';
   var vis=visibleTrips();
-  if(!vis.length) h+='<div class=”body-empty” style=”text-align:left;padding:6px 2px 4px”>No trips yet. '+(isAdmin()?'Tap “Plan a new trip” above.':'Ask an admin to add you to a trip.')+'</div>';
+  if(!vis.length) h+='<div class="body-empty" style="text-align:left;padding:6px 2px 4px">No trips yet. '+(isAdmin()?'Tap “Plan a new trip” above.':'Ask an admin to add you to a trip.')+'</div>';
   var upcoming=vis.filter(function(t){return !t.end||t.end>=today;});
   var past=vis.filter(function(t){return t.end&&t.end<today;});
   var sections=[];
   if(upcoming.length)sections.push(['Upcoming',upcoming]);
   if(past.length)sections.push(['Past Trips',past]);
   for(var g=0;g<sections.length;g++){
-    h+='<div class=”sheet-seclabel”>'+sections[g][0]+'</div>';
+    h+='<div class="sheet-seclabel">'+sections[g][0]+'</div>';
     var list=sections[g][1];
     for(var i=0;i<list.length;i++){var t=list[i],on=t.id===S.tripId;
       var mc=(t.members?t.members.length:0);
       var own=(t.by&&person(t.by))?person(t.by):null;
-      h+='<div class=”trip-row'+(on?' on':'')+'” onclick=”switchTrip(\''+t.id+'\')”>';
-      h+='<div class=”trip-bar” style=”background:'+t.color+'”></div>';
-      h+='<div class=”trip-main”><div class=”trip-name”>'+esc(t.name)+'</div>';
-      h+='<div class=”trip-sub”>'+esc(t.dates)+' · '+mc+' '+(mc===1?'person':'people')+(own?' · Owner: '+esc(own.name)+(own.id===S.persona?' (you)':''):'')+'</div></div>';
+      h+='<div class="trip-row'+(on?' on':'')+'" onclick="switchTrip(\''+t.id+'\')">';
+      h+='<div class="trip-bar" style="background:'+t.color+'"></div>';
+      h+='<div class="trip-main"><div class="trip-name">'+esc(t.name)+'</div>';
+      h+='<div class="trip-sub">'+esc(t.dates)+' · '+mc+' '+(mc===1?'person':'people')+(own?' · Owner: '+esc(own.name)+(own.id===S.persona?' (you)':''):'')+'</div></div>';
       if(canEditTrip(t))
-        h+='<button class=”hdr-icon” style=”width:34px;height:34px;background:#F3F1EC;color:#6B7280;flex-shrink:0” onclick=”event.stopPropagation();closeSheet();openScreen({type:\'tripedit\',tripId:\''+t.id+'\'})”>'+IC.pencil+'</button>';
-      if(on)h+='<span class=”trip-status ts-sel”>'+IC.check+'</span>';
+        h+='<button class="hdr-icon" style="width:34px;height:34px;background:#F3F1EC;color:#6B7280;flex-shrink:0" onclick="event.stopPropagation();closeSheet();openScreen({type:\'tripedit\',tripId:\''+t.id+'\'})">'+IC.pencil+'</button>';
+      if(on)h+='<span class="trip-status ts-sel">'+IC.check+'</span>';
       h+='</div>';
     }
   }
