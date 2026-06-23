@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='138';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='139';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -145,7 +145,9 @@ function ensurePartyTags(){
        aren't dropped; p.name (the casual first name) is left untouched. */
     if(p.lastName===undefined&&p.fullName){var _sp=String(p.fullName).trim().split(/\s+/);p.lastName=_sp.length>1?_sp.slice(1).join(' '):'';}}
   for(var j=0;j<TRIPS.length;j++){var t=TRIPS[j];
-    if(!Array.isArray(t.parties)||!t.parties.length)t.parties=(Array.isArray(t.groups)&&t.groups.length)?t.groups.slice():[pid];}
+    if(!Array.isArray(t.parties)||!t.parties.length)t.parties=(Array.isArray(t.groups)&&t.groups.length)?t.groups.slice():[pid];
+    /* migrate legacy status field: 'active' trips had notifications on by default */
+    if(t.notifyByDefault===undefined)t.notifyByDefault=!!(t.status==='active');}
 }
 ensurePartyTags();
 function saveParties(){save('dtp_parties',PARTIES);}
@@ -451,7 +453,7 @@ function joinMe(){
 /* ============================================================
    NOTIFICATIONS
    action-required kinds always notify the creator; everything else is
-   gated by trip status (planning = silent unless opted in; active = prompt)
+   gated by trip.notifyByDefault (off = silent unless opted in; on = prompt)
    ============================================================ */
 var ACTION_CATS={Dining:1,'Lightning Lane':1,'Park reservation':1};
 function isActionCat(c){return !!ACTION_CATS[c];}
@@ -540,7 +542,7 @@ function notifyChange(o){
   var plan=buildNotifPlan(o);
   if(!plan.forced.length&&!plan.optional.length){bumpBell();return;}
   var t=tripById(o.trip)||trip();
-  var active=(t&&t.status==='active');
+  var active=(t&&t.notifyByDefault);
   if(!active&&!o.optIn){ if(plan.forced.length)sendNotifPlan(plan.forced); bumpBell(); return; }
   openNotifConfirm(o,plan);
 }
@@ -569,8 +571,8 @@ function notifyDelete(cat,item){
   var creator=creatorOf(item,tid);
   if(creator&&creator!==actor&&people.indexOf(creator)<0&&person(creator))people.push(creator);
   if(!people.length)return;
-  var t=tripById(tid)||trip(),active=(t&&t.status==='active');
-  if(!active&&!S._notify)return;          /* planning: silent unless opted in */
+  var t=tripById(tid)||trip(),active=(t&&t.notifyByDefault);
+  if(!active&&!S._notify)return;          /* silent unless trip notifies by default or opted in */
   var off=isActionCat(cat)?' — that booking is off':'';
   var plan={forced:[],optional:[]};
   people.forEach(function(id){
@@ -586,8 +588,8 @@ function notifyMembership(tripObj,oldMem,newMem,optIn){
   var added=newA.filter(function(x){return oldA.indexOf(x)<0&&x!==actor&&person(x);});
   var removed=oldA.filter(function(x){return newA.indexOf(x)<0&&x!==actor&&person(x);});
   if(!added.length&&!removed.length)return;
-  var active=(tripObj.status==='active');
-  if(!active&&!optIn)return;             /* planning: silent unless opted in */
+  var active=(tripObj.notifyByDefault);
+  if(!active&&!optIn)return;             /* silent unless trip notifies by default or opted in */
   var plan={forced:[],optional:[]};
   added.forEach(function(id){plan.optional.push({to:id,from:actor,trip:tripObj.id,cat:'Trip',label:tripObj.name,kind:'added',text:who+' added you to the trip “'+tripObj.name+'”'});});
   removed.forEach(function(id){plan.optional.push({to:id,from:actor,trip:tripObj.id,cat:'Trip',label:tripObj.name,kind:'removed',text:who+' removed you from the trip “'+tripObj.name+'”'});});
@@ -670,17 +672,17 @@ function agoText(ts){
 }
 function notifKindCls(k){return (k==='action'||k==='left')?'nk-act':k==='removed'?'nk-rm':'nk-add';}
 function notifKindMark(k){return (k==='action'||k==='left')?IC.warn:k==='removed'?'<span style="font-weight:800">–</span>':IC.checkw;}
-function notifDefault(){return !!(trip()&&trip().status==='active');}
+function notifDefault(){return !!(trip()&&trip().notifyByDefault);}
 function notifToggle(){S._notify=!S._notify;renderScreen_inplace2();}
 /* the in-editor notify control (appended after the who-select) */
 function notifyField(cat){
-  var active=!!(trip()&&trip().status==='active'),on=!!S._notify;
+  var active=!!(trip()&&trip().notifyByDefault),on=!!S._notify;
   var h='<div class="field"><label class="field-label">Notifications</label>';
   h+='<div class="notify-row'+(on?' on':'')+'" onclick="notifToggle()"><span class="notify-check">'+(on?IC.checkw:'')+'</span>';
   if(active){
-    h+='<div><div class="notify-lbl">Notify people when I save</div><div class="notify-sub">This trip is active — tick to choose who to let know when you save.</div></div></div>';
+    h+='<div><div class="notify-lbl">Notify people when I save</div><div class="notify-sub">This trip notifies by default — tick to choose who to let know when you save.</div></div></div>';
   }else{
-    h+='<div><div class="notify-lbl">Notify people of this change</div><div class="notify-sub">This trip is still planning, so changes stay silent unless you switch this on.</div></div></div>';
+    h+='<div><div class="notify-lbl">Notify people of this change</div><div class="notify-sub">Notifications are off by default for this trip — switch on to notify for this change.</div></div></div>';
   }
   if(isActionCat(cat))h+='<div class="notify-note amber">'+IC.warn+' Whoever booked this is always told when people join or leave — it may need a real reservation change.</div>';
   return h+'</div>';
@@ -799,7 +801,7 @@ function openScreen(def){
   S._formLoc=null;S._formTier=null;S._formInit=null;S._formColor=null;
   S._notify=notifDefault();
   if(def.type==='newtrip'){S._notify=true;S._formInit=null;S._ntStep=null;S._ntPartyId=null;S._ntWhoMode=null;S._ntProvParty=null;S._ntTripId=null;S._ntFirstRun=false;S._ntPeople=null;S._ntInvite=null;S._ntPeopleCount=1;S._ntExpandedParty=null;S._ntTripName=null;S._ntStart=null;S._ntEnd=null;S._ntCalYear=null;S._ntCalMonth=null;}
-  else if(def.type==='tripedit'){var _et=tripById(def.tripId);S._notify=!!(_et&&_et.status==='active');}
+  else if(def.type==='tripedit'){var _et=tripById(def.tripId);S._notify=!!(_et&&_et.notifyByDefault);}
   if(def.type==='addflight'){S.formLegs=def.edit?((FLIGHTS.filter(function(f){return f.id===def.edit;})[0]||{legs:[0]}).legs.length):1;}
   else{S.formLegs=1;}
   if(def.type==='import'||def.type==='csvimport'){S.importStep=1;S._importItems=null;S._importCount=0;S._importEdit=null;}
@@ -1985,26 +1987,31 @@ function renderPfilterSheet(){
 function renderSheet(){
   if(S.sheet.type==='pfilter')return renderPfilterSheet();
   if(S.sheet.type!=='trips')return '';
-  var groups=[['active','Active'],['planning','Planning'],['archived','Archived']];
-  var h='<div class="sheet-backdrop" onclick="if(event.target===this)closeSheet()"><div class="sheet">';
-  h+='<div class="sheet-grip"></div><div class="sheet-title">Your Trips</div>';
-  h+='<button class="btn-secondary green" style="margin:4px 18px 8px;width:calc(100% - 36px)" onclick="closeSheet();openScreen({type:\'newtrip\'})">'+IC.plus+' Plan a new trip</button>';
+  var today=new Date().toISOString().slice(0,10);
+  var h='<div class=”sheet-backdrop” onclick=”if(event.target===this)closeSheet()”><div class=”sheet”>';
+  h+='<div class=”sheet-grip”></div><div class=”sheet-title”>Your Trips</div>';
+  h+='<button class=”btn-secondary green” style=”margin:4px 18px 8px;width:calc(100% - 36px)” onclick=”closeSheet();openScreen({type:\'newtrip\'})”>'+IC.plus+' Plan a new trip</button>';
   var vis=visibleTrips();
-  if(!vis.length) h+='<div class="body-empty" style="text-align:left;padding:6px 2px 4px">No trips yet. '+(isAdmin()?'Tap “Plan a new trip” above.':'Ask an admin to add you to a trip.')+'</div>';
-  for(var g=0;g<groups.length;g++){
-    var list=vis.filter(function(t){return t.status===groups[g][0];});
-    if(!list.length)continue;
-    h+='<div class="sheet-seclabel">'+groups[g][1]+'</div>';
+  if(!vis.length) h+='<div class=”body-empty” style=”text-align:left;padding:6px 2px 4px”>No trips yet. '+(isAdmin()?'Tap “Plan a new trip” above.':'Ask an admin to add you to a trip.')+'</div>';
+  var upcoming=vis.filter(function(t){return !t.end||t.end>=today;});
+  var past=vis.filter(function(t){return t.end&&t.end<today;});
+  var sections=[];
+  if(upcoming.length)sections.push(['Upcoming',upcoming]);
+  if(past.length)sections.push(['Past Trips',past]);
+  for(var g=0;g<sections.length;g++){
+    h+='<div class=”sheet-seclabel”>'+sections[g][0]+'</div>';
+    var list=sections[g][1];
     for(var i=0;i<list.length;i++){var t=list[i],on=t.id===S.tripId;
       var mc=(t.members?t.members.length:0);
       var own=(t.by&&person(t.by))?person(t.by):null;
-      h+='<div class="trip-row'+(on?' on':'')+'" onclick="switchTrip(\''+t.id+'\')">';
-      h+='<div class="trip-bar" style="background:'+t.color+'"></div>';
-      h+='<div class="trip-main"><div class="trip-name'+(t.status==='archived'?' archived':'')+'">'+esc(t.name)+'</div>';
-      h+='<div class="trip-sub">'+esc(t.dates)+' · '+mc+' '+(mc===1?'person':'people')+(own?' · Owner: '+esc(own.name)+(own.id===S.persona?' (you)':''):'')+'</div></div>';
+      h+='<div class=”trip-row'+(on?' on':'')+'” onclick=”switchTrip(\''+t.id+'\')”>';
+      h+='<div class=”trip-bar” style=”background:'+t.color+'”></div>';
+      h+='<div class=”trip-main”><div class=”trip-name”>'+esc(t.name)+'</div>';
+      h+='<div class=”trip-sub”>'+esc(t.dates)+' · '+mc+' '+(mc===1?'person':'people')+(own?' · Owner: '+esc(own.name)+(own.id===S.persona?' (you)':''):'')+'</div></div>';
       if(canEditTrip(t))
-        h+='<button class="hdr-icon" style="width:34px;height:34px;background:#F3F1EC;color:#6B7280;flex-shrink:0" onclick="event.stopPropagation();closeSheet();openScreen({type:\'tripedit\',tripId:\''+t.id+'\'})">'+IC.pencil+'</button>';
-      h+='<span class="trip-status ts-'+t.status+'">'+(on?'Current':t.status)+'</span></div>';
+        h+='<button class=”hdr-icon” style=”width:34px;height:34px;background:#F3F1EC;color:#6B7280;flex-shrink:0” onclick=”event.stopPropagation();closeSheet();openScreen({type:\'tripedit\',tripId:\''+t.id+'\'})”>'+IC.pencil+'</button>';
+      if(on)h+='<span class=”trip-status ts-sel”>'+IC.check+'</span>';
+      h+='</div>';
     }
   }
   h+='</div></div>';
@@ -2488,7 +2495,7 @@ function importNotify(items){
     plan.forced=plan.forced.concat(p.forced);plan.optional=plan.optional.concat(p.optional);
   });
   if(!plan.forced.length&&!plan.optional.length){bumpBell();return;}
-  var t=tripById(tid)||trip(),active=(t&&t.status==='active');
+  var t=tripById(tid)||trip(),active=(t&&t.notifyByDefault);
   if(!active&&!S._notify){if(plan.forced.length)sendNotifPlan(plan.forced);bumpBell();return;}
   openNotifConfirm({actor:S.persona,trip:tid,cat:'Import',label:'these items',oldWho:[],newWho:[]},plan);
 }
@@ -2718,10 +2725,10 @@ function importReviewScreen(){
     }
     if(anyWarn)body+='<div class="body-empty" style="text-align:left;padding:2px 2px 10px;font-size:13px;color:#92400E">Items marked in amber fall outside this trip\'s dates. You can still add them, but double-check you\'re on the right trip.</div>';
     if(okN){
-      var act=!!(trip()&&trip().status==='active'),on=!!S._notify;
+      var act=!!(trip()&&trip().notifyByDefault),on=!!S._notify;
       body+='<div class="field" style="margin-top:6px"><label class="field-label">Notifications</label>';
       body+='<div class="notify-row'+(on?' on':'')+'" onclick="notifToggle()"><span class="notify-check">'+(on?IC.checkw:'')+'</span>';
-      body+='<div><div class="notify-lbl">Notify the people I assigned</div><div class="notify-sub">'+(act?'This trip is active — you\'ll choose who to let know after saving.':'Tell the people on these items they\'ve been added.')+'</div></div></div></div>';
+      body+='<div><div class="notify-lbl">Notify the people I assigned</div><div class="notify-sub">'+(act?'This trip notifies by default — you\'ll choose who to let know after saving.':'Switch on to tell the people on these items they\'ve been added.')+'</div></div></div></div>';
     }
     body+='<button class="btn-primary"'+(okN?'':' disabled style="opacity:.5"')+' onclick="importSave()">'+(okN?'Add '+okN+' item'+(okN===1?'':'s')+' to '+esc(trip().name):'Nothing to add')+'</button>';
     body+='<button class="btn-secondary" onclick="importReset()">Back</button>';
@@ -2838,7 +2845,7 @@ function ntMakeTrip(partyId,mem){
   var nm=S._ntTripName||'My Trip',col=PALETTE[TRIPS.length%PALETTE.length][0],id='t'+Date.now();
   var start=S._ntStart||'',end=S._ntEnd||'';
   var dates=(start&&end)?(monOf(start)+' '+(+start.slice(8))+' – '+monOf(end)+' '+(+end.slice(8))+', '+start.slice(0,4)):'Dates TBD';
-  TRIPS.push({id:id,name:nm,sub:'Walt Disney World',status:'planning',start:start,end:end,dates:dates,color:col,members:mem,by:S.persona,parties:partyId?[partyId]:[]});
+  TRIPS.push({id:id,name:nm,sub:'Walt Disney World',notifyByDefault:false,start:start,end:end,dates:dates,color:col,members:mem,by:S.persona,parties:partyId?[partyId]:[]});
   genDays(id);var np={},nt=[];mem.forEach(function(pid){np[pid]=[];});
   save('dtp_packing_'+id,np);save('dtp_todo_'+id,nt);save('dtp_trips',TRIPS);save('dtp_days',DAYS);
   S._ntTripId=id;S._members=new Set(mem);
@@ -4253,7 +4260,7 @@ function scrTripEdit(){
     var who=(t.by&&person(t.by))?person(t.by).name:'an admin';
     return screenShell('Trip','<div class="body-empty" style="text-align:left;padding:6px 2px">Only '+esc(who)+' or an admin can change this trip\'s name, dates and members.</div>',null,null,'Done');
   }
-  if(S._formInit!=='trip'){S._formStatus.tr=t.status;S._formColor=t.color;S._formInit='trip';S._tpartyId=(t.parties&&t.parties[0])||S.partyId||(PARTIES[0]||{}).id;S._teStart=t.start||'';S._teEnd=t.end||'';S._teCalOpen=false;S._teCalYear=null;S._teCalMonth=null;}
+  if(S._formInit!=='trip'){S._formColor=t.color;S._formInit='trip';S._tpartyId=(t.parties&&t.parties[0])||S.partyId||(PARTIES[0]||{}).id;S._teStart=t.start||'';S._teEnd=t.end||'';S._teCalOpen=false;S._teCalYear=null;S._teCalMonth=null;S._notify=!!t.notifyByDefault;}
   var body='<div class="field"><label class="field-label">Trip name</label><input class="field-input" id="tr-name" value="'+esc(t.name)+'"></div>';
   body+='<div class="field"><label class="field-label">Dates</label>';
   if(S._teCalOpen){
@@ -4263,11 +4270,8 @@ function scrTripEdit(){
     body+='<button class="field-input" onclick="teCalToggle()" style="text-align:left;cursor:pointer;background:#fff;display:flex;align-items:center;justify-content:space-between"><span'+(S._teStart?'':' style="color:var(--muted)"')+'>'+esc(teDatesLabel())+'</span>'+IC.cal+'</button>';
   }
   body+='</div>';
-  body+='<div class="field"><label class="field-label">Status</label><div class="seg">';
-  body+='<button class="seg-btn'+(S._formStatus.tr==='active'?' on book':'')+'" onclick="pickStatus(\'tr\',\'active\')">Active</button>';
-  body+='<button class="seg-btn'+(S._formStatus.tr==='planning'?' on':'')+'" onclick="pickStatus(\'tr\',\'planning\')">Planning</button>';
-  body+='<button class="seg-btn'+(S._formStatus.tr==='archived'?' on':'')+'" onclick="pickStatus(\'tr\',\'archived\')">Archived</button></div>';
-  body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px"><strong>Active</strong> is the trip you\'re currently focused on — it shows up first and drives the home screen. Only one trip is active at a time. <strong>Planning</strong> is an upcoming trip you\'re still building out. <strong>Archived</strong> is a past or cancelled trip, kept for reference but tucked out of the way.</div></div>';
+  body+='<div class="field"><label class="field-label">Notifications</label>';
+  body+='<div class="notify-row'+(S._notify?' on':'')+'" onclick="notifToggle()"><span class="notify-check">'+(S._notify?IC.checkw:'')+'</span><div><div class="notify-lbl">Notify members of changes by default</div><div class="notify-sub">When on, you\'ll be prompted to choose who to notify whenever you save a change to this trip.</div></div></div></div>';
   body+='<div class="field"><label class="field-label">Color</label><select class="field-select" id="tr-color">'+colorOptions(S._formColor)+'</select></div>';
   if(isAdmin()){
     body+='<div class="field"><label class="field-label">Group <span class="opt">(members of this group will be on the trip)</span></label><div class="whoselect">';
@@ -4283,8 +4287,6 @@ function scrTripEdit(){
   body+='<div style="font-size:13px;color:var(--muted);margin:8px 0">All members of the selected group are on this trip.</div>';
   if(_memPpl.length){body+='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:2px">';for(var _mi=0;_mi<_memPpl.length;_mi++){var _mp=_memPpl[_mi];body+='<span style="background:var(--cream);border-radius:99px;padding:3px 10px;font-size:13px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+_mp.color+';margin-right:5px;vertical-align:middle"></span>'+esc(_mp.name)+'</span>';}body+='</div>';}
   body+='</div>';
-  body+='<div class="field"><label class="field-label">Notifications</label>';
-  body+='<div class="notify-row'+(S._notify?' on':'')+'" onclick="notifToggle()"><span class="notify-check">'+(S._notify?IC.checkw:'')+'</span><div><div class="notify-lbl">Notify members of changes</div><div class="notify-sub">'+(t.status==='active'?'You\'ll choose who to tell about anyone added or removed.':'This trip is still planning — switch on to notify people you add or remove.')+'</div></div></div></div>';
   var own=(t.by&&person(t.by))?person(t.by):null;
   body+='<div class="field"><label class="field-label">Trip owner</label>';
   if(own){
@@ -4308,13 +4310,12 @@ function saveTrip(){
     reconcileDays(t.id);save('dtp_days',DAYS);
     if(t.id===S.tripId){S.dayIdx=0;S.open=defOpen();}
   }
-  t.status=S._formStatus.tr||t.status;
+  t.notifyByDefault=!!S._notify;
   var c=val('tr-color');if(c)t.color=c;
   var effectivePartyId=(isAdmin()&&S._tpartyId)?S._tpartyId:S.partyId;
   if(isAdmin()&&S._tpartyId){t.parties=[S._tpartyId];}
   var oldMem=(t.members||[]).slice();
   t.members=partyPeople(effectivePartyId).map(function(p){return p.id;});
-  if(t.status==='active')for(var j=0;j<TRIPS.length;j++)if(TRIPS[j].id!==t.id&&TRIPS[j].status==='active')TRIPS[j].status='planning';
   if(t.id===S.tripId){S.fmode='all';S.filter.clear();}
   save('dtp_trips',TRIPS);var optIn=S._notify;var newMem=t.members.slice();toast('Trip updated');closeScreen();render();
   notifyMembership(t,oldMem,newMem,optIn);

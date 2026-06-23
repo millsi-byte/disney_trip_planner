@@ -320,6 +320,7 @@ button{font-family:inherit}
 .ts-active{background:#DCFCE7;color:#15803D}
 .ts-planning{background:#FEF3C7;color:#92400E}
 .ts-archived{background:#F3F4F6;color:#9CA3AF}
+.ts-sel{background:#DCFCE7;display:flex;align-items:center;padding:3px 7px}
 .sheet-new{display:flex;align-items:center;gap:10px;padding:14px 18px;margin:6px 14px 0;border:1.5px dashed #B6C2D6;border-radius:12px;color:#1E40AF;font-weight:700;font-size:16px;cursor:pointer;background:#F1F5FB;width:calc(100% - 28px)}
 
 /* ── Overview ────────────────────────────────────────────── */
