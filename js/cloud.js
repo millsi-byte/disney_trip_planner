@@ -28,27 +28,17 @@
   C.signInGoogle=function(){
     var provider=new firebase.auth.GoogleAuthProvider();
     provider.setCustomParameters({prompt:'select_account'});
-    /* Popup-first. Our app is served from github.io while authDomain is
-       firebaseapp.com, so signInWithRedirect's return trip must read its pending
-       handshake from firebaseapp.com storage — a third-party context that
-       Chrome's storage partitioning and Safari's ITP now block. The result:
-       getRedirectResult() comes back empty and a fresh browser loops back to the
-       sign-in screen forever (browsers that already authenticated keep working
-       because their token persists first-party in our own IndexedDB).
-       signInWithPopup completes the whole OAuth exchange inside a first-party
-       window, so it doesn't need that blocked cross-domain read. Fall back to a
-       full-page redirect only when the popup is physically unavailable (blocked,
-       or an embedded webview that can't open one). */
-    return auth.signInWithPopup(provider).catch(function(e){
-      var code=(e&&e.code)||'';
-      if(code==='auth/popup-blocked'||code==='auth/operation-not-supported-in-this-environment'||code==='auth/cancelled-popup-request'){
-        /* mark that we're leaving via a redirect so the next load knows to
-           collect the result (and only then loads the auth helper iframe) */
-        try{sessionStorage.setItem('dtp_redirecting','1');}catch(_){}
-        return auth.signInWithRedirect(provider);
-      }
-      throw e;   /* popup-closed-by-user etc. → surface to the caller */
-    });
+    /* Full-page redirect. Now that the app and authDomain are the same origin
+       (both disney-trip-planner-447d7.web.app via Firebase Hosting), redirect's
+       pending handshake is stored first-party and read back first-party on
+       return — no cross-domain storage block. This is Firebase's recommended,
+       most compatible flow: unlike signInWithPopup it doesn't relay its result
+       through the hidden cross-origin auth iframe, which Edge/Safari tracking
+       prevention stalls (popup completed but the result never reached the app,
+       so a fresh browser looped straight back to the sign-in screen). We flag
+       that a redirect is in flight so the next load collects the result. */
+    try{sessionStorage.setItem('dtp_redirecting','1');}catch(_){}
+    return auth.signInWithRedirect(provider);
   };
   C.sendEmailLink=function(email){
     var settings={url:location.href.split('#')[0],handleCodeInApp:true};
