@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='120';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='121';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -4357,16 +4357,25 @@ try{
   }
 }catch(e){}
 
-/* front door. Deferred a tick so cloud.js (loaded after this file) has set
-   window.CLOUD. With cloud: sign-in/claim is driven by the auth callbacks;
-   show Sign in until auth resolves. Without cloud: the local persona chooser. */
-setTimeout(function(){
+/* front door. cloud.js loads after this file (and pulls the Firebase SDK from a
+   CDN first), so window.CLOUD may not exist for the first few ticks. We must NOT
+   guess in that window — falling through to the legacy persona chooser is what
+   made the old "who are you?" screen flash before sign-in. So: if cloud is
+   enabled, the auth callbacks (onCloudSynced/onCloudSignedOut) drive the screen
+   and we only show the Sign-in gate until they fire; if cloud is explicitly
+   disabled we use the local persona chooser; if window.CLOUD isn't set yet we
+   wait and retry rather than rendering anything. */
+var _bootTries=0;
+function bootFrontDoor(){
   try{
-    if(window.CLOUD&&window.CLOUD.enabled){
-      if(!window.CLOUD.user&&!(S.screen&&(S.screen.type==='signin'||S.screen.type==='claim')))
+    if(!window.CLOUD){if(_bootTries++<200)setTimeout(bootFrontDoor,30);return;}   /* cloud.js not ready — wait (capped) */
+    if(window.CLOUD.enabled){
+      if(window.CLOUD.user)return;                            /* signed in → auth callbacks route */
+      if(!(S.screen&&(S.screen.type==='signin'||S.screen.type==='claim')))
         openScreen({type:'signin'});
     }else if(!localStorage.getItem('dtp_persona')){
-      openScreen({type:'persona'});
+      openScreen({type:'persona'});                           /* no firebase at all → local mode */
     }
   }catch(e){}
-},0);
+}
+setTimeout(bootFrontDoor,0);

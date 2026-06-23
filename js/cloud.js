@@ -26,7 +26,21 @@
 
   /* ── auth ──────────────────────────────────────────────── */
   C.signInGoogle=function(){
-    return auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+    var provider=new firebase.auth.GoogleAuthProvider();
+    /* Popups are unreliable in incognito / embedded webviews: the auth domain
+       is a third-party origin, so blocked third-party storage makes the popup
+       close with no result (looks like "nothing happens"). Fall back to a
+       full-page redirect, which signs in first-party. The stashed invite lives
+       in localStorage, so it survives the round-trip. */
+    return auth.signInWithPopup(provider).catch(function(e){
+      var code=(e&&e.code)||'';
+      if(code==='auth/popup-blocked'||code==='auth/popup-closed-by-user'||
+         code==='auth/cancelled-popup-request'||code==='auth/web-storage-unsupported'||
+         code==='auth/operation-not-supported-in-this-environment'){
+        return auth.signInWithRedirect(provider);
+      }
+      throw e;
+    });
   };
   C.sendEmailLink=function(email){
     var settings={url:location.href.split('#')[0],handleCodeInApp:true};
@@ -308,6 +322,16 @@
     try{ if(typeof render==='function')render(); }catch(e){}
     try{ if(window.S&&S.screen&&typeof renderScreen_inplace2==='function')renderScreen_inplace2(); }catch(e){}
   });
+  /* finish a redirect-based Google sign-in if we just came back from one
+     (onAuthStateChanged also fires, but this surfaces any redirect error) */
+  if(auth.getRedirectResult){
+    auth.getRedirectResult().then(function(r){
+      if(r&&r.user&&typeof toast==='function')toast('Signed in');
+    }).catch(function(e){
+      console.warn('redirect sign-in:',e&&e.message);
+      if(typeof toast==='function')toast(e&&e.message||'Sign-in failed');
+    });
+  }
   /* finish an email-link sign-in if the page was opened from one */
   C.completeEmailLink().then(function(r){
     if(r&&typeof toast==='function')toast('Signed in');
