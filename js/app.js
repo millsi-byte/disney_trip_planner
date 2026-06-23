@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='134';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='135';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -3605,9 +3605,9 @@ function scrPersonEdit(){
   /* planning parties this person belongs to — tap a party to add/remove (live) */
   body+='<div class="field"><label class="field-label">Planning Parties</label>';
   body+='<div class="body-empty" style="text-align:left;padding:0 2px 6px;font-size:12px">Tap a party to add or remove this person. They can be in several.</div>';
-  body+='<div class="gchips">';
+  body+='<div class="whoselect">';
   for(var gi=0;gi<PARTIES.length;gi++){var g=PARTIES[gi],on=S._peParties.has(g.id);
-    body+='<button class="gchip'+(on?' on':'')+'" onclick="peToggleParty(\''+g.id+'\')">'+(on?IC.checkw+' ':'<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:'+(g.color||'#6B4FA0')+';margin-right:6px;vertical-align:middle"></span>')+esc(g.name)+'</button>';}
+    body+='<div class="who-opt'+(on?' on':'')+'" onclick="peToggleParty(\''+g.id+'\')"><span class="wdot" style="background:'+(g.color||'#6B4FA0')+'">'+esc((g.name[0]||'').toUpperCase())+'</span>'+esc(g.name)+'<span class="wcheck">'+IC.checkw.replace('currentColor','#15803D')+'</span></div>';}
   body+='</div></div>';
   /* trips this person is on (via their parties or direct membership) — tap to open */
   var ptrips=TRIPS.filter(function(t){return (t.members&&t.members.indexOf(pid)>=0)||(t.parties||[]).some(function(g2){return personInParty(p,g2);});});
