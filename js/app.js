@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='129';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='130';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -4213,7 +4213,6 @@ function scrTripEdit(){
   }
   if(S._formInit!=='trip'){S._formStatus.tr=t.status;S._formColor=t.color;S._formInit='trip';S._tpartyId=(t.parties&&t.parties[0])||S.partyId||(PARTIES[0]||{}).id;}
   var body='<div class="field"><label class="field-label">Trip name</label><input class="field-input" id="tr-name" value="'+esc(t.name)+'"></div>';
-  body+='<div class="field"><label class="field-label">Destination <span class="opt">(optional)</span></label><input class="field-input" id="tr-sub" value="'+esc(t.sub||'')+'"></div>';
   body+='<div class="field-row"><div class="field"><label class="field-label">Start date</label><input class="field-input" type="date" id="tr-start" value="'+esc(t.start||'')+'"></div>';
   body+='<div class="field"><label class="field-label">End date</label><input class="field-input" type="date" id="tr-end" value="'+esc(t.end||'')+'"></div></div>';
   body+='<div class="field"><label class="field-label">Status</label><div class="seg">';
@@ -4251,7 +4250,6 @@ function saveTrip(){
   var t=tripById(S.screen.tripId||S.tripId);if(!t){closeScreen();return;}
   if(!canEditTrip(t)){toast('Only the trip creator or an admin can edit this trip');closeScreen();return;}
   var nm=val('tr-name');if(nm)t.name=nm;
-  t.sub=val('tr-sub');
   var st=val('tr-start'),en=val('tr-end');
   if(st&&en){
     t.start=st;t.end=en;
