@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='115';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='116';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2781,8 +2781,8 @@ function renderNtCal(){
   for(var d=1;d<=dmax;d++){
     var ds=y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
     var isSel=ds===s||ds===e,inRng=!!(s&&e&&ds>s&&ds<e),isToday=ds===todayStr;
-    var bg=isSel?'var(--accent)':inRng?'var(--chip-bg)':'transparent';
-    var col=isSel?'#fff':isToday?'var(--accent)':'inherit';
+    var bg=isSel?'var(--ink)':inRng?'rgba(27,43,74,0.10)':'transparent';
+    var col=isSel?'#fff':isToday?'var(--mk)':'inherit';
     out+='<div onclick="ntCalPick(\''+ds+'\')" style="text-align:center;padding:7px 1px;border-radius:'+(isSel?'50%':'5px')+';cursor:pointer;background:'+bg+';color:'+col+';font-weight:'+(isSel||isToday?'700':'400')+';font-size:14px">'+d+'</div>';
   }
   out+='</div>';
