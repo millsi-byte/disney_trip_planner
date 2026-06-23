@@ -68,7 +68,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='122';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='123';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -3030,11 +3030,18 @@ function scrNewTrip(){
 function scrSignIn(){
   var body='<div style="text-align:center;padding:20px 6px 4px">';
   body+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:28px;font-weight:700;color:var(--ink)">Baseline Tap</div>';
-  body+='<div class="body-empty" style="padding:10px 8px 20px">Sign in to load your trips. Use the same account on every device and everything stays in sync.</div></div>';
-  body+='<button class="btn-secondary green" onclick="window.CLOUD.signInGoogle().catch(function(e){toast(e.message||\'Sign-in failed\')})">Sign in with Google</button>';
-  body+='<div class="hub-section-label" style="margin-left:0">Or use your email</div>';
+  body+='<div class="body-empty" style="padding:10px 8px 18px">Sign in to load your trips. Use the same account on every device and everything stays in sync.</div></div>';
+  /* Email-link first: it works in every browser, including private/incognito
+     windows, because the link returns to this site directly (no third-party
+     cookies). Google sign-in is offered too but can\'t complete in incognito
+     on this host — the email link is the reliable path there. */
+  body+='<div class="hub-section-label" style="margin-left:0">Sign in with your email</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">We\'ll email you a one-tap sign-in link. Works in any browser, including private windows.</div>';
   body+='<div class="field"><input class="field-input" id="cloud-email" type="email" inputmode="email" placeholder="you@email.com"></div>';
-  body+='<button class="btn-secondary" onclick="cloudEmailLink()">Email me a sign-in link</button>';
+  body+='<button class="btn-secondary green" onclick="cloudEmailLink()">Email me a sign-in link</button>';
+  body+='<div class="hub-section-label" style="margin-left:0">Or use Google</div>';
+  body+='<button class="btn-secondary" onclick="window.CLOUD.signInGoogle().catch(function(e){toast(e.message||\'Sign-in failed\')})">Sign in with Google</button>';
+  body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0;font-size:12px;color:var(--muted)">In a private/incognito window, Google sign-in may not finish — use the email link above instead.</div>';
   return screenShell('Sign in',body,null,null,false);
 }
 function cloudEmailLink(){
