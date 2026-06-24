@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='161';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='162';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -868,6 +868,17 @@ function emailPersona(email){
 function onCloudSynced(){
   var uid=cloudUid();if(!uid)return;
   var i;
+  /* 0. enforce authorization on EVERY sign-in. If we definitively know this
+     account is no longer authorized (not super, not on the allowlist, not a
+     current workspace member) — and they aren't mid-invite — lock them out,
+     even if a linked persona is cached locally. Only act when the access reads
+     actually completed (authUncertain=false); a blocked/offline read must not
+     wrongly evict a legit user, and the server-side Firestore rules still gate
+     all shared data regardless. */
+  if(window.CLOUD&&!window.CLOUD.authUncertain&&window.CLOUD.authorized&&!window.CLOUD.authorized()){
+    var inv0=pendingInvite();
+    if(!(inv0&&inv0.code)){revokeAccess();return;}
+  }
   /* 1. already linked → straight in */
   var mine=personaForUid(uid);
   if(mine){
@@ -928,6 +939,15 @@ function onCloudSynced(){
   }else{
     openScreen({type:'noaccess'});     /* not on the guest list */
   }
+}
+/* access was revoked (removed from the allowlist / tenant deleted): drop the
+   local persona link and show the hard No-Access gate. Their own cached data
+   stays on their device (local-first), but the gate blocks normal use and the
+   server rules block all shared data. They can sign out from the gate. */
+function revokeAccess(){
+  try{localStorage.removeItem('dtp_persona');}catch(e){}
+  S.persona=null;
+  openScreen({type:'noaccess'});
 }
 /* called by cloud.js when there\'s no signed-in cloud user */
 function onCloudSignedOut(){

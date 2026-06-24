@@ -26,7 +26,7 @@
      long-polling when WebChannel is blocked. Must run before any other
      Firestore call. */
   try{ firebase.firestore().settings({experimentalAutoDetectLongPolling:true,merge:true}); }catch(e){}
-  var C={enabled:true,user:null,ready:false,synced:false,applyingRemote:false,wid:null,partyName:null,isSuper:false,isOwner:false,adminWid:null};
+  var C={enabled:true,user:null,ready:false,synced:false,applyingRemote:false,wid:null,partyName:null,isSuper:false,isOwner:false,isMember:false,authUncertain:true,adminWid:null};
   var SUPER_EMAIL='millsi@gmail.com';   /* the one account that authorizes everyone else */
   function emailKey(e){return (e||'').trim().toLowerCase();}
 
@@ -169,6 +169,10 @@
   /* ── planning party (shared workspace) ─────────────────── */
   C.inParty=function(){return !!C.wid;};
   C.partyCode=function(){return C.wid||null;};
+  /* may this signed-in user use the app at all? super-admin, an allowlisted
+     owner, or a current member of their active workspace. Re-evaluated on every
+     sign-in by startSync so revoked users are locked out next time. */
+  C.authorized=function(){return !!(C.isSuper||C.isOwner||C.isMember);};
 
   /* create a party from your current data and switch onto it */
   C.createParty=function(name){
@@ -181,7 +185,7 @@
     var wref=db().doc('workspaces/'+wid);
     return wref.set({name:nm,tenantName:tn,by:C.user.uid,byEmail:C.user.email||null,createdAt:Date.now()})
       .then(function(){ return wref.collection('members').doc(C.user.uid).set({email:C.user.email||null,joinedAt:Date.now()}); })
-      .then(function(){ setLocalWid(wid); C.partyName=nm; return profileRef().set({wid:wid},{merge:true}); })
+      .then(function(){ C.isMember=true; setLocalWid(wid); C.partyName=nm; return profileRef().set({wid:wid},{merge:true}); })
       .then(function(){ return reconcile('merge'); })   /* push your data up into the new party */
       .then(function(){ return wid; });
   };
@@ -196,7 +200,7 @@
       if(!s.exists)throw new Error('No group with that code');
       C.partyName=s.data().name||null;
       return wref.collection('members').doc(C.user.uid).set({email:C.user.email||null,joinedAt:Date.now()});
-    }).then(function(){ setLocalWid(code); return profileRef().set({wid:code},{merge:true}); })
+    }).then(function(){ C.isMember=true; setLocalWid(code); return profileRef().set({wid:code},{merge:true}); })
       .then(function(){ return reconcile('adopt'); })   /* take on the party's data */
       .then(function(){ return code; });
   };
@@ -317,9 +321,23 @@
         return db().doc('workspaces/'+C.wid).get().then(function(w){C.partyName=(w.exists&&w.data().name)||null;}).catch(function(){});
       })
       .then(function(){
+        /* Re-verify access on EVERY sign-in (not just the first link), so that
+           removing someone from the Authorized Users list — or deleting their
+           tenant — locks them out next time. Authorized = super-admin, an
+           allowlisted owner, OR a current member of their active workspace.
+           authUncertain stays true if any required read fails (offline/blocked
+           transport) so a network hiccup can never wrongly lock out a legit
+           user — the server-side Firestore rules remain the real data boundary. */
         C.isSuper=C.isSuperAdmin();
-        if(C.isSuper){C.isOwner=true;return;}
-        return db().doc('owners/'+emailKey(C.user.email)).get().then(function(d){C.isOwner=d.exists;}).catch(function(){C.isOwner=false;});
+        C.isOwner=false; C.isMember=false; C.authUncertain=true;
+        if(C.isSuper){C.isOwner=true;C.authUncertain=false;return;}
+        return db().doc('owners/'+emailKey(C.user.email)).get().then(function(d){
+          C.isOwner=d.exists;
+          if(C.isOwner||!C.wid){C.authUncertain=false;return;}
+          return db().doc('workspaces/'+C.wid+'/members/'+C.user.uid).get().then(function(m){
+            C.isMember=m.exists; C.authUncertain=false;
+          });
+        });
       })
       .then(function(){
         /* crash-safety: if we force-quit mid-impersonation, dtp_adminWid is set.
