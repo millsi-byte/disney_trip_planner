@@ -48,22 +48,6 @@
     try{sessionStorage.setItem('dtp_redirecting','1');}catch(_){}
     return auth.signInWithRedirect(provider);
   };
-  C.sendEmailLink=function(email){
-    var settings={url:location.href.split('#')[0],handleCodeInApp:true};
-    return auth.sendSignInLinkToEmail(email,settings).then(function(){
-      try{localStorage.setItem('dtp_emailForSignIn',email);}catch(e){}
-    });
-  };
-  C.completeEmailLink=function(){
-    if(!auth.isSignInWithEmailLink||!auth.isSignInWithEmailLink(location.href))return Promise.resolve(null);
-    var email=null;try{email=localStorage.getItem('dtp_emailForSignIn');}catch(e){}
-    if(!email)email=window.prompt('Confirm your email to finish signing in');
-    if(!email)return Promise.resolve(null);
-    return auth.signInWithEmailLink(email,location.href).then(function(r){
-      try{localStorage.removeItem('dtp_emailForSignIn');}catch(e){}
-      return r;
-    });
-  };
   C.signOut=function(){return auth.signOut();};
 
   /* delete every synced data doc in the active space (a clean slate) */
@@ -86,7 +70,7 @@
 
   /* ── sync engine ───────────────────────────────────────── */
   /* keys that must stay device-local */
-  var LOCAL_ONLY={dtp_persona:1,dtp_tripId:1,dtp_partyId:1,dtp_chatseen:1,dtp_emailForSignIn:1,dtp_ver:1,dtp_wid:1,dtp_invite:1,dtp_adminWid:1};
+  var LOCAL_ONLY={dtp_persona:1,dtp_tripId:1,dtp_partyId:1,dtp_chatseen:1,dtp_ver:1,dtp_wid:1,dtp_invite:1,dtp_adminWid:1};
   function syncable(k){return !!k&&k.indexOf('dtp_')===0&&k.indexOf('dtp__')!==0&&!LOCAL_ONLY[k];}
   /* the active key/value collection: family workspace if joined, else personal */
   /* the active key/value collection. adminWid (super-admin impersonation) wins,
@@ -397,8 +381,4 @@
       if(typeof toast==='function')toast(e&&e.message||'Sign-in failed');
     });
   }
-  /* finish an email-link sign-in if the page was opened from one */
-  C.completeEmailLink().then(function(r){
-    if(r&&typeof toast==='function')toast('Signed in');
-  }).catch(function(e){ console.warn('email-link sign-in:',e&&e.message); });
 })();
