@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='160';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='161';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -872,6 +872,15 @@ function onCloudSynced(){
   var mine=personaForUid(uid);
   if(mine){
     S.persona=mine.id;save('dtp_persona',mine.id);
+    /* Owner with a linked persona but no workspace — createParty() was skipped
+       during a previous wizard run. Create it silently now so the tenant shows
+       up in the super-admin console. The reconcile inside createParty pushes all
+       existing local data up to the new workspace. */
+    if(window.CLOUD&&window.CLOUD.isOwner&&!window.CLOUD.isSuper&&
+       window.CLOUD.createParty&&window.CLOUD.inParty&&!window.CLOUD.inParty()){
+      var pn0=(PARTIES&&PARTIES[0]&&PARTIES[0].name)||'My Group';
+      window.CLOUD.createParty(pn0).catch(function(){});
+    }
     ensureActiveParty();ensureVisibleTrip();
     if(S.screen&&(S.screen.type==='signin'||S.screen.type==='claim'))closeScreen();
     render();return;
