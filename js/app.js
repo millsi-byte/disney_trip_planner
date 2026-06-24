@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='159';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='160';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2871,6 +2871,10 @@ function ntCreateTripExisting(){
   if(!S._ntPartyId){toast('Pick a group first');return;}
   var mem=partyPeople(S._ntPartyId).map(function(p){return p.id;});
   if(mem.indexOf(S.persona)<0)mem.push(S.persona);
+  if(window.CLOUD&&window.CLOUD.inParty&&!window.CLOUD.inParty()&&window.CLOUD.createParty){
+    var pn=(partyById(S._ntPartyId)||{}).name||'My Group';
+    window.CLOUD.createParty(pn).catch(function(){});
+  }
   ntMakeTrip(S._ntPartyId,mem);
   S._ntStep='notify';renderScreen_inplace2();
 }
@@ -2897,6 +2901,10 @@ function ntCreateTripFromGroup(){
   S._ntInvite=added;S._ntStep='invite';renderScreen_inplace2();
 }
 function ntCreateTripSkip(){
+  if(window.CLOUD&&window.CLOUD.inParty&&!window.CLOUD.inParty()&&window.CLOUD.createParty){
+    var pn=(PARTIES&&PARTIES[0]&&PARTIES[0].name)||'My Group';
+    window.CLOUD.createParty(pn).catch(function(){});
+  }
   ntMakeTrip(null,[S.persona]);ntFinish(true);
 }
 function ntFinish(silent){
