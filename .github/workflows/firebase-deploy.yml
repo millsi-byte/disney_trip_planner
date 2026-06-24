@@ -13,32 +13,48 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      # The FirebaseExtended action has no retry: a single dropped connection to
-      # Google's OAuth token endpoint ("Premature close") fails the whole deploy.
-      # That hiccup is intermittent on GitHub runners, so we authenticate via the
-      # service account (Application Default Credentials) and retry the deploy a
-      # few times with backoff instead of giving up on the first network blip.
-      - name: Deploy to Firebase Hosting (retry on transient auth failures)
+
+      # Authenticate once via the service account (Application Default
+      # Credentials). The FirebaseExtended action has no retry: a single dropped
+      # connection to Google's OAuth token endpoint ("Premature close") fails the
+      # whole deploy, which is intermittent on GitHub runners.
+      - name: Authenticate
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-sa.json"
-          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-sa.json"
-          n=0
-          max=5
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-sa.json" >> "$GITHUB_ENV"
+
+      - name: Deploy Hosting (retry on transient auth failures)
+        run: |
+          n=0; max=5
           until [ "$n" -ge "$max" ]; do
             if npx -y firebase-tools@latest deploy --only hosting --project disney-trip-planner-447d7 --non-interactive; then
-              echo "Deploy succeeded on attempt $((n+1))."
-              rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
-              exit 0
+              echo "Hosting deploy succeeded on attempt $((n+1))."; exit 0
             fi
             n=$((n+1))
-            if [ "$n" -lt "$max" ]; then
-              wait=$((n*15))
-              echo "Deploy attempt $n failed; retrying in ${wait}s..."
-              sleep "$wait"
-            fi
+            [ "$n" -lt "$max" ] && { w=$((n*15)); echo "Hosting attempt $n failed; retrying in ${w}s..."; sleep "$w"; }
           done
-          rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
-          echo "All $max deploy attempts failed."
-          exit 1
+          echo "All $max hosting deploy attempts failed."; exit 1
+
+      # Deploy the Firestore security rules from firestore.rules. This is what
+      # lets the super-admin list every workspace (tenant). Kept as its own step
+      # with continue-on-error so that if the service account lacks the Firebase
+      # Rules admin role, hosting still ships and the failure is visible in logs
+      # (grant roles/firebaserules.admin to the SA to enable this).
+      - name: Deploy Firestore rules (retry on transient auth failures)
+        continue-on-error: true
+        run: |
+          n=0; max=5
+          until [ "$n" -ge "$max" ]; do
+            if npx -y firebase-tools@latest deploy --only firestore:rules --project disney-trip-planner-447d7 --non-interactive; then
+              echo "Firestore rules deploy succeeded on attempt $((n+1))."; exit 0
+            fi
+            n=$((n+1))
+            [ "$n" -lt "$max" ] && { w=$((n*15)); echo "Rules attempt $n failed; retrying in ${w}s..."; sleep "$w"; }
+          done
+          echo "All $max firestore rules deploy attempts failed."; exit 1
+
+      - name: Clean up credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/firebase-sa.json"

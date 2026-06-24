@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='165';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='166';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -883,15 +883,6 @@ function onCloudSynced(){
   var mine=personaForUid(uid);
   if(mine){
     S.persona=mine.id;save('dtp_persona',mine.id);
-    /* Owner with a linked persona but no workspace — createParty() was skipped
-       during a previous wizard run. Create it silently now so the tenant shows
-       up in the super-admin console. The reconcile inside createParty pushes all
-       existing local data up to the new workspace. */
-    if(window.CLOUD&&window.CLOUD.isOwner&&!window.CLOUD.isSuper&&
-       window.CLOUD.createParty&&window.CLOUD.inParty&&!window.CLOUD.inParty()){
-      var pn0=(PARTIES&&PARTIES[0]&&PARTIES[0].name)||'My Group';
-      window.CLOUD.createParty(pn0).catch(function(){});
-    }
     ensureActiveParty();ensureVisibleTrip();
     if(S.screen&&(S.screen.type==='signin'||S.screen.type==='claim'))closeScreen();
     render();return;
@@ -2870,9 +2861,8 @@ function ntReadPeople(){
   return arr;
 }
 function ntGoToGroup(){
-  var people=ntReadPeople();
-  if(!people.length||!people[0].name){toast('Add at least one name');return;}
-  S._ntPeople=people;S._ntStep='group';renderScreen_inplace2();
+  /* people are optional — a solo owner can create a group of just themselves */
+  S._ntPeople=ntReadPeople();S._ntStep='group';renderScreen_inplace2();
 }
 function ntBack(){
   if(S._ntStep==='notify'){
@@ -2902,7 +2892,7 @@ function ntCreateTripExisting(){
   if(mem.indexOf(S.persona)<0)mem.push(S.persona);
   if(window.CLOUD&&window.CLOUD.inParty&&!window.CLOUD.inParty()&&window.CLOUD.createParty){
     var pn=(partyById(S._ntPartyId)||{}).name||'My Group';
-    window.CLOUD.createParty(pn).catch(function(){});
+    window.CLOUD.createParty(pn).catch(function(e){toast(e&&e.message||'Could not save group to the cloud');});
   }
   ntMakeTrip(S._ntPartyId,mem);
   S._ntStep='notify';renderScreen_inplace2();
@@ -2925,15 +2915,13 @@ function ntCreateTripFromGroup(){
   });
   save('dtp_family',FAMILY);saveParties();saveLists();
   if(window.CLOUD&&window.CLOUD.inParty&&!window.CLOUD.inParty()&&window.CLOUD.createParty)
-    window.CLOUD.createParty(gname).catch(function(){});
+    window.CLOUD.createParty(gname).catch(function(e){toast(e&&e.message||'Could not save group to the cloud');});
   ntMakeTrip(gid,mem);
   S._ntInvite=added;S._ntStep='invite';renderScreen_inplace2();
 }
 function ntCreateTripSkip(){
-  if(window.CLOUD&&window.CLOUD.inParty&&!window.CLOUD.inParty()&&window.CLOUD.createParty){
-    var pn=(PARTIES&&PARTIES[0]&&PARTIES[0].name)||'My Group';
-    window.CLOUD.createParty(pn).catch(function(){});
-  }
+  /* retained for back-compat; the wizard no longer offers a "just me" shortcut
+     that skips group creation. Creates no cloud workspace. */
   ntMakeTrip(null,[S.persona]);ntFinish(true);
 }
 function ntFinish(silent){
@@ -2993,8 +2981,8 @@ function scrNewTrip(){
 
     if(!S._ntWhoMode){
       if(PARTIES.length)body+='<button class="btn-secondary" style="text-align:left;justify-content:flex-start" onclick="ntSelectWho(\'existing\')">Use an existing group</button>';
-      body+='<button class="btn-secondary" style="text-align:left;justify-content:flex-start" onclick="ntSelectWho(\'add\')">Add people now</button>';
-      body+='<button class="btn-secondary" style="text-align:left;justify-content:flex-start;color:var(--muted)" onclick="ntCreateTripSkip()">Just me — I\'ll add people later</button>';
+      body+='<button class="btn-secondary" style="text-align:left;justify-content:flex-start" onclick="ntSelectWho(\'add\')">Create a new group</button>';
+      body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px;color:var(--muted)">Every trip belongs to a group — pick one you already have or make a new one. You can travel solo: just create a group with only yourself.</div>';
       body+='<button class="btn-secondary" onclick="ntBack()">← Back</button>';
       return screenShell('Plan a Trip',body,null,null,cancelLabel,null,cancelArg);
     }
@@ -3021,7 +3009,7 @@ function scrNewTrip(){
     }
 
     if(S._ntWhoMode==='add'){
-      body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Enter everyone who\'s coming:</div>';
+      body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Add anyone else who\'s coming, or leave blank to travel solo — you\'ll name the group next.</div>';
       var pc=S._ntPeopleCount||1;
       for(var pi=0;pi<pc;pi++){
         var pre=(S._ntPeople&&S._ntPeople[pi])||{};
@@ -3184,22 +3172,23 @@ function wizOwnerName(){
   var u=window.CLOUD&&window.CLOUD.user;
   return (u&&u.displayName)||((u&&u.email)?u.email.split('@')[0]:'Me');
 }
-/* wipe the demo seed and stand up a clean account for this owner */
+/* wipe the demo seed and stand up a clean account for this owner. No group is
+   created here — the owner explicitly chooses or creates one in the wizard, and
+   that action is what creates the cloud workspace (tenant). */
 function resetToBlank(){
   FAMILY=[];TRIPS=[];DAYS=[];VISITS=[];PARKHOURS=[];DINING=[];LLS=[];SHOWS=[];FLIGHTS=[];RESORTS=[];PARKRES=[];REBOOKS=[];NOTIFS=[];CHAT=[];
-  var gid='g1';PARTIES=[{id:gid,name:'My Group',by:null}];
+  PARTIES=[];
   var oid='p'+Date.now();
-  var owner={id:oid,name:wizOwnerName(),color:PALETTE[0][0],admin:true,parties:[gid],email:(window.CLOUD&&window.CLOUD.user&&window.CLOUD.user.email)||'',uid:cloudUid()};
-  FAMILY.push(owner);ALL_IDS=[oid];PARTIES[0].by=oid;
-  S.persona=oid;S.partyId=gid;S.tripId=null;PACKING={};TODO=[];
+  var owner={id:oid,name:wizOwnerName(),color:PALETTE[0][0],admin:true,parties:[],email:(window.CLOUD&&window.CLOUD.user&&window.CLOUD.user.email)||'',uid:cloudUid()};
+  FAMILY.push(owner);ALL_IDS=[oid];
+  S.persona=oid;S.partyId=null;S.tripId=null;PACKING={};TODO=[];
   persist();save('dtp_persona',oid);savePartyId();saveTripId();
 }
 function startWizard(){openScreen({type:'newtrip'});}
 function wizSkip(){
+  /* "set up manually" — clean slate, no auto-created group/workspace */
   resetToBlank();
-  var done=function(){closeScreen();S.tab='home';render();};
-  if(window.CLOUD&&window.CLOUD.inParty&&!window.CLOUD.inParty()&&window.CLOUD.createParty){window.CLOUD.createParty('My Group').then(done,done);}
-  else done();
+  closeScreen();S.tab='home';render();
 }
 function emailInviteLink(pid){
   var p=person(pid);if(!p)return;
