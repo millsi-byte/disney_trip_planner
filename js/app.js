@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='157';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='158';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -894,10 +894,23 @@ function onCloudSynced(){
   }
   /* 4. not linked / matched / invited → access depends on authorization */
   if(window.CLOUD.isSuper||window.CLOUD.isOwner){
-    if(window.CLOUD.inParty&&window.CLOUD.inParty())
+    /* "real data" = at least one person with a uid or email set, or at least one
+       trip. The unlinked demo seed (Scott/Hayley/etc from data.js) has neither,
+       so it registers as a fresh account even if a stale workspace wid survived
+       from a previous test session. */
+    var hasRealData=TRIPS.length>0||FAMILY.some(function(p){return !!(p.uid||p.email);});
+    if(!hasRealData&&!window.CLOUD.isSuper){
+      /* Fresh authorized non-super owner: evict any stale workspace wid so they
+         start in their own personal space, wipe the demo seed, then go to wizard. */
+      try{localStorage.removeItem('dtp_wid');}catch(e){}
+      if(window.CLOUD.wid)window.CLOUD.wid=null;
+      resetToBlank();
+      openScreen({type:'newtrip'});
+    }else if(window.CLOUD.inParty&&window.CLOUD.inParty()){
       openScreen({type:'claim'});      /* returning owner whose seat isn\'t linked → pick */
-    else
-      openScreen({type:'newtrip'});     /* authorized new owner → guided setup */
+    }else{
+      openScreen({type:'newtrip'});    /* authorized owner, no active party → guided setup */
+    }
   }else{
     openScreen({type:'noaccess'});     /* not on the guest list */
   }
