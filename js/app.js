@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='158';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='159';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -894,18 +894,23 @@ function onCloudSynced(){
   }
   /* 4. not linked / matched / invited → access depends on authorization */
   if(window.CLOUD.isSuper||window.CLOUD.isOwner){
-    /* "real data" = at least one person with a uid or email set, or at least one
-       trip. The unlinked demo seed (Scott/Hayley/etc from data.js) has neither,
-       so it registers as a fresh account even if a stale workspace wid survived
-       from a previous test session. */
-    var hasRealData=TRIPS.length>0||FAMILY.some(function(p){return !!(p.uid||p.email);});
+    /* "real data" = a person linked to an account (uid) or carrying an email.
+       The demo seed (data.js) has neither on ANY person — and its demo TRIPS
+       must NOT count toward this, or a fresh owner who merged the seed would
+       look like an established account and get the claim screen full of demo
+       names instead of the setup wizard. */
+    var hasRealData=FAMILY.some(function(p){return !!(p.uid||p.email);});
     if(!hasRealData&&!window.CLOUD.isSuper){
-      /* Fresh authorized non-super owner: evict any stale workspace wid so they
-         start in their own personal space, wipe the demo seed, then go to wizard. */
-      try{localStorage.removeItem('dtp_wid');}catch(e){}
-      if(window.CLOUD.wid)window.CLOUD.wid=null;
-      resetToBlank();
-      openScreen({type:'newtrip'});
+      /* Fresh authorized owner sitting on the unclaimed demo seed (possibly
+         still attached to a stale workspace from earlier testing). Detach from
+         that workspace in the cloud profile so it can't return on the next
+         sign-in, wipe the local demo seed, and start them in the setup wizard.
+         Only do the destructive reset once we have a reliable cloud read. */
+      var toWizard=function(){ resetToBlank(); openScreen({type:'newtrip'}); };
+      if(window.CLOUD.synced&&window.CLOUD.startFresh)
+        window.CLOUD.startFresh().then(toWizard,toWizard);
+      else
+        toWizard();
     }else if(window.CLOUD.inParty&&window.CLOUD.inParty()){
       openScreen({type:'claim'});      /* returning owner whose seat isn\'t linked → pick */
     }else{

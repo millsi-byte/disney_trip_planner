@@ -219,6 +219,20 @@
 
   window.CLOUD=C;
 
+  /* Detach this account from any workspace and stop impersonating, returning it
+     to its own personal space — and null the wid in the CLOUD profile so the
+     next sign-in's startSync can't read a stale workspace id back and re-pull
+     its data. Used when a fresh authorized owner is found sitting on a leftover
+     workspace (e.g. demo data from earlier testing). Does NOT delete the
+     workspace's own data; it just stops following it. */
+  C.startFresh=function(){
+    stopListener();
+    C.adminWid=null; try{localStorage.removeItem('dtp_adminWid');}catch(e){}
+    setLocalWid(null); C.partyName=null;
+    if(!C.user)return Promise.resolve();
+    return profileRef().set({wid:null},{merge:true}).catch(function(){});
+  };
+
   /* ── access control (invite-only) ──────────────────────── */
   C.isSuperAdmin=function(){return emailKey(C.user&&C.user.email)===SUPER_EMAIL;};
   /* the authorized-owner allowlist (only the super-admin can edit it) */
