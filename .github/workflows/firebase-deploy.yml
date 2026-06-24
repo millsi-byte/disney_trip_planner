@@ -10,9 +10,35 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: FirebaseExtended/action-hosting-deploy@v0
+      - uses: actions/setup-node@v4
         with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          channelId: live
-          projectId: disney-trip-planner-447d7
+          node-version: 20
+      # The FirebaseExtended action has no retry: a single dropped connection to
+      # Google's OAuth token endpoint ("Premature close") fails the whole deploy.
+      # That hiccup is intermittent on GitHub runners, so we authenticate via the
+      # service account (Application Default Credentials) and retry the deploy a
+      # few times with backoff instead of giving up on the first network blip.
+      - name: Deploy to Firebase Hosting (retry on transient auth failures)
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-sa.json"
+          n=0
+          max=5
+          until [ "$n" -ge "$max" ]; do
+            if npx -y firebase-tools@latest deploy --only hosting --project disney-trip-planner-447d7 --non-interactive; then
+              echo "Deploy succeeded on attempt $((n+1))."
+              rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
+              exit 0
+            fi
+            n=$((n+1))
+            if [ "$n" -lt "$max" ]; then
+              wait=$((n*15))
+              echo "Deploy attempt $n failed; retrying in ${wait}s..."
+              sleep "$wait"
+            fi
+          done
+          rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
+          echo "All $max deploy attempts failed."
+          exit 1
