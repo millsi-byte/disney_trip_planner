@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='189';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='190';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -3421,16 +3421,51 @@ function loadTenantList(){
     for(var i=0;i<list.length;i++){var t=list[i];
       var role=t.isActive?'Active · ':'';
       role+=t.isOwner?'You own this':'Member';
-      var clickAttr=t.isActive?'':'onclick="cloudSwitchTenant(\''+esc(t.wid)+'\')"';
-      html+='<button class="hub-row" '+clickAttr+' style="text-align:left;'+(t.isActive?'background:#F0F9FF;':'')+'">'
-        +'<div class="hub-main"><div class="hub-title">'+esc(t.name)+'</div>'
-        +'<div class="hub-sub">'+esc(role)+'</div></div></button>';
+      /* whole row switches when tapped (no-op for the active row); a tenants
+         you OWN gets a "Delete" link on the right that bypasses the row click */
+      var rowClick=t.isActive?'':'onclick="cloudSwitchTenant(\''+esc(t.wid)+'\')"';
+      html+='<div class="hub-row" style="text-align:left;display:flex;align-items:center;gap:8px;'+(t.isActive?'background:#F0F9FF;':'')+'">'
+        +'<button '+rowClick+' style="flex:1;min-width:0;background:none;border:0;padding:0;text-align:left;cursor:'+(t.isActive?'default':'pointer')+'">'
+        +'<div class="hub-title">'+esc(t.name)+'</div>'
+        +'<div class="hub-sub">'+esc(role)+'</div></button>';
+      if(t.isOwner){
+        html+='<button class="btn-danger-link" style="margin:0;padding:6px 10px;font-size:13px;flex-shrink:0" onclick="cloudDeleteTenant(\''+esc(t.wid)+'\')">Delete</button>';
+      }
+      html+='</div>';
     }
     el.innerHTML=html;
   }).catch(function(e){
     try{console.warn('[tenants] listMyTenants failed:',e&&e.message);}catch(_){}
     var el=document.getElementById('tenant-list');if(el)el.innerHTML='<div class="body-empty" style="text-align:left;padding:0 2px 4px;font-size:12px;color:#B91C1C">Could not load groups.</div>';
   });
+}
+/* owner-deletes-their-own-tenant from the switcher. If they're deleting the
+   ACTIVE tenant, switch to another in wids first (deleteMyTenant refuses to
+   touch the active one to avoid yanking data out from under the live session).
+   Then reload — wids changed and the active may have flipped. */
+function cloudDeleteTenant(wid){
+  if(!(window.CLOUD&&window.CLOUD.deleteMyTenant))return;
+  var t=(window.CLOUD.wids||[]).filter(function(w){return w===wid;})[0];
+  if(!t){toast('Group not found');return;}
+  if(!confirm('Permanently delete this group and ALL its data (groups, people, trips, lists)? This cannot be undone.'))return;
+  toast('Deleting…');
+  var isActive=window.CLOUD.wid===wid;
+  var step=Promise.resolve();
+  if(isActive){
+    var next=(window.CLOUD.wids||[]).filter(function(w){return w!==wid;})[0]||null;
+    if(!next){toast('You can\'t delete your only group');return;}
+    /* mirror cloudSwitchTenant's persona clear so revalidateAfterSync doesn't
+       evict us during the pre-delete switch */
+    S.persona=null;S._seated=false;
+    try{localStorage.removeItem('dtp_persona');}catch(e){}
+    step=window.CLOUD.switchTenant(next);
+  }
+  step.then(function(){return window.CLOUD.deleteMyTenant(wid);})
+    .then(function(){
+      toast('Deleted');
+      try{location.reload();}catch(e){if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();}
+    })
+    .catch(function(e){toast(e.message||'Could not delete');});
 }
 /* switch the active tenant. Reloads after the adopt so the app re-inits from
    the new tenant's data cleanly (avoids in-memory leak across tenants).

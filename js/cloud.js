@@ -459,6 +459,25 @@
     var delAll=function(col){return base.collection(col).get().then(function(s){return Promise.all(s.docs.map(function(d){return d.ref.delete();}));});};
     return delAll('kv').then(function(){return delAll('members');}).then(function(){return base.delete();});
   };
+  /* an owner deletes a tenant they created themselves. Refuses if the user is
+     not the creator (and not super), and refuses on the active tenant — the
+     caller must switch off it first to avoid operating on the data being
+     removed. On success, prunes wids locally and writes profile. */
+  C.deleteMyTenant=function(wid){
+    if(!C.user||!wid)return Promise.reject(new Error('Sign in first'));
+    if(wid===C.wid)return Promise.reject(new Error('Switch to a different group first'));
+    var base=db().doc('workspaces/'+wid);
+    return base.get().then(function(s){
+      if(!s.exists)throw new Error('Group not found');
+      var d=s.data()||{};
+      if(d.by!==C.user.uid&&!C.isSuper)throw new Error('Only the group\'s creator can delete it');
+      var delAll=function(col){return base.collection(col).get().then(function(ss){return Promise.all(ss.docs.map(function(dd){return dd.ref.delete();}));});};
+      return delAll('kv').then(function(){return delAll('members');}).then(function(){return base.delete();});
+    }).then(function(){
+      removeFromWids(wid);
+      return writeWidsProfile();
+    });
+  };
 
   /* read the user's chosen party + their access level, then sync */
   function startSync(){
