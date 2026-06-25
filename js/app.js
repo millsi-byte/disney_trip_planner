@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='195';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='196';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -423,18 +423,11 @@ function isFlightRow(it){return (it.crit&&it.crit.toLowerCase().indexOf('flight'
    admin rights; switching into an admin persona is itself PIN-protected, so the
    admin\'s login PIN is effectively the admin PIN — the two are one and the same. */
 function isAdmin(){var p=person(S.persona);return !!(p&&p.admin);}            /* global admin (any trip) */
-/* may this user start a new trip? You can only create a trip in a tenant you're
-   an ADMIN of — a non-admin contributor (even an allowlisted owner who merely
-   joined someone else's tenant) must not add trips to a space they don't run.
-   The one exception: an authorized owner who isn't in any tenant yet can start
-   their own (that very act makes them its admin). Cloud off → local single-user,
-   always allowed. */
 function canCreateTrip(){
   if(!(window.CLOUD&&window.CLOUD.enabled))return true;
   if(window.CLOUD.isSuper)return true;
-  if(isAdmin())return true;                         /* admin of the current tenant */
-  /* allowlisted owner, not currently inside anyone's tenant → can start their own */
-  if(window.CLOUD.isOwner&&!(window.CLOUD.inParty&&window.CLOUD.inParty()))return true;
+  if(isAdmin())return true;
+  if(window.CLOUD.isOwner)return true;
   return false;
 }
 function isTripOwner(t){t=t||trip();return !!(t&&t.by&&t.by===S.persona);}    /* owner of this trip */
@@ -950,7 +943,7 @@ function onCloudSynced(){
   if(window.CLOUD&&window.CLOUD.autoJoinPendingInvite&&window.CLOUD.authorized&&window.CLOUD.authorized()){
     window.CLOUD.autoJoinPendingInvite().then(function(r){
       if(r&&r.result==='joined'){
-        toast('Added to '+(r.count===1?'a new group':r.count+' new groups')+' — switch in Account.');
+        toast('Added to '+(r.count===1?'a new tenant':r.count+' new tenants')+' — switch in Account.');
         if(S.screen&&S.screen.type==='persona'&&typeof renderScreen_inplace2==='function')renderScreen_inplace2();
       }
     });
@@ -3089,12 +3082,25 @@ function ntCancel(){
   closeScreen();
 }
 function scrNewTrip(){
-  /* guests (members of someone else's group) can't create trips/groups — they
-     have no way to manage or invite to them. Only authorized owners/super. */
   if(!canCreateTrip()){
     var nb='<div class="body-empty" style="text-align:left;padding:10px 2px;font-size:14px">'
       +'Only the group\'s owner can start new trips. Ask whoever set up your group to add a trip and you\'ll see it here automatically.</div>';
     return screenShell('Plan a new trip',nb,null,null,'Close');
+  }
+  if(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.isOwner&&!isAdmin()&&!S._creatingOwnTenant){
+    S._creatingOwnTenant=true;
+    toast('Setting up your space…');
+    window.CLOUD.createOwnTenant('My Group').then(function(){
+      resetToBlank();
+      S._seated=true;
+      return window.CLOUD.commitActive();
+    }).then(function(){
+      publishAllInvites();
+      S._creatingOwnTenant=false;
+      openScreen({type:'newtrip'});
+    }).catch(function(e){S._creatingOwnTenant=false;toast(e.message||'Could not create');});
+    var wait='<div class="body-empty" style="text-align:center;padding:30px 2px;font-size:14px">Setting up your space…</div>';
+    return screenShell('Plan a new trip',wait,null,null,null);
   }
   ntInit();
   var fr=S._ntFirstRun,body='';
@@ -3369,31 +3375,21 @@ function cloudSection(){
   h+='<div class="body-empty" style="text-align:left;padding:0 2px 10px;font-size:13px">Signed in as <strong>'+esc(window.CLOUD.user.email||window.CLOUD.user.uid)+'</strong> · '+st+'.</div>';
   var wids=(window.CLOUD.wids||[]);
   if(wids.length){
-    h+='<div class="hub-section-label" style="margin-left:0">Your groups</div>';
+    h+='<div class="hub-section-label" style="margin-left:0">Your tenants</div>';
     h+='<div id="tenant-list"><div class="body-empty" style="text-align:left;padding:0 2px 4px;font-size:12px">Loading…</div></div>';
     /* populate the list async (one workspace read per wid) */
     setTimeout(loadTenantList,0);
   }else{
-    h+='<div class="hub-section-label" style="margin-left:0">Group</div>';
-    h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Name your group, then start it — others can join with a code.</div>';
-    h+='<div class="field"><input class="field-input" id="party-name" placeholder="Group name (e.g. Smith Family)"></div>';
-    h+='<button class="btn-secondary green" onclick="cloudCreateParty()">Start a Group</button>';
-    h+='<div class="hub-section-label" style="margin-left:0">Join a group</div>';
+    h+='<div class="hub-section-label" style="margin-left:0">Tenant</div>';
+    h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Name your tenant, then start it — others can join with a code.</div>';
+    h+='<div class="field"><input class="field-input" id="party-name" placeholder="Tenant name (e.g. Smith Family)"></div>';
+    h+='<button class="btn-secondary green" onclick="cloudCreateParty()">Start a Tenant</button>';
+    h+='<div class="hub-section-label" style="margin-left:0">Join a tenant</div>';
     h+='<button class="btn-secondary" onclick="cloudJoinParty(\'cloud-join\')">Join with a code</button>';
     h+='<div class="field" style="margin-top:6px"><input class="field-input" id="cloud-join" placeholder="Enter an invite code" style="text-transform:uppercase"></div>';
   }
   h+='<div class="hub-section-label" style="margin-left:0">Account</div>';
-  /* An authorized owner who is sitting inside a tenant they DON'T administer
-     (a guest/member of someone else's) can spin up their OWN workspace. Shown
-     only in that case — not for a normal single-tenant owner (who already runs
-     theirs) — so it doesn't reintroduce the clutter that got it pulled before. */
-  if(wids.length && window.CLOUD.isOwner && !isAdmin()){
-    h+='<div class="hub-section-label" style="margin-left:0">Your own workspace</div>';
-    h+='<div class="body-empty" style="text-align:left;padding:0 2px 6px;font-size:13px">You\'re a member of '+(wids.length===1?'a group':'these groups')+' above. As an authorized owner you can also create your OWN separate workspace to run trips in. You\'ll switch into it once it\'s ready.</div>';
-    h+='<div class="field"><input class="field-input" id="own-ws-name" placeholder="Workspace name (e.g. Smith Family)"></div>';
-    h+='<button class="btn-secondary green" onclick="cloudCreateOwnWorkspace()">Create my workspace</button>';
-  }
-  h+='<button class="btn-secondary" onclick="cloudCheckInvites()">Check for new group invites</button>';
+  h+='<button class="btn-secondary" onclick="cloudCheckInvites()">Check for new tenant invites</button>';
   h+='<button class="btn-secondary" onclick="cloudRefreshLocal()">Refresh from cloud</button>';
   h+='<button class="btn-secondary" onclick="logoutPersona()">Sign out</button>';
   return h;
@@ -3432,8 +3428,8 @@ function cloudCheckInvites(){
   toast('Checking…');
   window.CLOUD.autoJoinPendingInvite().then(function(r){
     if(!r){toast('No invite found');}
-    else if(r.result==='joined')   toast('Added to '+(r.count===1?'a new group':r.count+' new groups'));
-    else if(r.result==='already')  toast('Already in '+(r.count===1?'that group':'all '+r.count+' invited groups'));
+    else if(r.result==='joined')   toast('Added to '+(r.count===1?'a new tenant':r.count+' new tenants'));
+    else if(r.result==='already')  toast('Already in '+(r.count===1?'that tenant':'all '+r.count+' invited tenants'));
     else if(r.result==='none')     toast('No pending invites for '+(window.CLOUD.user&&window.CLOUD.user.email||'this account'));
     else if(r.result==='error')    toast('Lookup failed: '+(r.error||'unknown'));
     /* always re-render so the tenant list reflects the LATEST C.wids — the
@@ -3451,7 +3447,7 @@ function loadTenantList(){
   window.CLOUD.listMyTenants().then(function(list){
     try{console.log('[tenants] listMyTenants returned',list);}catch(e){}
     var el=document.getElementById('tenant-list');if(!el)return;
-    if(!list.length){el.innerHTML='<div class="body-empty" style="text-align:left;padding:0 2px 4px;font-size:12px">No groups yet.</div>';return;}
+    if(!list.length){el.innerHTML='<div class="body-empty" style="text-align:left;padding:0 2px 4px;font-size:12px">No tenants yet.</div>';return;}
     /* Delete is only meaningful when the user has more than one tenant — the
        guard in cloudDeleteTenant refuses to delete the only one anyway, so
        showing the chip on a single-tenant row is just noise. */
@@ -3476,7 +3472,7 @@ function loadTenantList(){
     el.innerHTML=html;
   }).catch(function(e){
     try{console.warn('[tenants] listMyTenants failed:',e&&e.message);}catch(_){}
-    var el=document.getElementById('tenant-list');if(el)el.innerHTML='<div class="body-empty" style="text-align:left;padding:0 2px 4px;font-size:12px;color:#B91C1C">Could not load groups.</div>';
+    var el=document.getElementById('tenant-list');if(el)el.innerHTML='<div class="body-empty" style="text-align:left;padding:0 2px 4px;font-size:12px;color:#B91C1C">Could not load tenants.</div>';
   });
 }
 /* owner-deletes-their-own-tenant from the switcher. If they're deleting the
@@ -3486,14 +3482,14 @@ function loadTenantList(){
 function cloudDeleteTenant(wid){
   if(!(window.CLOUD&&window.CLOUD.deleteMyTenant))return;
   var t=(window.CLOUD.wids||[]).filter(function(w){return w===wid;})[0];
-  if(!t){toast('Group not found');return;}
-  if(!confirm('Permanently delete this group and ALL its data (groups, people, trips, lists)? This cannot be undone.'))return;
+  if(!t){toast('Tenant not found');return;}
+  if(!confirm('Permanently delete this tenant and ALL its data (groups, people, trips, lists)? This cannot be undone.'))return;
   toast('Deleting…');
   var isActive=window.CLOUD.wid===wid;
   var step=Promise.resolve();
   if(isActive){
     var next=(window.CLOUD.wids||[]).filter(function(w){return w!==wid;})[0]||null;
-    if(!next){toast('You can\'t delete your only group');return;}
+    if(!next){toast('You can\'t delete your only tenant');return;}
     /* mirror cloudSwitchTenant's persona clear so revalidateAfterSync doesn't
        evict us during the pre-delete switch */
     S.persona=null;S._seated=false;
