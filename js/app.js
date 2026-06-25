@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='190';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='191';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -3421,15 +3421,20 @@ function loadTenantList(){
     for(var i=0;i<list.length;i++){var t=list[i];
       var role=t.isActive?'Active · ':'';
       role+=t.isOwner?'You own this':'Member';
-      /* whole row switches when tapped (no-op for the active row); a tenants
-         you OWN gets a "Delete" link on the right that bypasses the row click */
-      var rowClick=t.isActive?'':'onclick="cloudSwitchTenant(\''+esc(t.wid)+'\')"';
-      html+='<div class="hub-row" style="text-align:left;display:flex;align-items:center;gap:8px;'+(t.isActive?'background:#F0F9FF;':'')+'">'
-        +'<button '+rowClick+' style="flex:1;min-width:0;background:none;border:0;padding:0;text-align:left;cursor:'+(t.isActive?'default':'pointer')+'">'
+      /* whole row is the switch target (no-op when active). Delete sits to the
+         right with stopPropagation so a tap on it can't also fire the row
+         switch. Build 190 used an inner button with padding:0 — its click area
+         shrank to the text, leaving the surrounding space falling onto the
+         Delete button instead, which is why every tap looked like Delete. */
+      var rowStyle='display:flex;align-items:center;gap:8px;'+(t.isActive?'background:#F0F9FF':'cursor:pointer');
+      var rowOnclick=t.isActive?'':' onclick="cloudSwitchTenant(\''+esc(t.wid)+'\')"';
+      html+='<div class="hub-row" style="'+rowStyle+'"'+rowOnclick+'>'
+        +'<div style="flex:1;min-width:0;pointer-events:none">'
         +'<div class="hub-title">'+esc(t.name)+'</div>'
-        +'<div class="hub-sub">'+esc(role)+'</div></button>';
+        +'<div class="hub-sub">'+esc(role)+'</div>'
+        +'</div>';
       if(t.isOwner){
-        html+='<button class="btn-danger-link" style="margin:0;padding:6px 10px;font-size:13px;flex-shrink:0" onclick="cloudDeleteTenant(\''+esc(t.wid)+'\')">Delete</button>';
+        html+='<button class="btn-danger-link" style="margin:0;padding:8px 12px;font-size:13px;flex-shrink:0;border:1px solid #FCA5A5;border-radius:8px;background:#FEF2F2" onclick="event.stopPropagation();cloudDeleteTenant(\''+esc(t.wid)+'\')">Delete</button>';
       }
       html+='</div>';
     }
