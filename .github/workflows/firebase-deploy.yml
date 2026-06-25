@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - claude/disney-trip-planner-design-p89zx9
+  workflow_dispatch:
 
 jobs:
   deploy:
