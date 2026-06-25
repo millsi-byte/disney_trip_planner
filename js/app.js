@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='185';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='186';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -3405,17 +3405,15 @@ function cloudCheckInvites(){
   if(!(window.CLOUD&&window.CLOUD.autoJoinPendingInvite)){toast('Not signed in');return;}
   toast('Checking…');
   window.CLOUD.autoJoinPendingInvite().then(function(r){
-    if(!r){toast('No invite found');return;}
-    if(r.result==='joined'){
-      toast('Added to a new group');
-      if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();
-    }else if(r.result==='already'){
-      toast('You\'re already in that group');
-    }else if(r.result==='none'){
-      toast('No pending invites for '+(window.CLOUD.user&&window.CLOUD.user.email||'this account'));
-    }else if(r.result==='error'){
-      toast('Lookup failed: '+(r.error||'unknown'));
-    }
+    if(!r){toast('No invite found');}
+    else if(r.result==='joined')   toast('Added to a new group');
+    else if(r.result==='already')  toast('You\'re already in that group');
+    else if(r.result==='none')     toast('No pending invites for '+(window.CLOUD.user&&window.CLOUD.user.email||'this account'));
+    else if(r.result==='error')    toast('Lookup failed: '+(r.error||'unknown'));
+    /* always re-render so the tenant list reflects the LATEST C.wids — the
+       list rendered earlier may have closed over a stale snapshot if it was
+       loaded before sign-in's auto-join finished writing the profile. */
+    if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();
   });
 }
 /* render the list of tenants the user belongs to into #tenant-list. Each row
@@ -3423,7 +3421,9 @@ function cloudCheckInvites(){
    tenant on tap. */
 function loadTenantList(){
   if(!(window.CLOUD&&window.CLOUD.listMyTenants))return;
+  try{console.log('[tenants] loadTenantList start, C.wids =',window.CLOUD.wids);}catch(e){}
   window.CLOUD.listMyTenants().then(function(list){
+    try{console.log('[tenants] listMyTenants returned',list);}catch(e){}
     var el=document.getElementById('tenant-list');if(!el)return;
     if(!list.length){el.innerHTML='<div class="body-empty" style="text-align:left;padding:0 2px 4px;font-size:12px">No groups yet.</div>';return;}
     var html='';
@@ -3436,7 +3436,8 @@ function loadTenantList(){
         +'<div class="hub-sub">'+esc(role)+'</div></div></button>';
     }
     el.innerHTML=html;
-  }).catch(function(){
+  }).catch(function(e){
+    try{console.warn('[tenants] listMyTenants failed:',e&&e.message);}catch(_){}
     var el=document.getElementById('tenant-list');if(el)el.innerHTML='<div class="body-empty" style="text-align:left;padding:0 2px 4px;font-size:12px;color:#B91C1C">Could not load groups.</div>';
   });
 }
