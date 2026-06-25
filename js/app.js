@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='205';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='206';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1388,7 +1388,20 @@ function dayBadges(d){
   if(anyOut) out.push('Check-out');
   if(visitsFor(date).filter(function(v){return vis(v.who);}).length>=2) out.push('Park Hopper');
   if(parkResFor(date).filter(function(p){return vis(p.who);}).length) out.push('Park Reservation');
-  if(parkHoursFor(date).some(function(h){return h.early;})) out.push('Early Entry');
+  /* Early Entry / Late Hours are PERKS — only badge them when you actually
+     plan to be at that park in that part of the day. Morning visits unlock
+     Early Entry; evening/late visits unlock Late Hours. "Day" timing covers
+     the full day so it counts for both. Without a matching visit, the tags
+     read as facts-about-Disney rather than facts-about-your-trip. */
+  var dayVisits=visitsFor(date).filter(function(v){return vis(v.who);});
+  var morningParks={},eveningParks={};
+  dayVisits.forEach(function(v){
+    if(v.timing==='morning'||v.timing==='day')morningParks[v.park]=1;
+    if(v.timing==='evening'||v.timing==='late'||v.timing==='day')eveningParks[v.park]=1;
+  });
+  var dayHours=parkHoursFor(date);
+  if(dayHours.some(function(h){return h.early&&morningParks[h.park];})) out.push('Early Entry');
+  if(dayHours.some(function(h){return h.late&&eveningParks[h.park];})) out.push('Late Hours');
   var lls=llFor(date).filter(function(l){return vis(l.who);});
   if(lls.some(function(l){return l.tier==='sp';})) out.push('Single Pass Day');
   if(lls.some(function(l){return l.tier==='mp1'||l.tier==='mp2';})) out.push('Multi Pass Day');
