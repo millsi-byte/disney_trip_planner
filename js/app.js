@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='171';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='172';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -3031,7 +3031,7 @@ function scrNewTrip(){
   /* ── Step 3a: Name the new group (name first) ── */
   if(S._ntStep==='group'){
     body+='<div class="hub-section-label" style="margin-left:0">Name your group</div>';
-    body+='<div class="field"><label class="field-label">What do you want to call this group?</label><input class="field-input" id="nt-gname" placeholder="e.g. The Mills Family" autocomplete="off" value="'+esc(S._ntGname||'')+'"><div style="font-size:12px;color:var(--muted);margin-top:6px">A Group is a reusable list of people you can plan future trips with. You\'ll add people next.</div></div>';
+    body+='<div class="field"><label class="field-label">What do you want to call this group?</label><input class="field-input" id="nt-gname" placeholder="e.g. Smith Family" autocomplete="off" value="'+esc(S._ntGname||'')+'"><div style="font-size:12px;color:var(--muted);margin-top:6px">A Group is a reusable list of people you can plan future trips with. You\'ll add people next.</div></div>';
     body+='<button class="btn-secondary" onclick="ntBack()">← Back</button>';
     return screenShell('Plan a Trip',body,'Next →','ntGroupNameNext()',cancelLabel,null,cancelArg);
   }
@@ -3235,7 +3235,7 @@ function cloudSection(){
   }else{
     h+='<div class="hub-section-label" style="margin-left:0">Group</div>';
     h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Name your group, then start it — others can join with a code.</div>';
-    h+='<div class="field"><input class="field-input" id="party-name" placeholder="Group name (e.g. The Mills Family)"></div>';
+    h+='<div class="field"><input class="field-input" id="party-name" placeholder="Group name (e.g. Smith Family)"></div>';
     h+='<button class="btn-secondary green" onclick="cloudCreateParty()">Start a Group</button>';
     h+='<div class="hub-section-label" style="margin-left:0">Join a group</div>';
     h+='<button class="btn-secondary" onclick="cloudJoinParty(\'cloud-join\')">Join with a code</button>';
@@ -3595,7 +3595,7 @@ function personTravelFields(p,pre,opts){
      section and renders them here. */
   if(!(opts&&opts.noName)){
     h+='<div class="field"><label class="field-label">First name <span class="opt">(as on ID)</span></label><input class="field-input" id="'+pre+'-first" value="'+esc(p.name||'')+'" placeholder="e.g. Nancy"></div>';
-    h+='<div class="field"><label class="field-label">Last name <span class="opt">(as on ID)</span></label><input class="field-input" id="'+pre+'-last" value="'+esc(p.lastName||'')+'" placeholder="e.g. Mills"></div>';
+    h+='<div class="field"><label class="field-label">Last name <span class="opt">(as on ID)</span></label><input class="field-input" id="'+pre+'-last" value="'+esc(p.lastName||'')+'" placeholder="e.g. Smith"></div>';
   }
   h+='<div class="field"><label class="field-label">TSA PreCheck / Known Traveler #</label><input class="field-input" id="'+pre+'-ktn" inputmode="numeric" value="'+esc(p.ktn||'')+'"></div>';
   h+='<div class="field"><label class="field-label">Passport # <span class="opt">(international travel only)</span></label><input class="field-input" id="'+pre+'-passport" value="'+esc(p.passport||'')+'"></div>';
@@ -3640,7 +3640,7 @@ function scrPersonEdit(){
   if(!p)return screenShell('Edit Person','<div class="body-empty" style="padding:24px 12px">Person not found.</div>',null,null,'Done');
   if(S._formInit!=='person:'+pid){S._peAdmin=!!p.admin;S._peParties=new Set(p.parties||[]);S._formInit='person:'+pid;}
   var body='<div class="field"><label class="field-label">First name</label><input class="field-input" id="pe-name" value="'+esc(p.name)+'"></div>';
-  body+='<div class="field"><label class="field-label">Last name <span class="opt">(as on ID)</span></label><input class="field-input" id="pe-last" value="'+esc(p.lastName||'')+'" placeholder="e.g. Mills"></div>';
+  body+='<div class="field"><label class="field-label">Last name <span class="opt">(as on ID)</span></label><input class="field-input" id="pe-last" value="'+esc(p.lastName||'')+'" placeholder="e.g. Smith"></div>';
   /* email + sign-in link — kept near the top with the person's identity */
   body+='<div class="field"><label class="field-label">Email</label><input class="field-input" id="pe-email" type="email" inputmode="email" value="'+esc(p.email||'')+'" placeholder="name@example.com"></div>';
   body+='<div class="field"><label class="field-label">Sign-in</label>';
