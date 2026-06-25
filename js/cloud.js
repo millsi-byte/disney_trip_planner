@@ -221,6 +221,34 @@
       .then(function(){ return reconcile('adopt'); });   /* re-adopt personal space */
   };
 
+  /* ── email invite index (auto-join by email) ─────────────
+     A tiny lookup so a person you add to your family by email can find and join
+     your workspace on first sign-in — no code to share. The owner publishes one
+     doc per family email (invitesByEmail/<email> → {wid,persona}); the new
+     account reads its OWN email's doc, joins that workspace (adopting its live
+     data), and claims the matching persona. */
+  C.publishInvite=function(email,persona){
+    if(!C.user||!C.wid)return Promise.resolve();
+    email=emailKey(email); if(!email)return Promise.resolve();
+    return db().doc('invitesByEmail/'+email)
+      .set({wid:C.wid,persona:persona||null,by:C.user.email||null,at:Date.now()})
+      .catch(function(){});
+  };
+  /* clear an invite — but only if it still points at OUR workspace, so we never
+     stomp another owner's invite that happens to use the same email */
+  C.revokeInvite=function(email){
+    if(!C.user)return Promise.resolve();
+    email=emailKey(email); if(!email)return Promise.resolve();
+    var ref=db().doc('invitesByEmail/'+email);
+    return ref.get().then(function(s){ if(s.exists&&s.data().wid===C.wid)return ref.delete(); }).catch(function(){});
+  };
+  /* the signed-in account looks up its own email → which workspace to join */
+  C.findInvite=function(){
+    if(!C.user||!C.user.email)return Promise.resolve(null);
+    return db().doc('invitesByEmail/'+emailKey(C.user.email)).get()
+      .then(function(s){ return s.exists?s.data():null; });
+  };
+
   window.CLOUD=C;
 
   /* Detach this account from any workspace and stop impersonating, returning it

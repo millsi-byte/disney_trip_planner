@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='174';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='175';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -877,9 +877,17 @@ function onCloudSynced(){
      all shared data regardless. */
   if(window.CLOUD&&!window.CLOUD.authUncertain&&window.CLOUD.authorized&&!window.CLOUD.authorized()){
     var inv0=pendingInvite();
-    var byEmail0=emailPersona(window.CLOUD.user&&window.CLOUD.user.email);
-    if(!(inv0&&inv0.code)&&!byEmail0){revokeAccess();return;}
+    /* A pending invite CODE falls through to the code path (step 3). Otherwise
+       this account isn't authorized yet — but an owner may have added our email
+       to their group. Check the server invite index and, if found, auto-join
+       that workspace and become the matching person. Only revoke if there's no
+       invite. (We must NOT trust the local family copy here: it may be this
+       account's own stale data from an earlier session, which is exactly how a
+       guest used to end up on "The Mills Family" with admin nav and no trips.) */
+    if(!(inv0&&inv0.code)){ tryEmailInvite(uid); return; }
   }
+  /* keep the email→workspace index current so future members can auto-join */
+  publishAllInvites();
   /* 1. already linked → straight in */
   var mine=personaForUid(uid);
   if(mine){
@@ -947,6 +955,39 @@ function onCloudSynced(){
     openScreen({type:'noaccess'});     /* not on the guest list */
   }
 }
+/* an unauthorized account just signed in: see if an owner added our email to
+   their group. Look up the server invite index; if found, join that workspace
+   (which ADOPTS the owner's live family/trips, replacing any stale local data)
+   and become the matching person. Otherwise show the no-access gate. */
+function tryEmailInvite(uid){
+  if(!(window.CLOUD&&window.CLOUD.findInvite)){revokeAccess();return;}
+  window.CLOUD.findInvite().then(function(inv){
+    if(!inv||!inv.wid){revokeAccess();return;}
+    window.CLOUD.joinParty(inv.wid).then(function(){
+      /* joined → owner's data is now local. Claim the persona they set up. */
+      if(inv.persona&&person(inv.persona)){claimPersona(inv.persona);return;}
+      var be=emailPersona(window.CLOUD.user&&window.CLOUD.user.email);
+      if(be){claimPersona(be.id);return;}
+      openScreen({type:'claim'});            /* joined but no match → pick a seat */
+    }).catch(function(){revokeAccess();});
+  }).catch(function(){revokeAccess();});
+}
+/* publish an email→workspace invite for every family member who has an email,
+   so people added before this feature (or while offline) still get indexed.
+   No-op unless we're the owner of an actual cloud workspace. */
+function publishAllInvites(){
+  if(!(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.inParty&&window.CLOUD.inParty()&&window.CLOUD.publishInvite))return;
+  if(!(window.CLOUD.isSuper||window.CLOUD.isOwner))return;
+  for(var i=0;i<FAMILY.length;i++){var p=FAMILY[i];if(p.email)window.CLOUD.publishInvite(p.email,p.id);}
+}
+/* keep one person's invite index entry in step with their email on save */
+function syncPersonInvite(p,oldEmail){
+  if(!p||!(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.inParty&&window.CLOUD.inParty()))return;
+  if(!(window.CLOUD.isSuper||window.CLOUD.isOwner))return;
+  var ne=(p.email||'').trim().toLowerCase(), oe=(oldEmail||'').trim().toLowerCase();
+  if(oe&&oe!==ne&&window.CLOUD.revokeInvite)window.CLOUD.revokeInvite(oe);
+  if(ne&&window.CLOUD.publishInvite)window.CLOUD.publishInvite(ne,p.id);
+}
 /* access was revoked (removed from the allowlist / tenant deleted): drop the
    local persona link and show the hard No-Access gate. Their own cached data
    stays on their device (local-first), but the gate blocks normal use and the
@@ -982,7 +1023,7 @@ function claimPersona(id){
   /* if you brought your own data and aren\'t sharing yet, spin up a party so
      you get a code to invite others — no separate "create" step needed */
   if(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user&&window.CLOUD.inParty&&!window.CLOUD.inParty()){
-    window.CLOUD.createParty('My Group').then(function(){toast('You are '+p.name);render();}).catch(function(){toast('You are '+p.name);render();});
+    window.CLOUD.createParty('My Group').then(function(){publishAllInvites();toast('You are '+p.name);render();}).catch(function(){toast('You are '+p.name);render();});
   }else{
     toast('You are '+p.name);render();
   }
@@ -2911,7 +2952,7 @@ function ntCreateTripExisting(){
   if(mem.indexOf(S.persona)<0)mem.push(S.persona);
   if(window.CLOUD&&window.CLOUD.inParty&&!window.CLOUD.inParty()&&window.CLOUD.createParty){
     var pn=(partyById(S._ntPartyId)||{}).name||'My Group';
-    window.CLOUD.createParty(pn).catch(function(e){toast(e&&e.message||'Could not save group to the cloud');});
+    window.CLOUD.createParty(pn).then(publishAllInvites).catch(function(e){toast(e&&e.message||'Could not save group to the cloud');});
   }
   ntMakeTrip(S._ntPartyId,mem);
   S._ntStep='notify';renderScreen_inplace2();
@@ -2934,7 +2975,7 @@ function ntCreateTripFromGroup(){
   });
   save('dtp_family',FAMILY);saveParties();saveLists();
   if(window.CLOUD&&window.CLOUD.inParty&&!window.CLOUD.inParty()&&window.CLOUD.createParty)
-    window.CLOUD.createParty(gname).catch(function(e){toast(e&&e.message||'Could not save group to the cloud');});
+    window.CLOUD.createParty(gname).then(publishAllInvites).catch(function(e){toast(e&&e.message||'Could not save group to the cloud');});
   ntMakeTrip(gid,mem);
   S._ntInvite=added;S._ntStep='invite';renderScreen_inplace2();
 }
@@ -3259,7 +3300,7 @@ function cloudCreateParty(){
   var done=function(){toast('Group ready');if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();};
   if(window.CLOUD&&window.CLOUD.inParty&&!window.CLOUD.inParty()&&window.CLOUD.createParty){
     toast('Creating…');
-    window.CLOUD.createParty(nm).then(done).catch(function(e){toast(e.message||'Could not create');});
+    window.CLOUD.createParty(nm).then(function(){publishAllInvites();done();}).catch(function(e){toast(e.message||'Could not create');});
   }else done();
 }
 function cloudJoinParty(inputId){
@@ -3640,8 +3681,9 @@ function scrPersonDetails(){
 function savePersonDetails(pid){
   var p=person(pid);if(!p){closeScreen();return;}
   if(pid!==S.persona&&!isAdmin()){toast('You can only edit your own details');closeScreen();return;}
+  var oldEmail=p.email;
   captureTravel(p,'pd');
-  save('dtp_family',FAMILY);toast('Travel details saved');closeScreen();render();
+  save('dtp_family',FAMILY);syncPersonInvite(p,oldEmail);toast('Travel details saved');closeScreen();render();
 }
 
 /* Full person editor (admin) — opened by tapping a person in Manage People.
@@ -3729,10 +3771,11 @@ function savePersonEdit(pid){
   /* parties — keep at least one */
   var gs=[];if(S._peParties)S._peParties.forEach(function(x){gs.push(x);});
   p.parties=gs.length?gs:[PARTIES[0].id];
+  var oldEmail=p.email;
   captureTravel(p,'pe');
   ALL_IDS=FAMILY.map(function(x){return x.id;});
   S._newPerson=null;   /* committed */
-  save('dtp_family',FAMILY);toast('Saved');
+  save('dtp_family',FAMILY);syncPersonInvite(p,oldEmail);toast('Saved');
   backToPeople();
 }
 function peDelete(pid){
