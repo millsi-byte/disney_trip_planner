@@ -252,6 +252,16 @@
     if(!C.user||!w||!uid)return Promise.resolve();
     return db().doc('workspaces/'+w+'/members/'+uid).delete().catch(function(){});
   };
+  /* manual "refresh from cloud" — drop any stale local cache and pull the
+     authoritative tenant data back in. Useful when an account suspects its
+     view is out of date (other devices reflect changes this one doesn't). A
+     hard reload is the simplest, most reliable reset — sync runs fresh on
+     boot and any divergence between local memory and cloud disappears. */
+  C.refreshLocal=function(){
+    try{location.reload();}catch(e){}
+    return Promise.resolve();
+  };
+
   /* the signed-in account looks up its own email → which workspace to join */
   C.findInvite=function(){
     if(!C.user||!C.user.email)return Promise.resolve(null);
@@ -394,13 +404,33 @@
         C.isSuper=C.isSuperAdmin();
         C.isOwner=false; C.isMember=false; C.authUncertain=true;
         if(C.isSuper){C.isOwner=true;C.authUncertain=false;return;}
-        return db().doc('owners/'+emailKey(C.user.email)).get().then(function(d){
-          C.isOwner=d.exists;
-          if(C.isOwner||!C.wid){C.authUncertain=false;return;}
-          return db().doc('workspaces/'+C.wid+'/members/'+C.user.uid).get().then(function(m){
-            C.isMember=m.exists; C.authUncertain=false;
+        /* Always check membership when wid is set — even for allowlisted owners.
+           If they were evicted from the tenant they used to be in, the workspace
+           data read will fail server-side (rules block non-members), but
+           authorized() would still be true because of the allowlist — so the
+           app would happily show stale local cached data without the user (or
+           the owner who removed them) realising. Membership tells us the truth. */
+        var jobs=[];
+        jobs.push(db().doc('owners/'+emailKey(C.user.email)).get().then(function(d){C.isOwner=d.exists;}));
+        if(C.wid)jobs.push(db().doc('workspaces/'+C.wid+'/members/'+C.user.uid).get().then(function(m){C.isMember=m.exists;}));
+        return Promise.all(jobs).then(function(){C.authUncertain=false;});
+      })
+      .then(function(){
+        /* Eviction heal. We have a wid pointing at a tenant we're no longer a
+           member of (and we're not super, who bypasses membership). The owner
+           removed our persona — and with it, our workspace membership. Clear
+           the pointer, wipe the stale local cache of THAT tenant's data, then
+           force a clean reload so app init re-routes us from scratch (an
+           allowlisted owner with no wid → setup wizard). Without this, the
+           evicted device keeps showing the tenant's trips from cache forever,
+           letting the user "make changes" that the server rules silently drop. */
+        if(C.wid && !C.isMember && !C.isSuper){
+          wipeLocalState();
+          setLocalWid(null); C.partyName=null;
+          return profileRef().set({wid:null},{merge:true}).catch(function(){}).then(function(){
+            try{location.reload();}catch(e){}
           });
-        });
+        }
       })
       .then(function(){
         /* crash-safety: if we force-quit mid-impersonation, dtp_adminWid is set.

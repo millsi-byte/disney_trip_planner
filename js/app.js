@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='181';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='182';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -3347,8 +3347,14 @@ function cloudSection(){
     h+='<div class="field" style="margin-top:6px"><input class="field-input" id="cloud-join" placeholder="Enter an invite code" style="text-transform:uppercase"></div>';
   }
   h+='<div class="hub-section-label" style="margin-left:0">Account</div>';
+  h+='<button class="btn-secondary" onclick="cloudRefreshLocal()">Refresh from cloud</button>';
   h+='<button class="btn-secondary" onclick="logoutPersona()">Sign out</button>';
   return h;
+}
+/* manual hard re-pull — discards any in-memory drift and re-syncs from scratch */
+function cloudRefreshLocal(){
+  if(!(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.refreshLocal)){toast('Not signed in');return;}
+  toast('Refreshing…');window.CLOUD.refreshLocal();
 }
 function cloudCreateParty(){
   var nm=val('party-name');if(!nm){toast('Enter a group name');return;}
