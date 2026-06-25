@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='176';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='177';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -243,10 +243,30 @@ function rehydrate(){
   REBOOKS=load('dtp_rebooks',REBOOKS); TRIPS=load('dtp_trips',TRIPS); NOTIFS=load('dtp_notifs',NOTIFS);
   PARTIES=load('dtp_parties',PARTIES)||PARTIES; CHAT=load('dtp_chat',CHAT);
   try{ensurePartyTags();}catch(e){}   /* re-tag records that arrived without a party */
+  /* If a sync just removed the persona we were signed in as (the owner deleted
+     us), we've been evicted — lock out instead of silently resolving to another
+     seat (which let a removed test account become the admin and write to the
+     tenant). Do this before ensure/render so the no-access gate wins. */
+  try{ if(revalidateAfterSync())return; }catch(e){}
   try{ensureActiveParty();}catch(e){}
   try{ensureVisibleTrip();}catch(e){}
   try{loadLists();}catch(e){}
   try{render();}catch(e){}
+}
+/* returns true (and locks the device out) if the signed-in account's seat was
+   removed from the shared workspace it's in. No-ops for the super-admin, for
+   tenant impersonation, when not in a shared workspace, or mid-join (no persona
+   claimed yet) — only a genuine eviction of a previously-claimed seat triggers. */
+function revalidateAfterSync(){
+  if(!(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user))return false;
+  if(window.CLOUD.adminWid||window.CLOUD.isSuper)return false;
+  if(!(window.CLOUD.inParty&&window.CLOUD.inParty()))return false;
+  if(!S.persona)return false;                 /* not claimed yet (mid-join) */
+  if(person(S.persona))return false;          /* our seat still exists */
+  if(personaForUid(cloudUid()))return false;  /* re-linked to another seat */
+  try{ if(window.CLOUD.leaveParty)window.CLOUD.leaveParty(); }catch(e){}
+  revokeAccess();
+  return true;
 }
 
 /* ── Helpers ───────────────────────────────────────────────── */
@@ -3832,6 +3852,16 @@ function delPersona(id){
   var p=person(id);
   if(p&&p.admin&&!FAMILY.filter(function(x){return x.admin&&x.id!==id;}).length){toast('Make someone else an admin first');return;}
   if(!confirm('Remove '+(p?p.name:'this person')+'? They\'ll be taken off all trips and items.'))return;
+  /* If this person was linked to a real account, removing them must also revoke
+     that account's access to the shared workspace — otherwise they stay a member
+     (keep write access) and just re-resolve to another seat on their device.
+     Evict their cloud membership and clear any email invite so they can't
+     auto-rejoin. The server rules enforce the boundary; this triggers it. */
+  var goneUid=p&&p.uid, goneEmail=p&&p.email;
+  if(window.CLOUD&&window.CLOUD.enabled){
+    if(goneUid&&window.CLOUD.evictMember)window.CLOUD.evictMember(goneUid);
+    if(goneEmail&&window.CLOUD.revokeInvite)window.CLOUD.revokeInvite(goneEmail);
+  }
   FAMILY=FAMILY.filter(function(x){return x.id!==id;});
   ALL_IDS=FAMILY.map(function(x){return x.id;});
   delete PACKING[id];delete TODO_TMPL[id];delete PACKING_TMPL[id];saveTmpl();savePackTmpl();

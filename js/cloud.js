@@ -239,8 +239,18 @@
   C.revokeInvite=function(email){
     if(!C.user)return Promise.resolve();
     email=emailKey(email); if(!email)return Promise.resolve();
+    var w=C.adminWid||C.wid;
     var ref=db().doc('invitesByEmail/'+email);
-    return ref.get().then(function(s){ if(s.exists&&s.data().wid===C.wid)return ref.delete(); }).catch(function(){});
+    return ref.get().then(function(s){ if(s.exists&&s.data().wid===w)return ref.delete(); }).catch(function(){});
+  };
+  /* owner/super: remove a member from the active workspace so they lose access to
+     the shared data. The server rules are the real boundary — this is what
+     actually enforces "I removed them" (deleting the person record alone left
+     their membership, and thus their write access, intact). */
+  C.evictMember=function(uid){
+    var w=C.adminWid||C.wid;
+    if(!C.user||!w||!uid)return Promise.resolve();
+    return db().doc('workspaces/'+w+'/members/'+uid).delete().catch(function(){});
   };
   /* the signed-in account looks up its own email → which workspace to join */
   C.findInvite=function(){
