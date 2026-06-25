@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='206';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='207';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1495,7 +1495,7 @@ function flightCard(flts,d){
     if(!flts.length){
       o+='<div class="body-empty">No flights for this day'+(filterActive()?' for the current filter':'')+'.</div>';
     }
-    for(var i=0;i<flts.length;i++) o+=flightJourney(flts[i],d);
+    for(var i=0;i<flts.length;i++) o+='<div class="flt-jbox'+(isPlanningStatus(flts[i].status)?' planning':'')+'">'+flightJourney(flts[i],d)+'</div>';
     o+='<button class="add-link" onclick="openScreen({type:\'addflight\',day:\''+d.date+'\'})">'+IC.plus+' Add flight</button>';
     o+='</div>';
   }

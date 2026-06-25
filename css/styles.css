@@ -160,7 +160,8 @@ button{font-family:inherit}
 .flag-out{background:#FEF3C7;color:#92400E}
 
 /* ── Flight ──────────────────────────────────────────────── */
-.flt-journey:not(:last-child){border-bottom:6px solid var(--cream)}
+.flt-jbox{border:1px solid var(--border);border-radius:10px;margin:10px 12px;overflow:hidden}
+.flt-jbox.planning{border-style:dashed;border-color:#C9C2B4}
 .flt-jhd{padding:10px 14px 0;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .flt-jlabel{font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
 .flt-grid{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;padding:12px 16px;align-items:center}
