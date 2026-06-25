@@ -456,6 +456,17 @@
          and they bounced back to the login screen every time. */
       C.isSuper=C.isSuperAdmin();
       if(C.isSuper) C.isOwner=true;
+      /* Lock the UI behind a "Signing you in…" gate until onCloudSynced routes
+         this account to its real destination — otherwise the gap between auth
+         resolving and the first sync finishing flashed whatever stale screen
+         was underneath (sometimes the account hub with "Join with a code",
+         which is misleading for users who clearly don't have access). Only
+         open it from sign-in / no-screen states so we don't trample a screen
+         the user is already on (claim, noaccess, etc. all stay put). */
+      try{
+        if(window.S&&typeof openScreen==='function'&&(!S.screen||S.screen.type==='signin'))
+          openScreen({type:'authwait'});
+      }catch(e){}
       /* Route the user in whether or not the first sync succeeds. The app is
          local-first and the super-admin/owner check is just an email lookup —
          a stumbling Firestore read (blocked transport, transient permission

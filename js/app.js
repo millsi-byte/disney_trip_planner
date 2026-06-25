@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='182';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='183';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -962,7 +962,7 @@ function onCloudSynced(){
       resetToBlank();
       openScreen({type:'newtrip'});return;
     }
-    if(S.screen&&(S.screen.type==='signin'||S.screen.type==='claim'))closeScreen();
+    if(S.screen&&(S.screen.type==='signin'||S.screen.type==='claim'||S.screen.type==='authwait'))closeScreen();
     render();return;
   }
   /* 2. your email matches a person the admin set up → link automatically */
@@ -2183,6 +2183,7 @@ function renderScreen(){
   if(t==='newtrip')   return scrNewTrip();
   if(t==='persona')   return scrPersona();
   if(t==='signin')    return scrSignIn();
+  if(t==='authwait')  return scrAuthWait();
   if(t==='claim')     return scrClaim();
   if(t==='noaccess')  return scrNoAccess();
   if(t==='parties')   return scrParties();
@@ -3218,6 +3219,18 @@ function scrSignIn(){
   body+='<button class="btn-secondary green" onclick="cloudGoogleSignIn()">Sign in with Google</button>';
   body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0;font-size:12px;color:var(--muted)">A Google sign-in window will pop up. If your browser blocks pop-ups, allow it for this site.</div>';
   return screenShell('Sign in',body,null,null,false);
+}
+/* Locked "we're checking who you are" gate. Shown the instant sign-in completes
+   and held until onCloudSynced routes the user to their real destination (home,
+   wizard, claim, or noaccess). Without this, the brief window between sign-in
+   and the first sync finishing flashed whatever stale screen happened to be
+   underneath — including a hub that still offered "Join with a code", which
+   was confusing for users who clearly don't have access. */
+function scrAuthWait(){
+  var body='<div style="text-align:center;padding:48px 8px 32px">';
+  body+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:24px;font-weight:700;color:var(--ink)">Signing you in…</div>';
+  body+='<div class="body-empty" style="padding:14px 6px 0">Loading your trips. This should only take a moment.</div></div>';
+  return screenShell('',body,null,null,false);
 }
 /* The Firebase SDK loads in the background after the page paints, so window.CLOUD
    may not exist yet if someone clicks immediately. Guard rather than throw. */
