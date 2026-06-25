@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='173';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='174';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -877,7 +877,8 @@ function onCloudSynced(){
      all shared data regardless. */
   if(window.CLOUD&&!window.CLOUD.authUncertain&&window.CLOUD.authorized&&!window.CLOUD.authorized()){
     var inv0=pendingInvite();
-    if(!(inv0&&inv0.code)){revokeAccess();return;}
+    var byEmail0=emailPersona(window.CLOUD.user&&window.CLOUD.user.email);
+    if(!(inv0&&inv0.code)&&!byEmail0){revokeAccess();return;}
   }
   /* 1. already linked → straight in */
   var mine=personaForUid(uid);

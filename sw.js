@@ -1,7 +1,7 @@
 /* Baseline Tap — service worker
    Network-first so new versions show up on the next load; cache is the
    offline fallback only. */
-var CACHE = 'dtp-v173';
+var CACHE = 'dtp-v174';
 var ASSETS = [
   './',
   './index.html',
