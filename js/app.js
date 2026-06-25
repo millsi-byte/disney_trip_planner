@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='167';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='168';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -884,6 +884,16 @@ function onCloudSynced(){
   if(mine){
     S.persona=mine.id;save('dtp_persona',mine.id);
     ensureActiveParty();ensureVisibleTrip();
+    /* An authorized owner with a linked persona but NO cloud workspace (e.g.
+       their tenant was deleted, or they were just re-added to the allowlist)
+       must be guided to choose or create a group — otherwise they land on Home
+       with no tenant and nothing ever prompts them to make one. Not auto-create:
+       the wizard makes them pick/create. Owners only (super is exempt; guests
+       and owners who already have a workspace have inParty()===true). */
+    if(window.CLOUD&&window.CLOUD.isOwner&&!window.CLOUD.isSuper&&
+       window.CLOUD.inParty&&!window.CLOUD.inParty()){
+      openScreen({type:'newtrip'});return;
+    }
     if(S.screen&&(S.screen.type==='signin'||S.screen.type==='claim'))closeScreen();
     render();return;
   }
