@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='180';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='181';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -423,14 +423,19 @@ function isFlightRow(it){return (it.crit&&it.crit.toLowerCase().indexOf('flight'
    admin rights; switching into an admin persona is itself PIN-protected, so the
    admin\'s login PIN is effectively the admin PIN — the two are one and the same. */
 function isAdmin(){var p=person(S.persona);return !!(p&&p.admin);}            /* global admin (any trip) */
-/* may this user start a new trip / group? Only authorized owners and the
-   super-admin. A guest who merely joined someone else's group can plan within
-   it, but must not spin up new trips/groups they can't manage — they have no
-   admin console to invite anyone, and the server rules block them from creating
-   a workspace anyway. When the cloud is off (single-user local mode) allow it. */
+/* may this user start a new trip? You can only create a trip in a tenant you're
+   an ADMIN of — a non-admin contributor (even an allowlisted owner who merely
+   joined someone else's tenant) must not add trips to a space they don't run.
+   The one exception: an authorized owner who isn't in any tenant yet can start
+   their own (that very act makes them its admin). Cloud off → local single-user,
+   always allowed. */
 function canCreateTrip(){
-  if(window.CLOUD&&window.CLOUD.enabled)return !!(window.CLOUD.isSuper||window.CLOUD.isOwner);
-  return true;
+  if(!(window.CLOUD&&window.CLOUD.enabled))return true;
+  if(window.CLOUD.isSuper)return true;
+  if(isAdmin())return true;                         /* admin of the current tenant */
+  /* allowlisted owner, not currently inside anyone's tenant → can start their own */
+  if(window.CLOUD.isOwner&&!(window.CLOUD.inParty&&window.CLOUD.inParty()))return true;
+  return false;
 }
 function isTripOwner(t){t=t||trip();return !!(t&&t.by&&t.by===S.persona);}    /* owner of this trip */
 /* may edit/delete an item: its creator, the trip owner, or a global admin */
