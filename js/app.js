@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='169';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='170';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -3235,7 +3235,8 @@ function cloudSection(){
     h+='<div class="body-empty" style="text-align:left;padding:0 2px 10px;font-size:13px">In <strong>'+esc(partyLabel())+'</strong>.'+(isAdmin()?' Manage it in <strong>Admin → Groups</strong>.':'')+'</div>';
   }else{
     h+='<div class="hub-section-label" style="margin-left:0">Group</div>';
-    h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Start a Group to invite others, or join one with a code.</div>';
+    h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Name your group, then start it — others can join with a code.</div>';
+    h+='<div class="field"><input class="field-input" id="party-name" placeholder="Group name (e.g. The Mills Family)"></div>';
     h+='<button class="btn-secondary green" onclick="cloudCreateParty()">Start a Group</button>';
     h+='<div class="hub-section-label" style="margin-left:0">Join a group</div>';
     h+='<button class="btn-secondary" onclick="cloudJoinParty(\'cloud-join\')">Join with a code</button>';
@@ -3246,7 +3247,7 @@ function cloudSection(){
   return h;
 }
 function cloudCreateParty(){
-  var nm=val('party-name')||'My Group';
+  var nm=val('party-name');if(!nm){toast('Enter a group name');return;}
   toast('Creating…');
   window.CLOUD.createParty(nm).then(function(){toast('Group ready');if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();}).catch(function(e){toast(e.message||'Could not create');});
 }

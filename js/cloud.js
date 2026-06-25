@@ -80,6 +80,16 @@
   function loadTimes(){try{return JSON.parse(localStorage.getItem('dtp__synctimes')||'{}');}catch(e){return {};}}
   function saveTimes(t){try{localStorage.setItem('dtp__synctimes',JSON.stringify(t));}catch(e){}}
   function localKeys(){var a=[],i,k;for(i=0;i<localStorage.length;i++){k=localStorage.key(i);if(syncable(k))a.push(k);}return a;}
+  /* Wipe ALL local app state. Used when a different account takes over this
+     browser, so one account's data can never bleed into another's via merge.
+     Keeps dtp__lastuid (the account marker) — everything else dtp_* goes. */
+  function wipeLocalState(){
+    try{
+      var rm=[],i,k;
+      for(i=0;i<localStorage.length;i++){k=localStorage.key(i);if(k&&k.indexOf('dtp_')===0&&k!=='dtp__lastuid')rm.push(k);}
+      for(i=0;i<rm.length;i++){try{localStorage.removeItem(rm[i]);}catch(e){}}
+    }catch(e){}
+  }
   function doRehydrate(){
     C.applyingRemote=true;
     try{ if(typeof rehydrate==='function')rehydrate(); }catch(e){}
@@ -296,6 +306,17 @@
 
   /* read the user's chosen party + their access level, then sync */
   function startSync(){
+    /* Account isolation on a shared browser. If a DIFFERENT account signed in
+       last time, the synced data left in localStorage belongs to them — clear it
+       before syncing, otherwise merge would push the previous owner's groups and
+       people up into THIS account's space (that's how the test user ended up
+       seeing "The Mills Family"). After wiping, this account's data is pulled
+       fresh from the cloud. Same account again → no wipe, normal device sync. */
+    try{
+      var lastUid=localStorage.getItem('dtp__lastuid');
+      if(C.user&&lastUid&&lastUid!==C.user.uid){ wipeLocalState(); C.adminWid=null; C.wid=null; C.partyName=null; }
+      if(C.user)localStorage.setItem('dtp__lastuid',C.user.uid);
+    }catch(e){}
     return profileRef().get().then(function(s){
       C.wid=(s.exists&&s.data().wid)||null;
       setLocalWid(C.wid);
