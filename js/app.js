@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='175';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='176';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -256,6 +256,20 @@ function partyById(id){for(var i=0;i<PARTIES.length;i++)if(PARTIES[i].id===id)re
 function personInParty(p,pid){return !!(p&&p.parties&&p.parties.indexOf(pid)>=0);}
 function partyPeople(pid){pid=pid||S.partyId;return FAMILY.filter(function(p){return personInParty(p,pid);});}
 function tripsInParty(pid){return TRIPS.filter(function(t){return t.parties&&t.parties.indexOf(pid)>=0;});}
+/* re-materialize the member snapshot of every trip in a group = everyone in the
+   trip's group(s). Trips store members at save time, so when group membership
+   changes later we refresh affected trips — otherwise a newly-added person isn't
+   counted on, filterable in, or notified about trips created before they joined. */
+function refreshTripMembers(gid){
+  var changed=false;
+  TRIPS.forEach(function(t){
+    if(!(t.parties&&t.parties.indexOf(gid)>=0))return;
+    var ids={};(t.parties||[]).forEach(function(g){partyPeople(g).forEach(function(p){ids[p.id]=1;});});
+    var next=Object.keys(ids),prev=t.members||[];
+    if(next.length!==prev.length||next.some(function(id){return prev.indexOf(id)<0;})){t.members=next;changed=true;}
+  });
+  if(changed)save('dtp_trips',TRIPS);
+}
 function visibleParties(){if(isAdmin())return PARTIES.slice();var me=person(S.persona);return PARTIES.filter(function(g){return personInParty(me,g.id);});}
 function activeParty(){return partyById(S.partyId)||visibleParties()[0]||PARTIES[0]||null;}
 /* the human label for the current party — prefers the in-app name over the
@@ -270,9 +284,14 @@ function trip(){for(var i=0;i<TRIPS.length;i++)if(TRIPS[i].id===S.tripId)return 
    data never silently disappears) */
 function visibleTrips(){
   if(isAdmin())return TRIPS.slice();
+  var me=person(S.persona);
   return TRIPS.filter(function(t){
     if(t.by&&t.by===S.persona)return true;
-    return t.members&&t.members.indexOf(S.persona)>=0;
+    if(t.members&&t.members.indexOf(S.persona)>=0)return true;
+    /* group membership grants visibility too — every member of a trip's group is
+       on the trip (the t.members snapshot can lag a later-added person). Mirrors
+       the person-detail "trips this person is on" logic. */
+    return (t.parties||[]).some(function(g){return personInParty(me,g);});
   });
 }
 /* does the current persona have any trip they can see? */
@@ -3444,8 +3463,8 @@ function ptSaveName(gid){var g=partyById(gid);if(!g)return;var changed=false;
   var nm=val('pt-name');if(nm&&nm!==g.name){g.name=nm;changed=true;if(window.CLOUD&&S.partyId===gid&&window.CLOUD.renameParty)window.CLOUD.renameParty(nm).catch(function(){});}
   var cl=val('pt-color');if(cl&&cl!==g.color){g.color=cl;changed=true;}
   if(changed)saveParties();}
-function partyAddMember(gid,pid){var p=person(pid);if(!p)return;if(!Array.isArray(p.parties))p.parties=[];if(p.parties.indexOf(gid)<0)p.parties.push(gid);save('dtp_family',FAMILY);renderScreen_inplace2();}
-function partyRemoveMember(gid,pid){var p=person(pid);if(!p||!p.parties||p.parties.indexOf(gid)<0)return;if(p.parties.length<=1){toast('Everyone needs at least one group');return;}p.parties=p.parties.filter(function(x){return x!==gid;});save('dtp_family',FAMILY);renderScreen_inplace2();}
+function partyAddMember(gid,pid){var p=person(pid);if(!p)return;if(!Array.isArray(p.parties))p.parties=[];if(p.parties.indexOf(gid)<0)p.parties.push(gid);save('dtp_family',FAMILY);refreshTripMembers(gid);renderScreen_inplace2();}
+function partyRemoveMember(gid,pid){var p=person(pid);if(!p||!p.parties||p.parties.indexOf(gid)<0)return;if(p.parties.length<=1){toast('Everyone needs at least one group');return;}p.parties=p.parties.filter(function(x){return x!==gid;});save('dtp_family',FAMILY);refreshTripMembers(gid);renderScreen_inplace2();}
 function partyGotoPerson(gid,pid){ptSaveName(gid);S._newParty=null;S._formInit=null;openScreen({type:'personedit',pid:pid});}
 function partyGotoTrip(gid,tid){ptSaveName(gid);S._newParty=null;openTripPlanning(tid);}
 function savePartyEdit(gid){var g=partyById(gid);if(!g){backToParties();return;}ptSaveName(gid);S._newParty=null;toast('Group saved');backToParties();}
@@ -3755,7 +3774,7 @@ function peToggleParty(gid){
     S._peParties.delete(gid);
   }else S._peParties.add(gid);
   /* commit live so membership sticks even if you navigate away to a trip */
-  if(p){var gs=[];S._peParties.forEach(function(x){gs.push(x);});p.parties=gs;save('dtp_family',FAMILY);}
+  if(p){var gs=[];S._peParties.forEach(function(x){gs.push(x);});p.parties=gs;save('dtp_family',FAMILY);refreshTripMembers(gid);}
   renderScreen_inplace2();
 }
 /* commit the safe person fields then jump to a trip (so edits aren\'t lost) */
