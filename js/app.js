@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='192';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='193';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -3417,15 +3417,15 @@ function loadTenantList(){
     try{console.log('[tenants] listMyTenants returned',list);}catch(e){}
     var el=document.getElementById('tenant-list');if(!el)return;
     if(!list.length){el.innerHTML='<div class="body-empty" style="text-align:left;padding:0 2px 4px;font-size:12px">No groups yet.</div>';return;}
+    /* Delete is only meaningful when the user has more than one tenant — the
+       guard in cloudDeleteTenant refuses to delete the only one anyway, so
+       showing the chip on a single-tenant row is just noise. */
+    var canDelete=list.length>1;
+    var chipBase='width:auto;margin:0;padding:7px 12px;font-size:12px;font-weight:600;border-radius:8px;cursor:pointer;flex-shrink:0';
     var html='';
     for(var i=0;i<list.length;i++){var t=list[i];
       var role=t.isActive?'Active · ':'';
       role+=t.isOwner?'You own this':'Member';
-      /* .hub-row already provides flex/padding/min-height; .hub-main already
-         provides flex:1;min-width:0 for the content column. Don't fight the
-         class — just append the active background and the switch onclick. The
-         Delete button has explicit width:auto so it doesn't inherit the
-         width:100% from any global "secondary link" style and stomp the row. */
       var rowStyle=t.isActive?'background:#F0F9FF':'';
       var rowOnclick=t.isActive?'':' onclick="cloudSwitchTenant(\''+esc(t.wid)+'\')"';
       html+='<div class="hub-row" style="'+rowStyle+'"'+rowOnclick+'>'
@@ -3434,7 +3434,9 @@ function loadTenantList(){
         +'<div class="hub-sub">'+esc(role)+'</div>'
         +'</div>';
       if(t.isOwner){
-        html+='<button style="width:auto;margin:0;padding:8px 14px;font-size:13px;font-weight:600;color:#B91C1C;background:#FEF2F2;border:1px solid #FCA5A5;border-radius:8px;cursor:pointer;flex-shrink:0" onclick="event.stopPropagation();cloudDeleteTenant(\''+esc(t.wid)+'\')">Delete</button>';
+        html+='<button style="'+chipBase+';color:#1E3A8A;background:#EFF6FF;border:1px solid #BFDBFE" onclick="event.stopPropagation();cloudRenameMyTenant(\''+esc(t.wid)+'\')">Rename</button>';
+        if(canDelete)
+          html+='<button style="'+chipBase+';color:#B91C1C;background:#FEF2F2;border:1px solid #FCA5A5" onclick="event.stopPropagation();cloudDeleteTenant(\''+esc(t.wid)+'\')">Delete</button>';
       }
       html+='</div>';
     }
@@ -3443,6 +3445,27 @@ function loadTenantList(){
     try{console.warn('[tenants] listMyTenants failed:',e&&e.message);}catch(_){}
     var el=document.getElementById('tenant-list');if(el)el.innerHTML='<div class="body-empty" style="text-align:left;padding:0 2px 4px;font-size:12px;color:#B91C1C">Could not load groups.</div>';
   });
+}
+/* rename a tenant from the switcher. Looks up the current name to prefill the
+   prompt, then writes the new name via C.renameTenant. Re-renders the screen
+   on success so the title in the list updates immediately. */
+function cloudRenameMyTenant(wid){
+  if(!(window.CLOUD&&window.CLOUD.listMyTenants&&window.CLOUD.renameTenant))return;
+  window.CLOUD.listMyTenants().then(function(list){
+    var t=list.filter(function(x){return x.wid===wid;})[0];
+    var current=(t&&t.name)||'';
+    var nm=window.prompt('Rename this group:',current);
+    if(nm===null)return;                /* user cancelled */
+    nm=(nm||'').trim();
+    if(!nm){toast('Enter a name');return;}
+    if(nm===current)return;
+    toast('Renaming…');
+    return window.CLOUD.renameTenant(wid,nm);
+  }).then(function(name){
+    if(!name)return;
+    toast('Renamed');
+    if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();
+  }).catch(function(e){toast(e.message||'Could not rename');});
 }
 /* owner-deletes-their-own-tenant from the switcher. If they're deleting the
    ACTIVE tenant, switch to another in wids first (deleteMyTenant refuses to

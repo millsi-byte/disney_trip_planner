@@ -220,6 +220,19 @@
     name=(name||'').trim();if(!name)return Promise.reject(new Error('Enter a name'));
     return db().doc('workspaces/'+C.wid).set({name:name},{merge:true}).then(function(){ C.partyName=name; return name; });
   };
+  /* rename ANY tenant the user is a member of, by wid — not just the active one.
+     Used by the tenant switcher's Rename chip so an owner can rename a tenant
+     without first switching into it. Server rules permit any workspace member
+     to update the doc, so we don't need a separate auth check here. */
+  C.renameTenant=function(wid,name){
+    if(!C.user||!wid)return Promise.reject(new Error('Sign in first'));
+    name=(name||'').trim();
+    if(!name)return Promise.reject(new Error('Enter a name'));
+    return db().doc('workspaces/'+wid).set({name:name},{merge:true}).then(function(){
+      if(wid===C.wid)C.partyName=name;
+      return name;
+    });
+  };
 
   /* leave the active tenant. Removes the membership, drops it from wids, and
      auto-switches to another tenant in the list (or to no tenant if it was the
