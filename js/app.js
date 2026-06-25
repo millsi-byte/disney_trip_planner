@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='200';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='201';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -127,6 +127,7 @@ if(!PARTIES||!PARTIES.length){
    the parties field — otherwise visibleTrips would wall them all out. */
 function ensurePartyTags(){
   if(!PARTIES||!PARTIES.length){
+    if(S._freshTenant)return;
     var _legacy=load('dtp_groups',null);
     if(_legacy&&_legacy.length)PARTIES=_legacy;
     else{var _pa=(FAMILY.filter(function(p){return p.admin;})[0]||FAMILY[0]||{}).id||null;PARTIES=[{id:'g1',name:'My Group',by:_pa}];}
@@ -977,6 +978,7 @@ function onCloudSynced(){
          "My Group" auto-seeded by older builds, or orphaned data from a deleted
          tenant) so the owner truly starts fresh and only gets a group when they
          create one — which creates the cloud tenant. */
+      S._freshTenant=true;
       resetToBlank();
       openScreen({type:'newtrip'});return;
     }
@@ -1013,7 +1015,7 @@ function onCloudSynced(){
          that workspace in the cloud profile so it can't return on the next
          sign-in, wipe the local demo seed, and start them in the setup wizard.
          Only do the destructive reset once we have a reliable cloud read. */
-      var toWizard=function(){ resetToBlank(); openScreen({type:'newtrip'}); };
+      var toWizard=function(){ S._freshTenant=true; resetToBlank(); openScreen({type:'newtrip'}); };
       if(window.CLOUD.synced&&window.CLOUD.startFresh)
         window.CLOUD.startFresh().then(toWizard,toWizard);
       else
@@ -3070,6 +3072,7 @@ function ntFinish(silent){
   S._ntStep=null;S._ntWhoMode=null;S._ntPartyId=null;S._ntProvParty=null;
   S._ntTripId=null;S._ntFirstRun=false;S._members=null;S._formInit=null;
   S._ntPeople=null;S._ntInvite=null;S._ntExpandedParty=null;S._ntTripName=null;S._ntGname=null;S._ntStart=null;S._ntEnd=null;S._ntCalYear=null;S._ntCalMonth=null;
+  S._freshTenant=false;
   closeScreen();render();
   if(t&&!silent)notifyMembership(t,[],t.members,optIn);
   if(!silent)toast('Trip created');
@@ -3091,6 +3094,7 @@ function ntCancel(){
   S._ntStep=null;S._ntWhoMode=null;S._ntPartyId=null;S._ntProvParty=null;
   S._ntTripId=null;S._ntFirstRun=false;S._members=null;S._formInit=null;
   S._ntPeople=null;S._ntInvite=null;S._ntExpandedParty=null;S._ntTripName=null;S._ntGname=null;S._ntStart=null;S._ntEnd=null;S._ntCalYear=null;S._ntCalMonth=null;
+  S._freshTenant=false;
   closeScreen();
 }
 function scrNewTrip(){
@@ -3334,7 +3338,7 @@ function resetToBlank(){
 }
 function startWizard(){openScreen({type:'newtrip'});}
 function wizSkip(){
-  /* "set up manually" — clean slate, no auto-created group/workspace */
+  S._freshTenant=false;
   resetToBlank();
   closeScreen();S.tab='home';render();
 }
@@ -3390,6 +3394,7 @@ function cloudSection(){
      have the "Start a Tenant" button in the no-tenant section above. */
   if(wids.length && window.CLOUD.isOwner){
     h+='<div class="hub-section-label" style="margin-left:0">New tenant</div>';
+    h+='<div class="field"><input class="field-input" id="new-tenant-name" placeholder="Tenant name (e.g. Smith Family)"></div>';
     h+='<button class="btn-secondary green" onclick="cloudCreateNewTenant()">Create a new tenant</button>';
   }
   h+='<div class="hub-section-label" style="margin-left:0">Account</div>';
@@ -3409,9 +3414,7 @@ function cloudCreateOwnWorkspace(){
   if(!(window.CLOUD&&window.CLOUD.createOwnTenant&&window.CLOUD.commitActive)){toast('Not signed in');return;}
   toast('Creating…');
   window.CLOUD.createOwnTenant(nm).then(function(){
-    /* sync is suppressed and the active wid now points at the new EMPTY tenant.
-       Seed a blank owner-only slate locally (no pushes fire while suppressed),
-       then commit it up into the new tenant and resume live sync. */
+    S._freshTenant=true;
     resetToBlank();
     S._seated=true;
     return window.CLOUD.commitActive();
@@ -3434,9 +3437,10 @@ function cloudCreateOwnWorkspace(){
    the new tenant, and drops into the trip wizard. */
 function cloudCreateNewTenant(){
   if(!(window.CLOUD&&window.CLOUD.createOwnTenant&&window.CLOUD.commitActive)){toast('Not signed in');return;}
-  var defaultName=((window.CLOUD.user&&window.CLOUD.user.email)||'').split('@')[0]||'My Tenant';
+  var nm=val('new-tenant-name');if(!nm){toast('Enter a tenant name');return;}
   toast('Creating…');
-  window.CLOUD.createOwnTenant(defaultName).then(function(){
+  window.CLOUD.createOwnTenant(nm).then(function(){
+    S._freshTenant=true;
     resetToBlank();
     S._seated=true;
     return window.CLOUD.commitActive();
@@ -3446,7 +3450,7 @@ function cloudCreateNewTenant(){
     closeScreen();
     S.tab='home';
     openScreen({type:'newtrip'});
-  }).catch(function(e){toast(e.message||'Could not create');});
+  }).catch(function(e){S._freshTenant=false;toast(e.message||'Could not create');});
 }
 function cloudCheckInvites(){
   if(!(window.CLOUD&&window.CLOUD.autoJoinPendingInvite)){toast('Not signed in');return;}
