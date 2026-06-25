@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='197';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='198';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -3096,21 +3096,6 @@ function scrNewTrip(){
     var nb='<div class="body-empty" style="text-align:left;padding:10px 2px;font-size:14px">'
       +'Only the group\'s owner can start new trips. Ask whoever set up your group to add a trip and you\'ll see it here automatically.</div>';
     return screenShell('Plan a new trip',nb,null,null,'Close');
-  }
-  if(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.isOwner&&!isAdmin()&&!S._creatingOwnTenant){
-    S._creatingOwnTenant=true;
-    toast('Setting up your space…');
-    window.CLOUD.createOwnTenant('My Group').then(function(){
-      resetToBlank();
-      S._seated=true;
-      return window.CLOUD.commitActive();
-    }).then(function(){
-      publishAllInvites();
-      S._creatingOwnTenant=false;
-      openScreen({type:'newtrip'});
-    }).catch(function(e){S._creatingOwnTenant=false;toast(e.message||'Could not create');});
-    var wait='<div class="body-empty" style="text-align:center;padding:30px 2px;font-size:14px">Setting up your space…</div>';
-    return screenShell('Plan a new trip',wait,null,null,null);
   }
   ntInit();
   var fr=S._ntFirstRun,body='';
