@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='170';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='171';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -799,7 +799,7 @@ function openScreen(def){
   S.pkForm=null;S.pkScope='mine';S._delsect=null;S._pksect=null;ADD.psect=null;
   S._formLoc=null;S._formTier=null;S._formInit=null;S._formColor=null;
   S._notify=notifDefault();
-  if(def.type==='newtrip'){S._notify=true;S._formInit=null;S._ntStep=null;S._ntPartyId=null;S._ntWhoMode=null;S._ntProvParty=null;S._ntTripId=null;S._ntFirstRun=false;S._ntPeople=null;S._ntInvite=null;S._ntPeopleCount=1;S._ntExpandedParty=null;S._ntTripName=null;S._ntStart=null;S._ntEnd=null;S._ntCalYear=null;S._ntCalMonth=null;}
+  if(def.type==='newtrip'){S._notify=true;S._formInit=null;S._ntStep=null;S._ntPartyId=null;S._ntWhoMode=null;S._ntProvParty=null;S._ntTripId=null;S._ntFirstRun=false;S._ntPeople=null;S._ntInvite=null;S._ntPeopleCount=1;S._ntExpandedParty=null;S._ntTripName=null;S._ntGname=null;S._ntStart=null;S._ntEnd=null;S._ntCalYear=null;S._ntCalMonth=null;}
   else if(def.type==='tripedit'){var _et=tripById(def.tripId);S._notify=!!(_et&&_et.notifyByDefault);}
   if(def.type==='addflight'){S.formLegs=def.edit?((FLIGHTS.filter(function(f){return f.id===def.edit;})[0]||{legs:[0]}).legs.length):1;}
   else{S.formLegs=1;}
@@ -2875,9 +2875,11 @@ function ntReadPeople(){
   for(var i=0;i<n;i++){var nm=val('nt-name-'+i),em=val('nt-email-'+i);if(nm||em)arr.push({name:nm||'',email:em||''});}
   return arr;
 }
-function ntGoToGroup(){
-  /* people are optional — a solo owner can create a group of just themselves */
-  S._ntPeople=ntReadPeople();S._ntStep='group';renderScreen_inplace2();
+/* new-group path: name the group first, then add people */
+function ntNewGroupName(){S._ntWhoMode='add';S._ntStep='group';renderScreen_inplace2();}
+function ntGroupNameNext(){
+  var nm=val('nt-gname');if(!nm){toast('Give your group a name');return;}
+  S._ntGname=nm;S._ntStep='people';renderScreen_inplace2();
 }
 function ntBack(){
   if(S._ntStep==='notify'){
@@ -2889,7 +2891,8 @@ function ntBack(){
     }
     S._ntStep='who';S._ntWhoMode='existing';renderScreen_inplace2();return;
   }
-  if(S._ntStep==='group'){S._ntPeopleCount=S._ntPeople?S._ntPeople.length:1;S._ntStep='who';renderScreen_inplace2();return;}
+  if(S._ntStep==='people'){S._ntPeople=ntReadPeople();S._ntPeopleCount=Math.max(1,(S._ntPeople||[]).length||1);S._ntStep='group';renderScreen_inplace2();return;}
+  if(S._ntStep==='group'){S._ntStep='who';S._ntWhoMode=null;renderScreen_inplace2();return;}
   if(S._ntStep==='who'){S._ntStep='trip';S._ntWhoMode=null;renderScreen_inplace2();return;}
 }
 function ntMakeTrip(partyId,mem){
@@ -2913,8 +2916,8 @@ function ntCreateTripExisting(){
   S._ntStep='notify';renderScreen_inplace2();
 }
 function ntCreateTripFromGroup(){
-  var gname=val('nt-gname');if(!gname){toast('Give your group a name');return;}
-  var people=S._ntPeople||[],gid='g'+Date.now();
+  var gname=S._ntGname||val('nt-gname');if(!gname){toast('Give your group a name');return;}
+  var people=ntReadPeople(),gid='g'+Date.now();
   PARTIES.push({id:gid,name:gname,by:S.persona,color:PALETTE[PARTIES.length%PALETTE.length][0]});
   S._ntProvParty=gid;S._ntPartyId=gid;
   var me=person(S.persona);if(me&&Array.isArray(me.parties)&&me.parties.indexOf(gid)<0)me.parties.push(gid);
@@ -2949,7 +2952,7 @@ function ntFinish(silent){
   S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();S.tab='plan';
   S._ntStep=null;S._ntWhoMode=null;S._ntPartyId=null;S._ntProvParty=null;
   S._ntTripId=null;S._ntFirstRun=false;S._members=null;S._formInit=null;
-  S._ntPeople=null;S._ntInvite=null;S._ntExpandedParty=null;S._ntTripName=null;S._ntStart=null;S._ntEnd=null;S._ntCalYear=null;S._ntCalMonth=null;
+  S._ntPeople=null;S._ntInvite=null;S._ntExpandedParty=null;S._ntTripName=null;S._ntGname=null;S._ntStart=null;S._ntEnd=null;S._ntCalYear=null;S._ntCalMonth=null;
   closeScreen();render();
   if(t&&!silent)notifyMembership(t,[],t.members,optIn);
   if(!silent)toast('Trip created');
@@ -2970,7 +2973,7 @@ function ntCancel(){
   }
   S._ntStep=null;S._ntWhoMode=null;S._ntPartyId=null;S._ntProvParty=null;
   S._ntTripId=null;S._ntFirstRun=false;S._members=null;S._formInit=null;
-  S._ntPeople=null;S._ntInvite=null;S._ntExpandedParty=null;S._ntTripName=null;S._ntStart=null;S._ntEnd=null;S._ntCalYear=null;S._ntCalMonth=null;
+  S._ntPeople=null;S._ntInvite=null;S._ntExpandedParty=null;S._ntTripName=null;S._ntGname=null;S._ntStart=null;S._ntEnd=null;S._ntCalYear=null;S._ntCalMonth=null;
   closeScreen();
 }
 function scrNewTrip(){
@@ -2996,7 +2999,7 @@ function scrNewTrip(){
 
     if(!S._ntWhoMode){
       if(PARTIES.length)body+='<button class="btn-secondary" style="text-align:left;justify-content:flex-start" onclick="ntSelectWho(\'existing\')">Use an existing group</button>';
-      body+='<button class="btn-secondary" style="text-align:left;justify-content:flex-start" onclick="ntSelectWho(\'add\')">Create a new group</button>';
+      body+='<button class="btn-secondary" style="text-align:left;justify-content:flex-start" onclick="ntNewGroupName()">Create a new group</button>';
       body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px;color:var(--muted)">Every trip belongs to a group — pick one you already have or make a new one. You can travel solo: just create a group with only yourself.</div>';
       body+='<button class="btn-secondary" onclick="ntBack()">← Back</button>';
       return screenShell('Plan a Trip',body,null,null,cancelLabel,null,cancelArg);
@@ -3023,34 +3026,30 @@ function scrNewTrip(){
       return screenShell('Plan a Trip',body,S._ntPartyId?'Create trip →':null,S._ntPartyId?'ntCreateTripExisting()':null,cancelLabel,null,cancelArg);
     }
 
-    if(S._ntWhoMode==='add'){
-      body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Add anyone else who\'s coming, or leave blank to travel solo — you\'ll name the group next.</div>';
-      var pc=S._ntPeopleCount||1;
-      for(var pi=0;pi<pc;pi++){
-        var pre=(S._ntPeople&&S._ntPeople[pi])||{};
-        body+='<div style="display:flex;gap:6px;margin-bottom:6px;align-items:center">';
-        body+='<input id="nt-name-'+pi+'" type="text" class="field-input" placeholder="First name" style="flex:1;margin:0" autocomplete="off" value="'+esc(pre.name||'')+'">';
-        body+='<input id="nt-email-'+pi+'" type="email" class="field-input" placeholder="Email (optional)" style="flex:1.4;margin:0" autocomplete="off" value="'+esc(pre.email||'')+'">';
-        if(pc>1)body+='<button class="btn-icon" onclick="ntRemovePerson('+pi+')" style="flex:none">×</button>';
-        body+='</div>';
-      }
-      body+='<button class="btn-secondary" onclick="ntAddPerson()">+ Add another person</button>';
-      body+='<button class="btn-secondary" onclick="ntSelectWho(null)">← All options</button>';
-      return screenShell('Plan a Trip',body,'Next →','ntGoToGroup()',cancelLabel,null,cancelArg);
-    }
   }
 
-  /* ── Step 3: Name the group (add-people path only) ── */
+  /* ── Step 3a: Name the new group (name first) ── */
   if(S._ntStep==='group'){
-    var ppl=S._ntPeople||[];
-    body+='<div class="hub-section-label" style="margin-left:0">One more thing…</div>';
-    if(ppl.length){
-      body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">You\'re going with:</div>';
-      body+='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">';
-      ppl.forEach(function(p){if(p.name)body+='<span style="background:var(--cream);border-radius:99px;padding:3px 10px;font-size:13px">'+esc(p.name)+'</span>';});
+    body+='<div class="hub-section-label" style="margin-left:0">Name your group</div>';
+    body+='<div class="field"><label class="field-label">What do you want to call this group?</label><input class="field-input" id="nt-gname" placeholder="e.g. The Mills Family" autocomplete="off" value="'+esc(S._ntGname||'')+'"><div style="font-size:12px;color:var(--muted);margin-top:6px">A Group is a reusable list of people you can plan future trips with. You\'ll add people next.</div></div>';
+    body+='<button class="btn-secondary" onclick="ntBack()">← Back</button>';
+    return screenShell('Plan a Trip',body,'Next →','ntGroupNameNext()',cancelLabel,null,cancelArg);
+  }
+
+  /* ── Step 3b: Add people to the new group ── */
+  if(S._ntStep==='people'){
+    body+='<div class="hub-section-label" style="margin-left:0">Who\'s in '+esc(S._ntGname||'your group')+'?</div>';
+    body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Add anyone else who\'s coming, or leave blank to travel solo.</div>';
+    var pc=S._ntPeopleCount||1;
+    for(var pi=0;pi<pc;pi++){
+      var pre=(S._ntPeople&&S._ntPeople[pi])||{};
+      body+='<div style="display:flex;gap:6px;margin-bottom:6px;align-items:center">';
+      body+='<input id="nt-name-'+pi+'" type="text" class="field-input" placeholder="First name" style="flex:1;margin:0" autocomplete="off" value="'+esc(pre.name||'')+'">';
+      body+='<input id="nt-email-'+pi+'" type="email" class="field-input" placeholder="Email (optional)" style="flex:1.4;margin:0" autocomplete="off" value="'+esc(pre.email||'')+'">';
+      if(pc>1)body+='<button class="btn-icon" onclick="ntRemovePerson('+pi+')" style="flex:none">×</button>';
       body+='</div>';
     }
-    body+='<div class="field"><label class="field-label">What do you want to call this group?</label><input class="field-input" id="nt-gname" placeholder="e.g. Smith Family" autocomplete="off"><div style="font-size:12px;color:var(--muted);margin-top:6px">This becomes a Group — a reusable list of people you can plan future trips with.</div></div>';
+    body+='<button class="btn-secondary" onclick="ntAddPerson()">+ Add another person</button>';
     body+='<button class="btn-secondary" onclick="ntBack()">← Back</button>';
     return screenShell('Plan a Trip',body,'Create trip →','ntCreateTripFromGroup()',cancelLabel,null,cancelArg);
   }
