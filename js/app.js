@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='179';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='180';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -423,6 +423,15 @@ function isFlightRow(it){return (it.crit&&it.crit.toLowerCase().indexOf('flight'
    admin rights; switching into an admin persona is itself PIN-protected, so the
    admin\'s login PIN is effectively the admin PIN — the two are one and the same. */
 function isAdmin(){var p=person(S.persona);return !!(p&&p.admin);}            /* global admin (any trip) */
+/* may this user start a new trip / group? Only authorized owners and the
+   super-admin. A guest who merely joined someone else's group can plan within
+   it, but must not spin up new trips/groups they can't manage — they have no
+   admin console to invite anyone, and the server rules block them from creating
+   a workspace anyway. When the cloud is off (single-user local mode) allow it. */
+function canCreateTrip(){
+  if(window.CLOUD&&window.CLOUD.enabled)return !!(window.CLOUD.isSuper||window.CLOUD.isOwner);
+  return true;
+}
 function isTripOwner(t){t=t||trip();return !!(t&&t.by&&t.by===S.persona);}    /* owner of this trip */
 /* may edit/delete an item: its creator, the trip owner, or a global admin */
 function canManage(it){
@@ -2126,9 +2135,9 @@ function renderSheet(){
   var today=new Date().toISOString().slice(0,10);
   var h='<div class="sheet-backdrop" onclick="if(event.target===this)closeSheet()"><div class="sheet">';
   h+='<div class="sheet-grip"></div><div class="sheet-title">Your Trips</div>';
-  h+='<button class="btn-secondary green" style="margin:4px 18px 8px;width:calc(100% - 36px)" onclick="closeSheet();openScreen({type:\'newtrip\'})">'+IC.plus+' Plan a new trip</button>';
+  if(canCreateTrip())h+='<button class="btn-secondary green" style="margin:4px 18px 8px;width:calc(100% - 36px)" onclick="closeSheet();openScreen({type:\'newtrip\'})">'+IC.plus+' Plan a new trip</button>';
   var vis=visibleTrips();
-  if(!vis.length) h+='<div class="body-empty" style="text-align:left;padding:6px 2px 4px">No trips yet. '+(isAdmin()?'Tap “Plan a new trip” above.':'Ask an admin to add you to a trip.')+'</div>';
+  if(!vis.length) h+='<div class="body-empty" style="text-align:left;padding:6px 2px 4px">No trips yet. '+(canCreateTrip()?'Tap “Plan a new trip” above.':'Ask your group\'s owner to add you to a trip.')+'</div>';
   var upcoming=vis.filter(function(t){return !t.end||t.end>=today;});
   var past=vis.filter(function(t){return t.end&&t.end<today;});
   var sections=[];
@@ -3061,6 +3070,13 @@ function ntCancel(){
   closeScreen();
 }
 function scrNewTrip(){
+  /* guests (members of someone else's group) can't create trips/groups — they
+     have no way to manage or invite to them. Only authorized owners/super. */
+  if(!canCreateTrip()){
+    var nb='<div class="body-empty" style="text-align:left;padding:10px 2px;font-size:14px">'
+      +'Only the group\'s owner can start new trips. Ask whoever set up your group to add a trip and you\'ll see it here automatically.</div>';
+    return screenShell('Plan a new trip',nb,null,null,'Close');
+  }
   ntInit();
   var fr=S._ntFirstRun,body='';
   var cancelLabel=fr?null:'Cancel',cancelArg=fr?null:'ntCancel()';
@@ -3380,7 +3396,7 @@ function scrPersona(){
     var me=person(S.persona);
     var body='<div class="hub-section-label" style="margin-left:0">Your account</div>';
     body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px">You\'re '+esc(me?me.name:'')+(isAdmin()?' · Admin':'')+'.</div>';
-    body+='<button class="btn-secondary green" onclick="openScreen({type:\'newtrip\'})">'+IC.plus+' Plan a new trip</button>';
+    if(canCreateTrip())body+='<button class="btn-secondary green" onclick="openScreen({type:\'newtrip\'})">'+IC.plus+' Plan a new trip</button>';
     body+='<button class="btn-secondary" onclick="openScreen({type:\'persondetails\',pid:\''+S.persona+'\'})">My travel details</button>';
     body+=cloudSection();
     if(!(window.CLOUD&&window.CLOUD.enabled)){
@@ -4503,14 +4519,16 @@ function doDelTrip(id){
    deleted the trip you were viewing). You leave it by picking/creating a trip. */
 function renderNoTrip(){
   var has=hasVisibleTrip();
+  var can=canCreateTrip();
   var o='<div class="notrip"><div class="notrip-art">'+IC.map+'</div>';
   o+='<div class="notrip-title">'+(has?'No trip selected':'No trips yet')+'</div>';
   o+='<div class="notrip-sub">'+(has
-    ? 'Pick the trip you want to view, or start planning a new one.'
-    : 'You\'re not part of any trips yet. Plan one to get started.')+'</div>';
+    ? 'Pick the trip you want to view'+(can?', or start planning a new one.':'.')
+    : (can?'You\'re not part of any trips yet. Plan one to get started.':'You\'re not part of any trips yet. Ask your group\'s owner to add you to one.'))+'</div>';
   if(has)
     o+='<button class="btn-primary" onclick="openSheet({type:\'trips\'})">Choose a trip</button>';
-  o+='<button class="btn-secondary'+(has?'':' green')+'" onclick="openScreen({type:\'newtrip\'})">'+IC.plus+' Plan a new trip</button>';
+  if(can)
+    o+='<button class="btn-secondary'+(has?'':' green')+'" onclick="openScreen({type:\'newtrip\'})">'+IC.plus+' Plan a new trip</button>';
   o+='</div>';
   return o;
 }
