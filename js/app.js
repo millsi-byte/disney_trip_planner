@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='199';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='200';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -427,7 +427,9 @@ function canCreateTrip(){
   if(!(window.CLOUD&&window.CLOUD.enabled))return true;
   if(window.CLOUD.isSuper)return true;
   if(isAdmin())return true;
-  if(window.CLOUD.isOwner)return true;
+  /* first-time authorized owner who hasn't created a tenant yet — the wizard
+     creates the tenant for them when they finish naming their group */
+  if(window.CLOUD.isOwner&&!(window.CLOUD.inParty&&window.CLOUD.inParty()))return true;
   return false;
 }
 function isTripOwner(t){t=t||trip();return !!(t&&t.by&&t.by===S.persona);}    /* owner of this trip */
@@ -3094,27 +3096,8 @@ function ntCancel(){
 function scrNewTrip(){
   if(!canCreateTrip()){
     var nb='<div class="body-empty" style="text-align:left;padding:10px 2px;font-size:14px">'
-      +'Only the group\'s owner can start new trips. Ask whoever set up your group to add a trip and you\'ll see it here automatically.</div>';
+      +'Only the tenant\'s admin can start new trips. Ask your tenant owner to add you to a trip and you\'ll see it here automatically.</div>';
     return screenShell('Plan a new trip',nb,null,null,'Close');
-  }
-  /* An authorized owner who is only a GUEST in someone else's tenant (a member,
-     not its admin) gets their OWN brand-new tenant when they plan a trip — never
-     adds to the host's. Detach the active session to tenant-less + clean slate,
-     then run the wizard: its createParty() builds a fresh tenant named after the
-     group they create. Super and admins of the current tenant plan in place. */
-  if(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.isOwner&&!window.CLOUD.isSuper
-     &&!isAdmin()&&window.CLOUD.inParty&&window.CLOUD.inParty()
-     &&window.CLOUD.detachActive&&!S._detaching){
-    S._detaching=true;
-    window.CLOUD.detachActive().then(function(){
-      resetToBlank();
-      S._seated=true;
-      S._detaching=false;
-      S._formInit=null;            /* re-run ntInit cleanly against the blank slate */
-      openScreen({type:'newtrip'});
-    }).catch(function(e){S._detaching=false;toast(e&&e.message||'Could not start');});
-    var wait='<div class="body-empty" style="text-align:center;padding:30px 2px;font-size:14px">Starting your own space…</div>';
-    return screenShell('Plan a new trip',wait,null,null,null);
   }
   ntInit();
   var fr=S._ntFirstRun,body='';
@@ -3402,6 +3385,13 @@ function cloudSection(){
     h+='<button class="btn-secondary" onclick="cloudJoinParty(\'cloud-join\')">Join with a code</button>';
     h+='<div class="field" style="margin-top:6px"><input class="field-input" id="cloud-join" placeholder="Enter an invite code" style="text-transform:uppercase"></div>';
   }
+  /* Authorized owners who already have at least one tenant can create another
+     one independently from here. First-time owners (wids.length===0) already
+     have the "Start a Tenant" button in the no-tenant section above. */
+  if(wids.length && window.CLOUD.isOwner){
+    h+='<div class="hub-section-label" style="margin-left:0">New tenant</div>';
+    h+='<button class="btn-secondary green" onclick="cloudCreateNewTenant()">Create a new tenant</button>';
+  }
   h+='<div class="hub-section-label" style="margin-left:0">Account</div>';
   h+='<button class="btn-secondary" onclick="cloudCheckInvites()">Check for new tenant invites</button>';
   h+='<button class="btn-secondary" onclick="cloudRefreshLocal()">Refresh from cloud</button>';
@@ -3437,6 +3427,27 @@ function cloudCreateOwnWorkspace(){
    our email and we don't want to sign out/in to pick it up, or when something
    went sideways and we want to retry. Surfaces the actual outcome (joined /
    already in / no invite / error) so the user knows what happened. */
+/* Creates a brand-new empty tenant for an authorized owner who is already in
+   one (or more) other tenants. Uses createOwnTenant which stops the listener
+   and suppresses sync before any local writes, so the current tenant is never
+   touched. After creation the app resets to a blank slate, commits it up into
+   the new tenant, and drops into the trip wizard. */
+function cloudCreateNewTenant(){
+  if(!(window.CLOUD&&window.CLOUD.createOwnTenant&&window.CLOUD.commitActive)){toast('Not signed in');return;}
+  var defaultName=((window.CLOUD.user&&window.CLOUD.user.email)||'').split('@')[0]||'My Tenant';
+  toast('Creating…');
+  window.CLOUD.createOwnTenant(defaultName).then(function(){
+    resetToBlank();
+    S._seated=true;
+    return window.CLOUD.commitActive();
+  }).then(function(){
+    publishAllInvites();
+    toast('Tenant created');
+    closeScreen();
+    S.tab='home';
+    openScreen({type:'newtrip'});
+  }).catch(function(e){toast(e.message||'Could not create');});
+}
 function cloudCheckInvites(){
   if(!(window.CLOUD&&window.CLOUD.autoJoinPendingInvite)){toast('Not signed in');return;}
   toast('Checking…');
