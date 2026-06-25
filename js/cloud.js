@@ -199,6 +199,41 @@
     return C._creating;
   };
 
+  /* create a brand-new EMPTY tenant for an account currently sitting in SOMEONE
+     ELSE's tenant. Unlike createParty it must NOT push the host tenant's data
+     into the new workspace (that copy-up is what spawned duplicate tenants). So
+     it stops the listener and leaves sync SUPPRESSED (C.synced=false): it just
+     creates an empty workspace + our membership and switches the active wid.
+     The caller then seeds a blank owner locally (resetToBlank — no pushes fire
+     while suppressed) and calls commitActive() to push that blank slate up into
+     the new tenant and resume live sync. The host tenant is never written to. */
+  C.createOwnTenant=function(name){
+    if(!C.user)return Promise.reject(new Error('Sign in first'));
+    if(C._creating)return C._creating;
+    var wid=newCode(), nm=(name||'My Group');
+    var tn=(C.user.email||'').split('@')[0]||null;
+    var wref=db().doc('workspaces/'+wid);
+    stopListener();
+    C.synced=false;                       /* hard-stop any C.push while we switch + seed */
+    C._creating = wref.set({name:nm,tenantName:tn,by:C.user.uid,byEmail:C.user.email||null,createdAt:Date.now()})
+      .then(function(){ return wref.collection('members').doc(C.user.uid).set({email:C.user.email||null,joinedAt:Date.now()}); })
+      .then(function(){
+        C.isMember=true;
+        /* clear ALL host-tenant local cache (data + stale synctimes) so the
+           seed-and-commit that follows starts from nothing — wipeLocalState
+           drops dtp_wid too, so re-set it right after. */
+        wipeLocalState();
+        setLocalWid(wid); C.partyName=nm; addToWids(wid);
+        return writeWidsProfile();
+      })
+      .then(function(){ C._creating=null; return wid; }, function(e){ C._creating=null; C.synced=true; throw e; });
+    return C._creating;
+  };
+  /* resume sync on the active tenant, pushing whatever's in local up into it.
+     Used right after createOwnTenant + a local reset to commit the fresh blank
+     slate into the new (empty) workspace. */
+  C.commitActive=function(){ return reconcile('merge'); };
+
   /* join an existing party by code and adopt its data */
   C.joinParty=function(code){
     if(!C.user)return Promise.reject(new Error('Sign in first'));

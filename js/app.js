@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='194';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='195';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -3383,10 +3383,45 @@ function cloudSection(){
     h+='<div class="field" style="margin-top:6px"><input class="field-input" id="cloud-join" placeholder="Enter an invite code" style="text-transform:uppercase"></div>';
   }
   h+='<div class="hub-section-label" style="margin-left:0">Account</div>';
+  /* An authorized owner who is sitting inside a tenant they DON'T administer
+     (a guest/member of someone else's) can spin up their OWN workspace. Shown
+     only in that case — not for a normal single-tenant owner (who already runs
+     theirs) — so it doesn't reintroduce the clutter that got it pulled before. */
+  if(wids.length && window.CLOUD.isOwner && !isAdmin()){
+    h+='<div class="hub-section-label" style="margin-left:0">Your own workspace</div>';
+    h+='<div class="body-empty" style="text-align:left;padding:0 2px 6px;font-size:13px">You\'re a member of '+(wids.length===1?'a group':'these groups')+' above. As an authorized owner you can also create your OWN separate workspace to run trips in. You\'ll switch into it once it\'s ready.</div>';
+    h+='<div class="field"><input class="field-input" id="own-ws-name" placeholder="Workspace name (e.g. Smith Family)"></div>';
+    h+='<button class="btn-secondary green" onclick="cloudCreateOwnWorkspace()">Create my workspace</button>';
+  }
   h+='<button class="btn-secondary" onclick="cloudCheckInvites()">Check for new group invites</button>';
   h+='<button class="btn-secondary" onclick="cloudRefreshLocal()">Refresh from cloud</button>';
   h+='<button class="btn-secondary" onclick="logoutPersona()">Sign out</button>';
   return h;
+}
+/* An authorized owner who's currently a member of someone else's tenant
+   creates their OWN separate workspace. C.createOwnTenant makes an EMPTY
+   workspace, switches active onto it, and wipes the host tenant's local cache —
+   it never writes the host's data anywhere. We then reload: the fresh-owner
+   routing in onCloudSynced drops the user into the setup wizard for the new
+   empty tenant. */
+function cloudCreateOwnWorkspace(){
+  var nm=val('own-ws-name');if(!nm){toast('Enter a name');return;}
+  if(!(window.CLOUD&&window.CLOUD.createOwnTenant&&window.CLOUD.commitActive)){toast('Not signed in');return;}
+  toast('Creating…');
+  window.CLOUD.createOwnTenant(nm).then(function(){
+    /* sync is suppressed and the active wid now points at the new EMPTY tenant.
+       Seed a blank owner-only slate locally (no pushes fire while suppressed),
+       then commit it up into the new tenant and resume live sync. */
+    resetToBlank();
+    S._seated=true;
+    return window.CLOUD.commitActive();
+  }).then(function(){
+    publishAllInvites();
+    toast('Workspace created');
+    closeScreen();
+    S.tab='home';
+    openScreen({type:'newtrip'});   /* set up the first trip in the new tenant */
+  }).catch(function(e){toast(e.message||'Could not create');});
 }
 /* manual trigger for autoJoinPendingInvite — useful when an owner just added
    our email and we don't want to sign out/in to pick it up, or when something
