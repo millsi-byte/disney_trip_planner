@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='203';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='204';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2514,7 +2514,7 @@ var IMPORT_PARKS={mk:'Magic Kingdom',ep:'EPCOT',hs:'Hollywood Studios',ak:'Anima
 /* the recipe we hand Claude so its JSON matches the app exactly */
 function importPromptText(){
   return [
-'You are turning Walt Disney World reservation details into JSON for my trip planner app.',
+'You are turning Walt Disney World reservation and park-schedule details into JSON for my trip planner app.',
 'Read the confirmation I paste next and reply with ONLY a JSON object, wrapped in a ```json code block (this keeps the quotes intact when I copy it), shaped like:',
 '',
 '```json',
@@ -2528,6 +2528,8 @@ function importPromptText(){
 '• lightning: {"type":"lightning","ride":"","day":"","park":"mk|ep|hs|ak","tier":"sp|mp1|mp2","status":"booked|planning","bookedTime":"9:45 AM","conf":""}',
 '   (tier: sp = Single/Individual Lightning Lane, mp1 = Multi Pass tier 1, mp2 = Multi Pass tier 2)',
 '• parkres:   {"type":"parkres","day":"","park":"mk|ep|hs|ak","status":"booked|planning"}',
+'• parkhours: {"type":"parkhours","day":"","park":"mk|ep|hs|ak","open":"9:00 AM","close":"10:00 PM","early":"8:30 AM","late":"11:00 PM","crowd":5}',
+'   (early = Early Theme Park Entry start time for eligible resort guests; late = Extended Evening Hours / late close time — OMIT early and/or late if that park has none that day; crowd = expected crowd level 1-10, omit if unknown. One parkhours item per park per day.)',
 '• show:      {"type":"show","name":"","day":"","time":"9:00 PM","status":"attend|scheduled"}',
 '• flight:    {"type":"flight","label":"Outbound|Return","day":"","status":"booked|planning","legs":[',
 '     {"airline":"","num":"WN 4657","conf":"","depApt":"BOS","depCity":"Boston","depTime":"5:45 AM","depDate":"","arrApt":"MCO","arrCity":"Orlando","arrTime":"11:50 AM","arrDate":""} ]}',
@@ -2579,6 +2581,7 @@ function importSummary(type,rec){
   if(type==='Dining')return rec.name+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'')+(rec.time?' · '+rec.time:'');
   if(type==='Lightning Lane')return rec.ride+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'')+' · '+tagShort(rec.tier);
   if(type==='Park reservation')return (IMPORT_PARKS[rec.park]||'?')+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'');
+  if(type==='Park hours'){var hrs=rec.open?rec.open+(rec.close?'–'+rec.close:''):'';var ex=[];if(rec.early)ex.push('EE '+rec.early);if(rec.late)ex.push('Late '+rec.late);return (IMPORT_PARKS[rec.park]||'?')+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'')+(hrs?' · '+hrs:'')+(ex.length?' · '+ex.join(' · '):'');}
   if(type==='Show')return rec.name+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'')+(rec.time?' · '+rec.time:'');
   if(type==='Flight'){var f=(rec.legs&&rec.legs[0])||{},l=(rec.legs&&rec.legs[rec.legs.length-1])||{};return rec.label+' · '+(f.depApt||'?')+' → '+(l.arrApt||'?')+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'');}
   return '';
@@ -2613,6 +2616,15 @@ function buildImportItem(it){
   }
   if(t==='parkres'||t==='park reservation'){
     return finalizeImport('Park reservation',base({day:impDate(it.day),park:impPark(it.park),status:it.status||'booked'}));
+  }
+  if(t==='parkhours'||t==='hours'||t==='park hours'){
+    /* park hours are a FACT about a park on a date — not assigned to anyone, so
+       no `who` (which keeps them out of the notify picker). Shape mirrors the
+       saveHours() record exactly. */
+    var crowd=parseInt(it.crowd,10);
+    return finalizeImport('Park hours',{id:impId('h'),trip:tid,park:impPark(it.park),day:impDate(it.day),
+      open:it.open||'',close:it.close||'',early:it.early||'',late:it.late||'',
+      crowd:(crowd>=1&&crowd<=10)?crowd:null});
   }
   if(t==='show'){
     return finalizeImport('Show',base({name:it.name?String(it.name):'',day:impDate(it.day),time:it.time||'',status:it.status||'attend'}));
@@ -2660,7 +2672,7 @@ function importParse(){
 /* commit the valid items into their collections */
 function importSave(){
   var items=S._importItems||[],added=[];
-  var M={'Resort':RESORTS,'Dining':DINING,'Lightning Lane':LLS,'Park reservation':PARKRES,'Show':SHOWS,'Flight':FLIGHTS};
+  var M={'Resort':RESORTS,'Dining':DINING,'Lightning Lane':LLS,'Park reservation':PARKRES,'Park hours':PARKHOURS,'Show':SHOWS,'Flight':FLIGHTS};
   items.forEach(function(e){
     if(e.error||e._removed||!e.rec)return;
     var coll=M[e.type];if(!coll)return;coll.push(e.rec);added.push(e);
@@ -2689,7 +2701,7 @@ function importReset(){S._importItems=null;S._importEdit=null;S.importStep=1;ren
 
 /* ── CSV template (download → fill in Excel/Sheets → upload) ──
    Reuses the same builder + review screen as the JSON path. */
-var IMPORT_CSV_COLS=['type','name','room','checkin','checkout','inTime','outTime','day','meal','time','park','loc','ride','tier','bookedTime','label','airline','num','depApt','depCity','depTime','depDate','arrApt','arrCity','arrTime','arrDate','conf','status'];
+var IMPORT_CSV_COLS=['type','name','room','checkin','checkout','inTime','outTime','day','meal','time','park','loc','ride','tier','bookedTime','label','airline','num','depApt','depCity','depTime','depDate','arrApt','arrCity','arrTime','arrDate','open','close','early','late','crowd','conf','status'];
 function csvEsc(v){v=(v==null?'':String(v));return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}
 function importCsvTemplate(){
   var rows=[IMPORT_CSV_COLS];
@@ -2796,7 +2808,7 @@ var IMPORT_FIELDS={
   Flight:[['label','Label','text'],['day','Date','date'],['status','Status',['booked','planning']]]
 };
 /* required fields per type (re-checked after an edit) */
-var IMPORT_REQ={Resort:['name'],Dining:['name','day'],'Lightning Lane':['ride','day'],'Park reservation':['park','day'],Show:['name','day'],Flight:['label']};
+var IMPORT_REQ={Resort:['name'],Dining:['name','day'],'Lightning Lane':['ride','day'],'Park reservation':['park','day'],'Park hours':['park','day'],Show:['name','day'],Flight:['label']};
 function importEditOpen(i){
   var e=(S._importItems||[])[i];if(!e||!e.rec)return;
   S._importEdit=i;
