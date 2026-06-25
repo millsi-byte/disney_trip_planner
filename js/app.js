@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='178';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='179';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1791,6 +1791,7 @@ function renderChat(){
   if(!msgs.length) h+='<div class="body-empty" style="margin-top:20px">No messages yet for this trip.</div>';
   for(var i=0;i<msgs.length;i++){
     var m=msgs[i],p=person(m.from),mine=m.from===me;
+    if(!p)p={color:'#94A3B8',name:'?'};   /* sender was deleted — render a placeholder */
     if(m.day&&m.day!==lastDay){lastDay=m.day;h+='<div class="chat-day"><span>'+fmtDay(m.day)+'</span></div>';}
     h+='<div class="msg'+(mine?' me':'')+'">';
     h+='<div class="msg-av" style="background:'+p.color+'">'+p.name[0]+'</div>';
