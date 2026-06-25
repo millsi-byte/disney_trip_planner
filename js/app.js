@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='168';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='169';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -892,6 +892,11 @@ function onCloudSynced(){
        and owners who already have a workspace have inParty()===true). */
     if(window.CLOUD&&window.CLOUD.isOwner&&!window.CLOUD.isSuper&&
        window.CLOUD.inParty&&!window.CLOUD.inParty()){
+      /* Clean slate: clear any leftover local groups/trips (e.g. a legacy
+         "My Group" auto-seeded by older builds, or orphaned data from a deleted
+         tenant) so the owner truly starts fresh and only gets a group when they
+         create one — which creates the cloud tenant. */
+      resetToBlank();
       openScreen({type:'newtrip'});return;
     }
     if(S.screen&&(S.screen.type==='signin'||S.screen.type==='claim'))closeScreen();
