@@ -241,26 +241,28 @@
   };
 
   /* ── email invite index (auto-join by email) ─────────────
-     A tiny lookup so a person you add to your family by email can find and join
-     your workspace on first sign-in — no code to share. The owner publishes one
-     doc per family email (invitesByEmail/<email> → {wid,persona}); the new
-     account reads its OWN email's doc, joins that workspace (adopting its live
-     data), and claims the matching persona. */
+     An email may have invites from MULTIPLE tenants at once (the same person can
+     belong to several groups, with a different persona in each). Stored as a
+     subcollection so each tenant owns one doc and can't stomp another's invite:
+       invitesByEmail/<email>/from/<wid> → {persona, by, at}
+     The signed-in account lists every invite for its own email; for each one
+     it's not already a member of, it self-joins (autoJoinPendingInvite). */
   C.publishInvite=function(email,persona){
     if(!C.user||!C.wid)return Promise.resolve();
     email=emailKey(email); if(!email)return Promise.resolve();
-    return db().doc('invitesByEmail/'+email)
-      .set({wid:C.wid,persona:persona||null,by:C.user.email||null,at:Date.now()})
+    return db().doc('invitesByEmail/'+email+'/from/'+C.wid)
+      .set({persona:persona||null,by:C.user.email||null,at:Date.now()})
       .catch(function(){});
   };
-  /* clear an invite — but only if it still points at OUR workspace, so we never
-     stomp another owner's invite that happens to use the same email */
+  /* clear an invite from OUR tenant for this email. The subcollection model
+     means we only ever touch our own subdoc — no chance of stomping another
+     owner's invite for the same email. */
   C.revokeInvite=function(email){
     if(!C.user)return Promise.resolve();
     email=emailKey(email); if(!email)return Promise.resolve();
     var w=C.adminWid||C.wid;
-    var ref=db().doc('invitesByEmail/'+email);
-    return ref.get().then(function(s){ if(s.exists&&s.data().wid===w)return ref.delete(); }).catch(function(){});
+    if(!w)return Promise.resolve();
+    return db().doc('invitesByEmail/'+email+'/from/'+w).delete().catch(function(){});
   };
   /* owner/super: remove a member from the active workspace so they lose access to
      the shared data. The server rules are the real boundary — this is what
@@ -281,11 +283,22 @@
     return Promise.resolve();
   };
 
-  /* the signed-in account looks up its own email → which workspace to join */
+  /* every invite for the signed-in account's email, across all inviting tenants */
+  C.findInvites=function(){
+    if(!C.user||!C.user.email)return Promise.resolve([]);
+    return db().collection('invitesByEmail/'+emailKey(C.user.email)+'/from').get()
+      .then(function(snap){
+        var arr=[];snap.forEach(function(d){var v=d.data()||{};arr.push({wid:d.id,persona:v.persona||null,by:v.by||null,at:v.at||0});});
+        return arr;
+      }).catch(function(){return [];});
+  };
+  /* one invite (the most recently published) — used by tryEmailInvite for the
+     unauthorized-first-sign-in path where we just pick a tenant to land them in */
   C.findInvite=function(){
-    if(!C.user||!C.user.email)return Promise.resolve(null);
-    return db().doc('invitesByEmail/'+emailKey(C.user.email)).get()
-      .then(function(s){ return s.exists?s.data():null; });
+    return C.findInvites().then(function(arr){
+      arr.sort(function(a,b){return (b.at||0)-(a.at||0);});
+      return arr[0]||null;
+    });
   };
 
   /* ── multi-tenant: list of tenants this user belongs to, with a switcher ─
@@ -326,22 +339,28 @@
      tenant shows up in the switcher next time they open Account. Returns the
      wid if newly joined, null otherwise. */
   C.autoJoinPendingInvite=function(){
-    if(!C.user||!C.findInvite)return Promise.resolve(null);
-    return C.findInvite().then(function(inv){
-      try{console.log('[autoJoin] invite lookup for',C.user.email,'→',inv);}catch(e){}
-      if(!inv||!inv.wid){return {result:'none'};}
-      if(C.wids.indexOf(inv.wid)>=0){return {result:'already',wid:inv.wid};}
-      var wid=inv.wid;
-      try{console.log('[autoJoin] writing membership for',wid);}catch(e){}
-      return db().doc('workspaces/'+wid+'/members/'+C.user.uid)
-        .set({email:C.user.email||null,joinedAt:Date.now()})
-        .then(function(){
-          addToWids(wid);
-          return writeWidsProfile();
-        }).then(function(){
-          try{console.log('[autoJoin] joined and saved',wid,'wids now',C.wids);}catch(e){}
-          return {result:'joined',wid:wid};
+    if(!C.user||!C.findInvites)return Promise.resolve({result:'none'});
+    return C.findInvites().then(function(invites){
+      try{console.log('[autoJoin] invites for',C.user.email,'→',invites,'wids',C.wids);}catch(e){}
+      if(!invites.length)return {result:'none'};
+      /* keep only invites for tenants we're not already a member of */
+      var pending=invites.filter(function(inv){return inv.wid && C.wids.indexOf(inv.wid)<0;});
+      if(!pending.length)return {result:'already',count:invites.length};
+      /* self-join each pending tenant in parallel */
+      var joins=pending.map(function(inv){
+        return db().doc('workspaces/'+inv.wid+'/members/'+C.user.uid)
+          .set({email:C.user.email||null,joinedAt:Date.now()})
+          .then(function(){addToWids(inv.wid);return inv.wid;})
+          .catch(function(e){try{console.warn('[autoJoin] join failed for',inv.wid,':',e&&e.message);}catch(_){}return null;});
+      });
+      return Promise.all(joins).then(function(wids){
+        var joined=wids.filter(Boolean);
+        if(!joined.length)return {result:'error',error:'all joins failed'};
+        return writeWidsProfile().then(function(){
+          try{console.log('[autoJoin] joined',joined,'wids now',C.wids);}catch(e){}
+          return {result:'joined',wids:joined,count:joined.length};
         });
+      });
     }).catch(function(e){
       try{console.warn('[autoJoin] failed:',e&&e.message);}catch(_){}
       return {result:'error',error:e&&e.message};

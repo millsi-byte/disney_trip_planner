@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='186';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='187';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -950,7 +950,7 @@ function onCloudSynced(){
   if(window.CLOUD&&window.CLOUD.autoJoinPendingInvite&&window.CLOUD.authorized&&window.CLOUD.authorized()){
     window.CLOUD.autoJoinPendingInvite().then(function(r){
       if(r&&r.result==='joined'){
-        toast('Added to a new group — switch in Account.');
+        toast('Added to '+(r.count===1?'a new group':r.count+' new groups')+' — switch in Account.');
         if(S.screen&&S.screen.type==='persona'&&typeof renderScreen_inplace2==='function')renderScreen_inplace2();
       }
     });
@@ -3406,8 +3406,8 @@ function cloudCheckInvites(){
   toast('Checking…');
   window.CLOUD.autoJoinPendingInvite().then(function(r){
     if(!r){toast('No invite found');}
-    else if(r.result==='joined')   toast('Added to a new group');
-    else if(r.result==='already')  toast('You\'re already in that group');
+    else if(r.result==='joined')   toast('Added to '+(r.count===1?'a new group':r.count+' new groups'));
+    else if(r.result==='already')  toast('Already in '+(r.count===1?'that group':'all '+r.count+' invited groups'));
     else if(r.result==='none')     toast('No pending invites for '+(window.CLOUD.user&&window.CLOUD.user.email||'this account'));
     else if(r.result==='error')    toast('Lookup failed: '+(r.error||'unknown'));
     /* always re-render so the tenant list reflects the LATEST C.wids — the

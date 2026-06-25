@@ -18,11 +18,12 @@ service cloud.firestore {
       allow write: if isSuper();
     }
 
-    // Email→workspace invite index for auto-join. An owner publishes one doc per
-    // family member they add by email; that person reads their OWN email's doc on
-    // sign-in to discover which workspace to join. Read is restricted to your own
-    // email (or the super-admin) so invites can't be enumerated.
-    match /invitesByEmail/{email} {
+    // Email→workspace invite index for auto-join. The same email can hold
+    // invites from multiple tenants at once (one persona per group), so each
+    // inviting owner writes their own subdoc and nobody can stomp another
+    // owner's invite. The invited account reads its OWN email's full
+    // subcollection on sign-in and self-joins each one it isn't already in.
+    match /invitesByEmail/{email}/from/{wid} {
       allow read: if request.auth != null &&
         (isSuper() || request.auth.token.email.lower() == email);
       allow write: if isOwner();
