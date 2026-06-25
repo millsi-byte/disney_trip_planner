@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='184';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='185';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -948,8 +948,11 @@ function onCloudSynced(){
      currently looking at. The new tenant shows up in the Account → Your groups
      switcher; a toast hints at it. */
   if(window.CLOUD&&window.CLOUD.autoJoinPendingInvite&&window.CLOUD.authorized&&window.CLOUD.authorized()){
-    window.CLOUD.autoJoinPendingInvite().then(function(newWid){
-      if(newWid)toast('Added to a new group — switch in Account.');
+    window.CLOUD.autoJoinPendingInvite().then(function(r){
+      if(r&&r.result==='joined'){
+        toast('Added to a new group — switch in Account.');
+        if(S.screen&&S.screen.type==='persona'&&typeof renderScreen_inplace2==='function')renderScreen_inplace2();
+      }
     });
   }
   /* 1. already linked → straight in */
@@ -3389,9 +3392,31 @@ function cloudSection(){
     h+='<button class="btn-secondary" onclick="cloudCreateAnother()">Create</button>';
   }
   h+='<div class="hub-section-label" style="margin-left:0">Account</div>';
+  h+='<button class="btn-secondary" onclick="cloudCheckInvites()">Check for new group invites</button>';
   h+='<button class="btn-secondary" onclick="cloudRefreshLocal()">Refresh from cloud</button>';
   h+='<button class="btn-secondary" onclick="logoutPersona()">Sign out</button>';
   return h;
+}
+/* manual trigger for autoJoinPendingInvite — useful when an owner just added
+   our email and we don't want to sign out/in to pick it up, or when something
+   went sideways and we want to retry. Surfaces the actual outcome (joined /
+   already in / no invite / error) so the user knows what happened. */
+function cloudCheckInvites(){
+  if(!(window.CLOUD&&window.CLOUD.autoJoinPendingInvite)){toast('Not signed in');return;}
+  toast('Checking…');
+  window.CLOUD.autoJoinPendingInvite().then(function(r){
+    if(!r){toast('No invite found');return;}
+    if(r.result==='joined'){
+      toast('Added to a new group');
+      if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();
+    }else if(r.result==='already'){
+      toast('You\'re already in that group');
+    }else if(r.result==='none'){
+      toast('No pending invites for '+(window.CLOUD.user&&window.CLOUD.user.email||'this account'));
+    }else if(r.result==='error'){
+      toast('Lookup failed: '+(r.error||'unknown'));
+    }
+  });
 }
 /* render the list of tenants the user belongs to into #tenant-list. Each row
    shows the name + a role hint (Active / Owner / Member) and switches to that

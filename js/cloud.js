@@ -328,16 +328,24 @@
   C.autoJoinPendingInvite=function(){
     if(!C.user||!C.findInvite)return Promise.resolve(null);
     return C.findInvite().then(function(inv){
-      if(!inv||!inv.wid)return null;
-      if(C.wids.indexOf(inv.wid)>=0)return null;        /* already in this tenant */
+      try{console.log('[autoJoin] invite lookup for',C.user.email,'→',inv);}catch(e){}
+      if(!inv||!inv.wid){return {result:'none'};}
+      if(C.wids.indexOf(inv.wid)>=0){return {result:'already',wid:inv.wid};}
       var wid=inv.wid;
+      try{console.log('[autoJoin] writing membership for',wid);}catch(e){}
       return db().doc('workspaces/'+wid+'/members/'+C.user.uid)
         .set({email:C.user.email||null,joinedAt:Date.now()})
         .then(function(){
           addToWids(wid);
           return writeWidsProfile();
-        }).then(function(){ return wid; });
-    }).catch(function(){return null;});
+        }).then(function(){
+          try{console.log('[autoJoin] joined and saved',wid,'wids now',C.wids);}catch(e){}
+          return {result:'joined',wid:wid};
+        });
+    }).catch(function(e){
+      try{console.warn('[autoJoin] failed:',e&&e.message);}catch(_){}
+      return {result:'error',error:e&&e.message};
+    });
   };
 
   window.CLOUD=C;
