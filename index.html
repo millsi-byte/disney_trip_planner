@@ -55,7 +55,14 @@
 <script>
 if('serviceWorker' in navigator){
   window.addEventListener('load',function(){
-    navigator.serviceWorker.register('sw.js').catch(function(){});
+    var reg;
+    navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(function(r){
+      reg=r;
+      setInterval(function(){try{r.update();}catch(e){}},60000);
+    }).catch(function(){});
+    navigator.serviceWorker.addEventListener('controllerchange',function(){
+      if(document.visibilityState==='visible')location.reload();
+    });
   });
 }
 </script>

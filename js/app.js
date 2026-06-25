@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='196';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='197';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -796,18 +796,28 @@ function resetLocalData(){
   }
 }
 function forceUpdate(){
-  toast('Updating…');
-  var done=function(){location.reload();};
+  toast('Clearing cache…');
+  var go=function(){
+    window.location.href=window.location.pathname+'?_bust='+Date.now();
+  };
   try{
     var jobs=[];
     if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations){
-      jobs.push(navigator.serviceWorker.getRegistrations().then(function(rs){return Promise.all(rs.map(function(r){return r.unregister();}));}));
+      jobs.push(navigator.serviceWorker.getRegistrations().then(function(rs){
+        return Promise.all(rs.map(function(r){return r.unregister();}));
+      }));
     }
     if(window.caches&&caches.keys){
-      jobs.push(caches.keys().then(function(ks){return Promise.all(ks.map(function(k){return caches.delete(k);}));}));
+      jobs.push(caches.keys().then(function(ks){
+        return Promise.all(ks.map(function(k){return caches.delete(k);}));
+      }));
     }
-    Promise.all(jobs).then(done,done);
-  }catch(e){done();}
+    Promise.all(jobs).then(function(){
+      setTimeout(go,300);
+    },function(){
+      setTimeout(go,300);
+    });
+  }catch(e){setTimeout(go,300);}
 }
 
 /* re-render whatever surface the filter affects */
