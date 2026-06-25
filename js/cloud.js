@@ -302,7 +302,21 @@
     }).catch(function(){ C.wid=null; })
       .then(function(){
         if(!C.wid){C.partyName=null;return;}
-        return db().doc('workspaces/'+C.wid).get().then(function(w){C.partyName=(w.exists&&w.data().name)||null;}).catch(function(){});
+        var wid=C.wid;
+        return db().doc('workspaces/'+wid).get().then(function(w){
+          if(w.exists){C.partyName=w.data().name||null;return;}
+          /* Self-heal a dangling pointer. profile.wid references a workspace that
+             no longer exists on the server — its tenant was deleted, or an
+             earlier create never actually committed. Without this, inParty() stays
+             true forever, the app shows "In <group>" instead of "Start a Group",
+             and the account can never create a real (server-visible) workspace —
+             so it never appears as a tenant in the super-admin console. Clear the
+             pointer (local + profile) so the account drops back to its personal
+             space and can start a fresh group. Only do this on a definitive
+             "does not exist"; a failed read leaves wid untouched (fail safe). */
+          C.partyName=null; setLocalWid(null);
+          return profileRef().set({wid:null},{merge:true}).catch(function(){});
+        }).catch(function(){});
       })
       .then(function(){
         /* Re-verify access on EVERY sign-in (not just the first link), so that
