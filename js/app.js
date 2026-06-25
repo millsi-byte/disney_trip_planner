@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='204';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='205';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -539,6 +539,7 @@ function notifLabel(cat,it){
   if(cat==='Dining')return it.name||'a dining reservation';
   if(cat==='Lightning Lane')return it.ride||'a Lightning Lane';
   if(cat==='Park reservation')return (it.park&&PARKS[it.park]?PARKS[it.park].name:'a park')+' reservation';
+  if(cat==='Re-book')return it.text||'a re-book';
   if(cat==='Show')return it.name||'a show';
   if(cat==='Flight')return it.label||'a flight';
   if(cat==='Resort')return it.name||'a resort stay';
@@ -2525,8 +2526,10 @@ function importPromptText(){
 '',
 '• resort:    {"type":"resort","name":"","room":"","checkin":"","checkout":"","inTime":"4:00 PM","outTime":"11:00 AM","conf":"","status":"booked"}',
 '• dining:    {"type":"dining","name":"","day":"","meal":"Breakfast|Lunch|Dinner|Drinks","time":"7:40 PM","park":"mk|ep|hs|ak (omit if not in a park)","loc":"in|off","conf":"","status":"reserved|want|planned"}',
-'• lightning: {"type":"lightning","ride":"","day":"","park":"mk|ep|hs|ak","tier":"sp|mp1|mp2","status":"booked|planning","bookedTime":"9:45 AM","conf":""}',
-'   (tier: sp = Single/Individual Lightning Lane, mp1 = Multi Pass tier 1, mp2 = Multi Pass tier 2)',
+'• lightning: {"type":"lightning","ride":"","day":"","park":"mk|ep|hs|ak","tier":"sp|mp1|mp2","status":"booked|planning","bookedTime":"9:45 AM","window":"10:00–10:30","conf":""}',
+'   (tier: sp = Single/Individual Lightning Lane, mp1 = Multi Pass tier 1, mp2 = Multi Pass tier 2; window = the ride-time window if given)',
+'• rebook:    {"type":"rebook","day":"","afterRide":"Jungle Cruise","text":"Buzz Lightyear"}',
+'   (a ROLLING re-book: after you tap into the Multi Pass ride named in afterRide, book what is in text. afterRide MUST exactly match the "ride" of a lightning item above on the SAME day so they link up. List them in tap order. Omit afterRide for a standalone reminder. This is the "in-park rolling re-books — book each right after you tap the prior one" pattern.)',
 '• parkres:   {"type":"parkres","day":"","park":"mk|ep|hs|ak","status":"booked|planning"}',
 '• parkhours: {"type":"parkhours","day":"","park":"mk|ep|hs|ak","open":"9:00 AM","close":"10:00 PM","early":"8:30 AM","late":"11:00 PM","crowd":5}',
 '   (early = Early Theme Park Entry start time for eligible resort guests; late = Extended Evening Hours / late close time — OMIT early and/or late if that park has none that day; crowd = expected crowd level 1-10, omit if unknown. One parkhours item per park per day.)',
@@ -2582,6 +2585,7 @@ function importSummary(type,rec){
   if(type==='Lightning Lane')return rec.ride+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'')+' · '+tagShort(rec.tier);
   if(type==='Park reservation')return (IMPORT_PARKS[rec.park]||'?')+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'');
   if(type==='Park hours'){var hrs=rec.open?rec.open+(rec.close?'–'+rec.close:''):'';var ex=[];if(rec.early)ex.push('EE '+rec.early);if(rec.late)ex.push('Late '+rec.late);return (IMPORT_PARKS[rec.park]||'?')+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'')+(hrs?' · '+hrs:'')+(ex.length?' · '+ex.join(' · '):'');}
+  if(type==='Re-book')return (rec.afterRide?'After '+rec.afterRide+' → ':'')+(rec.text||'')+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'');
   if(type==='Show')return rec.name+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'')+(rec.time?' · '+rec.time:'');
   if(type==='Flight'){var f=(rec.legs&&rec.legs[0])||{},l=(rec.legs&&rec.legs[rec.legs.length-1])||{};return rec.label+' · '+(f.depApt||'?')+' → '+(l.arrApt||'?')+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'');}
   return '';
@@ -2625,6 +2629,13 @@ function buildImportItem(it){
     return finalizeImport('Park hours',{id:impId('h'),trip:tid,park:impPark(it.park),day:impDate(it.day),
       open:it.open||'',close:it.close||'',early:it.early||'',late:it.late||'',
       crowd:(crowd>=1&&crowd<=10)?crowd:null});
+  }
+  if(t==='rebook'||t==='rolling'||t==='rollingrebook'||t==='re-book'){
+    /* `after` (an LL id) is resolved from afterRide at SAVE time, once every
+       Lightning Lane in the batch has its generated id — we match by ride name
+       + day there. who:'all' so the roll shows for everyone in the Day Plan. */
+    return finalizeImport('Re-book',base({day:impDate(it.day),text:it.text?String(it.text):'',
+      after:'',afterRide:(it.afterRide||it.after||'')+''}));
   }
   if(t==='show'){
     return finalizeImport('Show',base({name:it.name?String(it.name):'',day:impDate(it.day),time:it.time||'',status:it.status||'attend'}));
@@ -2672,7 +2683,20 @@ function importParse(){
 /* commit the valid items into their collections */
 function importSave(){
   var items=S._importItems||[],added=[];
-  var M={'Resort':RESORTS,'Dining':DINING,'Lightning Lane':LLS,'Park reservation':PARKRES,'Park hours':PARKHOURS,'Show':SHOWS,'Flight':FLIGHTS};
+  var M={'Resort':RESORTS,'Dining':DINING,'Lightning Lane':LLS,'Park reservation':PARKRES,'Park hours':PARKHOURS,'Re-book':REBOOKS,'Show':SHOWS,'Flight':FLIGHTS};
+  /* resolve rolling re-books: link rec.after (an LL id) to the Lightning Lane
+     matching afterRide + day. Index the batch's LLs (already carry ids) plus any
+     already saved, so a re-book can follow a ride imported in the same paste. */
+  var llKey=function(day,ride){return (day||'')+'|'+(ride||'').trim().toLowerCase();};
+  var llIndex={};
+  LLS.forEach(function(l){if(l.ride)llIndex[llKey(l.day,l.ride)]=l.id;});
+  items.forEach(function(e){if(!e.error&&!e._removed&&e.type==='Lightning Lane'&&e.rec&&e.rec.ride)llIndex[llKey(e.rec.day,e.rec.ride)]=e.rec.id;});
+  items.forEach(function(e){
+    if(e.type==='Re-book'&&e.rec){
+      if(e.rec.afterRide){var aid=llIndex[llKey(e.rec.day,e.rec.afterRide)];if(aid)e.rec.after=aid;}
+      delete e.rec.afterRide;   /* helper field — not part of the stored record */
+    }
+  });
   items.forEach(function(e){
     if(e.error||e._removed||!e.rec)return;
     var coll=M[e.type];if(!coll)return;coll.push(e.rec);added.push(e);
@@ -2701,7 +2725,7 @@ function importReset(){S._importItems=null;S._importEdit=null;S.importStep=1;ren
 
 /* ── CSV template (download → fill in Excel/Sheets → upload) ──
    Reuses the same builder + review screen as the JSON path. */
-var IMPORT_CSV_COLS=['type','name','room','checkin','checkout','inTime','outTime','day','meal','time','park','loc','ride','tier','bookedTime','label','airline','num','depApt','depCity','depTime','depDate','arrApt','arrCity','arrTime','arrDate','open','close','early','late','crowd','conf','status'];
+var IMPORT_CSV_COLS=['type','name','room','checkin','checkout','inTime','outTime','day','meal','time','park','loc','ride','tier','bookedTime','window','afterRide','text','label','airline','num','depApt','depCity','depTime','depDate','arrApt','arrCity','arrTime','arrDate','open','close','early','late','crowd','conf','status'];
 function csvEsc(v){v=(v==null?'':String(v));return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}
 function importCsvTemplate(){
   var rows=[IMPORT_CSV_COLS];
@@ -2808,7 +2832,7 @@ var IMPORT_FIELDS={
   Flight:[['label','Label','text'],['day','Date','date'],['status','Status',['booked','planning']]]
 };
 /* required fields per type (re-checked after an edit) */
-var IMPORT_REQ={Resort:['name'],Dining:['name','day'],'Lightning Lane':['ride','day'],'Park reservation':['park','day'],'Park hours':['park','day'],Show:['name','day'],Flight:['label']};
+var IMPORT_REQ={Resort:['name'],Dining:['name','day'],'Lightning Lane':['ride','day'],'Park reservation':['park','day'],'Park hours':['park','day'],'Re-book':['text','day'],Show:['name','day'],Flight:['label']};
 function importEditOpen(i){
   var e=(S._importItems||[])[i];if(!e||!e.rec)return;
   S._importEdit=i;
