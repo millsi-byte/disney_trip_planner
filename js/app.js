@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='183';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='184';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -942,6 +942,16 @@ function onCloudSynced(){
   }
   /* keep the email→workspace index current so future members can auto-join */
   publishAllInvites();
+  /* An authorized user can be invited to additional tenants (someone added their
+     email to a different group). Silently add the new tenant to their list — DO
+     NOT switch active, so they don't get bounced out of whatever they're
+     currently looking at. The new tenant shows up in the Account → Your groups
+     switcher; a toast hints at it. */
+  if(window.CLOUD&&window.CLOUD.autoJoinPendingInvite&&window.CLOUD.authorized&&window.CLOUD.authorized()){
+    window.CLOUD.autoJoinPendingInvite().then(function(newWid){
+      if(newWid)toast('Added to a new group — switch in Account.');
+    });
+  }
   /* 1. already linked → straight in */
   var mine=personaForUid(uid);
   if(mine){
@@ -3342,14 +3352,24 @@ function emailInviteAll(ids){
   var bd=encodeURIComponent('Hi,\n\nI\'m planning our trip on Baseline Tap. Tap this link, sign in, and pick your name to join:\n\n'+url+'\n');
   location.href='mailto:?bcc='+encodeURIComponent(emails.join(','))+'&subject='+subj+'&body='+bd;
 }
-/* ── Planning Party management (shown on the Account screen) ─ */
+/* ── Tenant management (shown on the Account screen) ─
+   A user can belong to more than one tenant: their own (as admin) plus any
+   tenant whose owner added them by email. The list comes from CLOUD.wids; the
+   active one is CLOUD.wid. Tapping a non-active row in the switcher flips the
+   active tenant and adopts its data. Authorized owners get a "Start another
+   group" affordance below the list so they can spin up their own even while
+   contributing to someone else's. */
 function cloudSection(){
   if(!(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user))return '';
   var st=window.CLOUD.synced?'<span style="color:#16A34A;font-weight:600">syncing</span>':'connecting…';
   var h='<div class="hub-section-label" style="margin-left:0">Sync</div>';
   h+='<div class="body-empty" style="text-align:left;padding:0 2px 10px;font-size:13px">Signed in as <strong>'+esc(window.CLOUD.user.email||window.CLOUD.user.uid)+'</strong> · '+st+'.</div>';
-  if(window.CLOUD.inParty&&window.CLOUD.inParty()){
-    h+='<div class="body-empty" style="text-align:left;padding:0 2px 10px;font-size:13px">In <strong>'+esc(partyLabel())+'</strong>.'+(isAdmin()?' Manage it in <strong>Admin → Groups</strong>.':'')+'</div>';
+  var wids=(window.CLOUD.wids||[]);
+  if(wids.length){
+    h+='<div class="hub-section-label" style="margin-left:0">Your groups</div>';
+    h+='<div id="tenant-list"><div class="body-empty" style="text-align:left;padding:0 2px 4px;font-size:12px">Loading…</div></div>';
+    /* populate the list async (one workspace read per wid) */
+    setTimeout(loadTenantList,0);
   }else{
     h+='<div class="hub-section-label" style="margin-left:0">Group</div>';
     h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:13px">Name your group, then start it — others can join with a code.</div>';
@@ -3359,10 +3379,63 @@ function cloudSection(){
     h+='<button class="btn-secondary" onclick="cloudJoinParty(\'cloud-join\')">Join with a code</button>';
     h+='<div class="field" style="margin-top:6px"><input class="field-input" id="cloud-join" placeholder="Enter an invite code" style="text-transform:uppercase"></div>';
   }
+  /* an authorized owner can always create a brand-new tenant — even while
+     they're a contributor to someone else's. The new one is added to wids and
+     becomes active automatically. */
+  if(wids.length && window.CLOUD.isOwner){
+    h+='<div class="hub-section-label" style="margin-left:0">Start another group</div>';
+    h+='<div class="body-empty" style="text-align:left;padding:0 2px 6px;font-size:13px">Create a separate group you own. You\'ll switch into it once it\'s ready.</div>';
+    h+='<div class="field"><input class="field-input" id="party-name-new" placeholder="Group name"></div>';
+    h+='<button class="btn-secondary" onclick="cloudCreateAnother()">Create</button>';
+  }
   h+='<div class="hub-section-label" style="margin-left:0">Account</div>';
   h+='<button class="btn-secondary" onclick="cloudRefreshLocal()">Refresh from cloud</button>';
   h+='<button class="btn-secondary" onclick="logoutPersona()">Sign out</button>';
   return h;
+}
+/* render the list of tenants the user belongs to into #tenant-list. Each row
+   shows the name + a role hint (Active / Owner / Member) and switches to that
+   tenant on tap. */
+function loadTenantList(){
+  if(!(window.CLOUD&&window.CLOUD.listMyTenants))return;
+  window.CLOUD.listMyTenants().then(function(list){
+    var el=document.getElementById('tenant-list');if(!el)return;
+    if(!list.length){el.innerHTML='<div class="body-empty" style="text-align:left;padding:0 2px 4px;font-size:12px">No groups yet.</div>';return;}
+    var html='';
+    for(var i=0;i<list.length;i++){var t=list[i];
+      var role=t.isActive?'Active · ':'';
+      role+=t.isOwner?'You own this':'Member';
+      var clickAttr=t.isActive?'':'onclick="cloudSwitchTenant(\''+esc(t.wid)+'\')"';
+      html+='<button class="hub-row" '+clickAttr+' style="text-align:left;'+(t.isActive?'background:#F0F9FF;':'')+'">'
+        +'<div class="hub-main"><div class="hub-title">'+esc(t.name)+'</div>'
+        +'<div class="hub-sub">'+esc(role)+'</div></div></button>';
+    }
+    el.innerHTML=html;
+  }).catch(function(){
+    var el=document.getElementById('tenant-list');if(el)el.innerHTML='<div class="body-empty" style="text-align:left;padding:0 2px 4px;font-size:12px;color:#B91C1C">Could not load groups.</div>';
+  });
+}
+/* switch the active tenant. Reloads after the adopt so the app re-inits from
+   the new tenant's data cleanly (avoids in-memory leak across tenants). */
+function cloudSwitchTenant(wid){
+  if(!(window.CLOUD&&window.CLOUD.switchTenant))return;
+  if(!confirm('Switch to a different group? Your view will change.'))return;
+  toast('Switching…');
+  window.CLOUD.switchTenant(wid).then(function(){
+    try{location.reload();}catch(e){if(typeof render==='function')render();}
+  }).catch(function(e){toast(e.message||'Could not switch');});
+}
+/* authorized owner: create another tenant alongside any they already belong to */
+function cloudCreateAnother(){
+  var nm=val('party-name-new');if(!nm){toast('Enter a name');return;}
+  if(!(window.CLOUD&&window.CLOUD.createParty))return;
+  toast('Creating…');
+  window.CLOUD.createParty(nm).then(function(){
+    publishAllInvites();
+    /* the new tenant is now active; reload so the app re-inits onto it
+       cleanly (fresh seed + wizard for the empty workspace). */
+    try{location.reload();}catch(e){if(typeof render==='function')render();}
+  }).catch(function(e){toast(e.message||'Could not create');});
 }
 /* manual hard re-pull — discards any in-memory drift and re-syncs from scratch */
 function cloudRefreshLocal(){

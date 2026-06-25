@@ -26,7 +26,7 @@
      long-polling when WebChannel is blocked. Must run before any other
      Firestore call. */
   try{ firebase.firestore().settings({experimentalAutoDetectLongPolling:true,merge:true}); }catch(e){}
-  var C={enabled:true,user:null,ready:false,synced:false,applyingRemote:false,wid:null,partyName:null,isSuper:false,isOwner:false,isMember:false,authUncertain:true,adminWid:null};
+  var C={enabled:true,user:null,ready:false,synced:false,applyingRemote:false,wid:null,wids:[],partyName:null,isSuper:false,isOwner:false,isMember:false,authUncertain:true,adminWid:null};
   var SUPER_EMAIL='millsi@gmail.com';   /* the one account that authorizes everyone else */
   function emailKey(e){return (e||'').trim().toLowerCase();}
 
@@ -96,6 +96,15 @@
     C.applyingRemote=false;
   }
   function setLocalWid(w){C.wid=w||null;try{w?localStorage.setItem('dtp_wid',w):localStorage.removeItem('dtp_wid');}catch(e){}}
+  /* keep both fields in sync: wids = every tenant this user belongs to, wid =
+     the one they're actively looking at. Helpers update both with one write. */
+  function addToWids(w){if(!w)return;if(C.wids.indexOf(w)<0)C.wids.push(w);}
+  function removeFromWids(w){C.wids=C.wids.filter(function(x){return x!==w;});}
+  function writeWidsProfile(extra){
+    var p={wid:C.wid,wids:C.wids.slice()};
+    if(extra)Object.keys(extra).forEach(function(k){p[k]=extra[k];});
+    return profileRef().set(p,{merge:true}).catch(function(){});
+  }
   function newCode(){return (Math.random().toString(36).slice(2,6)+Math.random().toString(36).slice(2,6)).toUpperCase();}
 
   /* mirror a single local save up to the active target (no-op until reconciled) */
@@ -168,13 +177,13 @@
      sign-in by startSync so revoked users are locked out next time. */
   C.authorized=function(){return !!(C.isSuper||C.isOwner||C.isMember);};
 
-  /* create a party from your current data and switch onto it */
+  /* create a NEW tenant and switch onto it. An authorized owner may have more
+     than one (e.g. they own their own AND contribute to someone else's); each
+     create adds a new entry to wids and flips the active wid to the new one.
+     The dedupe guard remains for fast double-taps. */
+  C._creating=null;
   C.createParty=function(name){
     if(!C.user)return Promise.reject(new Error('Sign in first'));
-    /* never create a second tenant for an account that already has one. The UI
-       gates on inParty(), but a fast double-tap or a race before profile.wid is
-       written could otherwise spawn duplicate (empty) tenants. */
-    if(C.wid)return Promise.reject(new Error('You already have a group'));
     if(C._creating)return C._creating;
     var wid=newCode(), nm=(name||'My Group');
     /* the tenant's stable label = the owner's display name (not the party name) */
@@ -184,7 +193,7 @@
     var wref=db().doc('workspaces/'+wid);
     C._creating = wref.set({name:nm,tenantName:tn,by:C.user.uid,byEmail:C.user.email||null,createdAt:Date.now()})
       .then(function(){ return wref.collection('members').doc(C.user.uid).set({email:C.user.email||null,joinedAt:Date.now()}); })
-      .then(function(){ C.isMember=true; setLocalWid(wid); C.partyName=nm; return profileRef().set({wid:wid},{merge:true}); })
+      .then(function(){ C.isMember=true; setLocalWid(wid); C.partyName=nm; addToWids(wid); return writeWidsProfile(); })
       .then(function(){ return reconcile('merge'); })   /* push your data up into the new party */
       .then(function(){ C._creating=null; return wid; }, function(e){ C._creating=null; throw e; });
     return C._creating;
@@ -200,7 +209,7 @@
       if(!s.exists)throw new Error('No group with that code');
       C.partyName=s.data().name||null;
       return wref.collection('members').doc(C.user.uid).set({email:C.user.email||null,joinedAt:Date.now()});
-    }).then(function(){ C.isMember=true; setLocalWid(code); return profileRef().set({wid:code},{merge:true}); })
+    }).then(function(){ C.isMember=true; setLocalWid(code); addToWids(code); return writeWidsProfile(); })
       .then(function(){ return reconcile('adopt'); })   /* take on the party's data */
       .then(function(){ return code; });
   };
@@ -212,13 +221,23 @@
     return db().doc('workspaces/'+C.wid).set({name:name},{merge:true}).then(function(){ C.partyName=name; return name; });
   };
 
-  /* leave the party; your device returns to your personal copy */
+  /* leave the active tenant. Removes the membership, drops it from wids, and
+     auto-switches to another tenant in the list (or to no tenant if it was the
+     last one — in which case the device returns to its personal copy). */
   C.leaveParty=function(){
     if(!C.user||!C.wid)return Promise.resolve();
     var wid=C.wid;
     return db().doc('workspaces/'+wid).collection('members').doc(C.user.uid).delete().catch(function(){})
-      .then(function(){ setLocalWid(null); C.partyName=null; return profileRef().set({wid:null},{merge:true}); })
-      .then(function(){ return reconcile('adopt'); });   /* re-adopt personal space */
+      .then(function(){
+        removeFromWids(wid);
+        var next=C.wids[0]||null;
+        setLocalWid(next); C.partyName=null;
+        return writeWidsProfile();
+      })
+      .then(function(){
+        if(C.wid)return db().doc('workspaces/'+C.wid).get().then(function(s){if(s.exists)C.partyName=s.data().name||null;}).catch(function(){});
+      })
+      .then(function(){ return reconcile('adopt'); });
   };
 
   /* ── email invite index (auto-join by email) ─────────────
@@ -269,6 +288,58 @@
       .then(function(s){ return s.exists?s.data():null; });
   };
 
+  /* ── multi-tenant: list of tenants this user belongs to, with a switcher ─
+     Each entry comes back with the wid, current display name, an active flag,
+     and whether the user owns it (they're the creator). Used by the account
+     screen to render the tenant list and the switch buttons. */
+  C.listMyTenants=function(){
+    if(!C.user||!C.wids||!C.wids.length)return Promise.resolve([]);
+    var active=C.wid;
+    return Promise.all(C.wids.map(function(w){
+      return db().doc('workspaces/'+w).get().then(function(s){
+        var d=(s.exists&&s.data())||{};
+        return {wid:w,name:d.name||'(unnamed)',by:d.by||null,isActive:w===active,isOwner:d.by===C.user.uid};
+      }).catch(function(){return {wid:w,name:'(unknown)',isActive:w===active,isOwner:false};});
+    }));
+  };
+
+  /* switch the active tenant — flip wid + adopt that tenant's data locally */
+  C.switchTenant=function(wid){
+    if(!C.user)return Promise.reject(new Error('Sign in first'));
+    if(!wid||C.wids.indexOf(wid)<0)return Promise.reject(new Error('Not a member of that group'));
+    if(wid===C.wid)return Promise.resolve();
+    stopListener();
+    setLocalWid(wid); C.partyName=null;
+    return db().doc('workspaces/'+wid).get().then(function(s){
+      if(s.exists)C.partyName=s.data().name||null;
+      return writeWidsProfile();
+    }).then(function(){
+      return db().doc('workspaces/'+wid+'/members/'+C.user.uid).get().then(function(m){
+        C.isMember=m.exists;
+      }).catch(function(){});
+    }).then(function(){ return reconcile('adopt'); });
+  };
+
+  /* silently auto-join a pending email invite (for an authorized owner who's
+     already in their own tenant). Adds the new tenant to wids but does NOT
+     switch active — they keep seeing whatever they were on, and the new
+     tenant shows up in the switcher next time they open Account. Returns the
+     wid if newly joined, null otherwise. */
+  C.autoJoinPendingInvite=function(){
+    if(!C.user||!C.findInvite)return Promise.resolve(null);
+    return C.findInvite().then(function(inv){
+      if(!inv||!inv.wid)return null;
+      if(C.wids.indexOf(inv.wid)>=0)return null;        /* already in this tenant */
+      var wid=inv.wid;
+      return db().doc('workspaces/'+wid+'/members/'+C.user.uid)
+        .set({email:C.user.email||null,joinedAt:Date.now()})
+        .then(function(){
+          addToWids(wid);
+          return writeWidsProfile();
+        }).then(function(){ return wid; });
+    }).catch(function(){return null;});
+  };
+
   window.CLOUD=C;
 
   /* Detach this account from any workspace and stop impersonating, returning it
@@ -282,7 +353,11 @@
     C.adminWid=null; try{localStorage.removeItem('dtp_adminWid');}catch(e){}
     setLocalWid(null); C.partyName=null;
     if(!C.user)return Promise.resolve();
-    return profileRef().set({wid:null},{merge:true}).catch(function(){});
+    /* clear the wids list too — startFresh is the "demo-seed owner, no real
+       data" reset, so there's nothing meaningful to preserve in the tenant
+       list either. */
+    C.wids=[];
+    return writeWidsProfile();
   };
 
   /* ── access control (invite-only) ──────────────────────── */
@@ -368,69 +443,89 @@
        fresh from the cloud. Same account again → no wipe, normal device sync. */
     try{
       var lastUid=localStorage.getItem('dtp__lastuid');
-      if(C.user&&lastUid&&lastUid!==C.user.uid){ wipeLocalState(); C.adminWid=null; C.wid=null; C.partyName=null; }
+      if(C.user&&lastUid&&lastUid!==C.user.uid){ wipeLocalState(); C.adminWid=null; C.wid=null; C.wids=[]; C.partyName=null; }
       if(C.user)localStorage.setItem('dtp__lastuid',C.user.uid);
     }catch(e){}
+    /* read both fields: wid = the user's ACTIVE tenant, wids = every tenant
+       they belong to. Existing profiles only have wid — backfill wids from it
+       so old accounts work without a migration step. */
     return profileRef().get().then(function(s){
-      C.wid=(s.exists&&s.data().wid)||null;
+      var d=(s.exists&&s.data())||{};
+      C.wid=d.wid||null;
+      C.wids=Array.isArray(d.wids)?d.wids.slice():(d.wid?[d.wid]:[]);
+      /* If the active wid isn't in the list (legacy profile or write race), add
+         it so the membership/eviction checks below process it. */
+      if(C.wid&&C.wids.indexOf(C.wid)<0)C.wids.push(C.wid);
       setLocalWid(C.wid);
-    }).catch(function(){ C.wid=null; })
+    }).catch(function(){ C.wid=null; C.wids=[]; })
       .then(function(){
-        if(!C.wid){C.partyName=null;return;}
-        var wid=C.wid;
-        return db().doc('workspaces/'+wid).get().then(function(w){
-          if(w.exists){C.partyName=w.data().name||null;return;}
-          /* Self-heal a dangling pointer. profile.wid references a workspace that
-             no longer exists on the server — its tenant was deleted, or an
-             earlier create never actually committed. Without this, inParty() stays
-             true forever, the app shows "In <group>" instead of "Start a Group",
-             and the account can never create a real (server-visible) workspace —
-             so it never appears as a tenant in the super-admin console. Clear the
-             pointer (local + profile) so the account drops back to its personal
-             space and can start a fresh group. Only do this on a definitive
-             "does not exist"; a failed read leaves wid untouched (fail safe). */
-          C.partyName=null; setLocalWid(null);
-          return profileRef().set({wid:null},{merge:true}).catch(function(){});
-        }).catch(function(){});
-      })
-      .then(function(){
-        /* Re-verify access on EVERY sign-in (not just the first link), so that
-           removing someone from the Authorized Users list — or deleting their
-           tenant — locks them out next time. Authorized = super-admin, an
-           allowlisted owner, OR a current member of their active workspace.
-           authUncertain stays true if any required read fails (offline/blocked
-           transport) so a network hiccup can never wrongly lock out a legit
-           user — the server-side Firestore rules remain the real data boundary. */
-        C.isSuper=C.isSuperAdmin();
-        C.isOwner=false; C.isMember=false; C.authUncertain=true;
-        if(C.isSuper){C.isOwner=true;C.authUncertain=false;return;}
-        /* Always check membership when wid is set — even for allowlisted owners.
-           If they were evicted from the tenant they used to be in, the workspace
-           data read will fail server-side (rules block non-members), but
-           authorized() would still be true because of the allowlist — so the
-           app would happily show stale local cached data without the user (or
-           the owner who removed them) realising. Membership tells us the truth. */
-        var jobs=[];
-        jobs.push(db().doc('owners/'+emailKey(C.user.email)).get().then(function(d){C.isOwner=d.exists;}));
-        if(C.wid)jobs.push(db().doc('workspaces/'+C.wid+'/members/'+C.user.uid).get().then(function(m){C.isMember=m.exists;}));
-        return Promise.all(jobs).then(function(){C.authUncertain=false;});
-      })
-      .then(function(){
-        /* Eviction heal. We have a wid pointing at a tenant we're no longer a
-           member of (and we're not super, who bypasses membership). The owner
-           removed our persona — and with it, our workspace membership. Clear
-           the pointer, wipe the stale local cache of THAT tenant's data, then
-           force a clean reload so app init re-routes us from scratch (an
-           allowlisted owner with no wid → setup wizard). Without this, the
-           evicted device keeps showing the tenant's trips from cache forever,
-           letting the user "make changes" that the server rules silently drop. */
-        if(C.wid && !C.isMember && !C.isSuper){
-          wipeLocalState();
-          setLocalWid(null); C.partyName=null;
-          return profileRef().set({wid:null},{merge:true}).catch(function(){}).then(function(){
-            try{location.reload();}catch(e){}
+        /* Validate every wid in the user's tenant list. Two kinds of garbage to
+           clean up here: workspaces that no longer exist on the server (tenant
+           was deleted), and workspaces we used to be a member of but the owner
+           has since evicted us from. Both get pruned. The active wid is recorded
+           as evicted/missing so the next step can flip to a still-valid tenant
+           (or to no tenant) without showing stale data. */
+        if(!C.wids.length){C.partyName=null;return;}
+        var info={};
+        var checks=C.wids.map(function(w){
+          return Promise.all([
+            db().doc('workspaces/'+w).get().catch(function(){return null;}),
+            (C.isSuperAdmin&&C.isSuperAdmin())
+              ? Promise.resolve({exists:true})
+              : db().doc('workspaces/'+w+'/members/'+C.user.uid).get().catch(function(){return null;})
+          ]).then(function(rs){
+            var ws=rs[0], mem=rs[1];
+            info[w]={
+              exists: ws ? ws.exists : true,        /* on read error, fail-safe = keep */
+              isMember: mem ? mem.exists : true,    /* on read error, fail-safe = keep */
+              name: (ws&&ws.exists)?(ws.data().name||null):null
+            };
           });
-        }
+        });
+        return Promise.all(checks).then(function(){
+          var validWids=C.wids.filter(function(w){return info[w].exists && info[w].isMember;});
+          if(C.wid && info[C.wid] && info[C.wid].exists && info[C.wid].isMember){
+            C.partyName=info[C.wid].name;
+          }else{
+            C.partyName=null;
+          }
+          if(validWids.length===C.wids.length)return;
+          /* prune evicted/missing tenants from the list */
+          var lostActive=!!C.wid && validWids.indexOf(C.wid)<0;
+          C.wids=validWids;
+          if(lostActive){
+            /* Active tenant got pulled out from under us. Switch to whichever is
+               left (deterministic — first remaining), or to no tenant. Wipe
+               local synced state because the in-memory copy is the OLD tenant's
+               data — without this it would push into whatever space we land on
+               next and bleed across tenants. */
+            wipeLocalState();
+            var next=C.wids[0]||null;
+            setLocalWid(next); C.partyName=null;
+            if(next && info[next]) C.partyName=info[next].name;
+          }
+          return writeWidsProfile().then(function(){
+            /* If the active wid was lost and there's no replacement, reload so
+               the app re-inits cleanly into its "no tenant" routing (an
+               allowlisted owner → setup wizard, an unauthorized user → noaccess). */
+            if(lostActive && !C.wid){try{location.reload();}catch(e){}}
+          });
+        });
+      })
+      .then(function(){
+        /* Authorization on EVERY sign-in. authorized = super-admin, allowlisted
+           owner, or current member of the active tenant. isMember is derived
+           from the validation pass above (set true if the active wid survived
+           the prune). authUncertain stays true on any read failure — a network
+           hiccup must not lock out a legit user; the server rules are the real
+           data boundary. */
+        C.isSuper=C.isSuperAdmin();
+        C.isOwner=false; C.authUncertain=true;
+        C.isMember = !!C.wid;                /* surviving wid implies membership */
+        if(C.isSuper){C.isOwner=true;C.authUncertain=false;return;}
+        return db().doc('owners/'+emailKey(C.user.email)).get().then(function(d){
+          C.isOwner=d.exists; C.authUncertain=false;
+        }).catch(function(){C.authUncertain=true;});
       })
       .then(function(){
         /* crash-safety: if we force-quit mid-impersonation, dtp_adminWid is set.
