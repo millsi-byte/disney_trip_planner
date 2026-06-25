@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='177';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='178';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -260,8 +260,9 @@ function rehydrate(){
 function revalidateAfterSync(){
   if(!(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user))return false;
   if(window.CLOUD.adminWid||window.CLOUD.isSuper)return false;
+  if(!S._seated)return false;                 /* never settled on a seat — mid-join/adopt, don't evict */
   if(!(window.CLOUD.inParty&&window.CLOUD.inParty()))return false;
-  if(!S.persona)return false;                 /* not claimed yet (mid-join) */
+  if(!S.persona)return false;
   if(person(S.persona))return false;          /* our seat still exists */
   if(personaForUid(cloudUid()))return false;  /* re-linked to another seat */
   try{ if(window.CLOUD.leaveParty)window.CLOUD.leaveParty(); }catch(e){}
@@ -930,7 +931,7 @@ function onCloudSynced(){
   /* 1. already linked → straight in */
   var mine=personaForUid(uid);
   if(mine){
-    S.persona=mine.id;save('dtp_persona',mine.id);
+    S.persona=mine.id;save('dtp_persona',mine.id);S._seated=true;
     ensureActiveParty();ensureVisibleTrip();
     /* An authorized owner with a linked persona but NO cloud workspace (e.g.
        their tenant was deleted, or they were just re-added to the allowlist)
@@ -1033,12 +1034,13 @@ function syncPersonInvite(p,oldEmail){
    server rules block all shared data. They can sign out from the gate. */
 function revokeAccess(){
   try{localStorage.removeItem('dtp_persona');}catch(e){}
-  S.persona=null;
+  S.persona=null;S._seated=false;
   openScreen({type:'noaccess'});
 }
 /* called by cloud.js when there\'s no signed-in cloud user */
 function onCloudSignedOut(){
   try{localStorage.removeItem('dtp_persona');}catch(e){}
+  S._seated=false;
   openScreen({type:'signin'});   /* the gate covers the app until they sign in again */
 }
 /* bind the signed-in cloud account to a chosen persona */
@@ -1056,7 +1058,7 @@ function claimPersona(id){
   p.uid=uid;
   if(window.CLOUD&&window.CLOUD.user&&window.CLOUD.user.email&&!p.email)p.email=window.CLOUD.user.email;
   save('dtp_family',FAMILY);
-  S.persona=id;save('dtp_persona',id);
+  S.persona=id;save('dtp_persona',id);S._seated=true;
   ensureActiveParty();ensureVisibleTrip();
   closeScreen();
   /* if you brought your own data and aren\'t sharing yet, spin up a party so
