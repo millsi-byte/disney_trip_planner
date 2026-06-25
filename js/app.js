@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='188';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='189';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -3382,15 +3382,6 @@ function cloudSection(){
     h+='<button class="btn-secondary" onclick="cloudJoinParty(\'cloud-join\')">Join with a code</button>';
     h+='<div class="field" style="margin-top:6px"><input class="field-input" id="cloud-join" placeholder="Enter an invite code" style="text-transform:uppercase"></div>';
   }
-  /* an authorized owner can always create a brand-new tenant — even while
-     they're a contributor to someone else's. The new one is added to wids and
-     becomes active automatically. */
-  if(wids.length && window.CLOUD.isOwner){
-    h+='<div class="hub-section-label" style="margin-left:0">Start another group</div>';
-    h+='<div class="body-empty" style="text-align:left;padding:0 2px 6px;font-size:13px">Create a separate group you own. You\'ll switch into it once it\'s ready.</div>';
-    h+='<div class="field"><input class="field-input" id="party-name-new" placeholder="Group name"></div>';
-    h+='<button class="btn-secondary" onclick="cloudCreateAnother()">Create</button>';
-  }
   h+='<div class="hub-section-label" style="margin-left:0">Account</div>';
   h+='<button class="btn-secondary" onclick="cloudCheckInvites()">Check for new group invites</button>';
   h+='<button class="btn-secondary" onclick="cloudRefreshLocal()">Refresh from cloud</button>';
@@ -3459,18 +3450,6 @@ function cloudSwitchTenant(wid){
   window.CLOUD.switchTenant(wid).then(function(){
     try{location.reload();}catch(e){if(typeof render==='function')render();}
   }).catch(function(e){toast(e.message||'Could not switch');});
-}
-/* authorized owner: create another tenant alongside any they already belong to */
-function cloudCreateAnother(){
-  var nm=val('party-name-new');if(!nm){toast('Enter a name');return;}
-  if(!(window.CLOUD&&window.CLOUD.createParty))return;
-  toast('Creating…');
-  window.CLOUD.createParty(nm).then(function(){
-    publishAllInvites();
-    /* the new tenant is now active; reload so the app re-inits onto it
-       cleanly (fresh seed + wizard for the empty workspace). */
-    try{location.reload();}catch(e){if(typeof render==='function')render();}
-  }).catch(function(e){toast(e.message||'Could not create');});
 }
 /* manual hard re-pull — discards any in-memory drift and re-syncs from scratch */
 function cloudRefreshLocal(){
