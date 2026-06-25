@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='202';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='203';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2649,6 +2649,10 @@ function importParse(){
   if(!data){toast('Couldn\'t read that — make sure it\'s the JSON Claude gave you');return;}
   var arr=Array.isArray(data)?data:(Array.isArray(data.items)?data.items:null);
   if(!arr||!arr.length){toast('No items found in that JSON');return;}
+  /* self-heal: re-materialize the current trip's member snapshot from its live
+     group membership so items assigned to "all" reach everyone currently in the
+     group — including people added after the trip was first created. */
+  var _ct=trip();if(_ct)(_ct.parties||[]).forEach(function(gid){refreshTripMembers(gid);});
   S._importItems=arr.map(buildImportItem);
   S._importItems.forEach(function(e){if(!e.error&&e.rec)e.warn=importDateWarn(e.rec,e.type);});
   S.importStep=2;renderScreen_inplace2();
@@ -4079,7 +4083,13 @@ function savePersonEdit(pid){
   captureTravel(p,'pe');
   ALL_IDS=FAMILY.map(function(x){return x.id;});
   S._newPerson=null;   /* committed */
-  save('dtp_family',FAMILY);syncPersonInvite(p,oldEmail);toast('Saved');
+  save('dtp_family',FAMILY);
+  /* re-materialize the member snapshot of every trip in this person's groups so
+     a newly-added person is counted on (and notified about) trips that already
+     existed before they were added. peToggleParty only refreshes groups whose
+     chip was tapped; a new person kept in their default group never triggered it. */
+  (p.parties||[]).forEach(function(gid){refreshTripMembers(gid);});
+  syncPersonInvite(p,oldEmail);toast('Saved');
   backToPeople();
 }
 function peDelete(pid){
