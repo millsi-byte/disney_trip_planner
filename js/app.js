@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='187';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='188';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -3442,11 +3442,20 @@ function loadTenantList(){
   });
 }
 /* switch the active tenant. Reloads after the adopt so the app re-inits from
-   the new tenant's data cleanly (avoids in-memory leak across tenants). */
+   the new tenant's data cleanly (avoids in-memory leak across tenants).
+   We MUST clear S.persona / S._seated / dtp_persona first: revalidateAfterSync
+   runs inside rehydrate after the adopt and would otherwise see a persona that
+   doesn't exist in the new tenant's family (and no by-uid match either, if we
+   haven't claimed there before), then call leaveParty + revokeAccess — kicking
+   us out of the tenant we just switched into. With persona cleared,
+   revalidateAfterSync short-circuits; the reload's onCloudSynced re-claims via
+   email matching (or by-uid match when switching back to a tenant we've
+   already claimed in). */
 function cloudSwitchTenant(wid){
   if(!(window.CLOUD&&window.CLOUD.switchTenant))return;
-  if(!confirm('Switch to a different group? Your view will change.'))return;
   toast('Switching…');
+  S.persona=null;S._seated=false;
+  try{localStorage.removeItem('dtp_persona');}catch(e){}
   window.CLOUD.switchTenant(wid).then(function(){
     try{location.reload();}catch(e){if(typeof render==='function')render();}
   }).catch(function(e){toast(e.message||'Could not switch');});
