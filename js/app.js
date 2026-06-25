@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='193';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='194';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -3433,10 +3433,8 @@ function loadTenantList(){
         +'<div class="hub-title">'+esc(t.name)+'</div>'
         +'<div class="hub-sub">'+esc(role)+'</div>'
         +'</div>';
-      if(t.isOwner){
-        html+='<button style="'+chipBase+';color:#1E3A8A;background:#EFF6FF;border:1px solid #BFDBFE" onclick="event.stopPropagation();cloudRenameMyTenant(\''+esc(t.wid)+'\')">Rename</button>';
-        if(canDelete)
-          html+='<button style="'+chipBase+';color:#B91C1C;background:#FEF2F2;border:1px solid #FCA5A5" onclick="event.stopPropagation();cloudDeleteTenant(\''+esc(t.wid)+'\')">Delete</button>';
+      if(t.isOwner && canDelete){
+        html+='<button style="'+chipBase+';color:#B91C1C;background:#FEF2F2;border:1px solid #FCA5A5" onclick="event.stopPropagation();cloudDeleteTenant(\''+esc(t.wid)+'\')">Delete</button>';
       }
       html+='</div>';
     }
@@ -3445,27 +3443,6 @@ function loadTenantList(){
     try{console.warn('[tenants] listMyTenants failed:',e&&e.message);}catch(_){}
     var el=document.getElementById('tenant-list');if(el)el.innerHTML='<div class="body-empty" style="text-align:left;padding:0 2px 4px;font-size:12px;color:#B91C1C">Could not load groups.</div>';
   });
-}
-/* rename a tenant from the switcher. Looks up the current name to prefill the
-   prompt, then writes the new name via C.renameTenant. Re-renders the screen
-   on success so the title in the list updates immediately. */
-function cloudRenameMyTenant(wid){
-  if(!(window.CLOUD&&window.CLOUD.listMyTenants&&window.CLOUD.renameTenant))return;
-  window.CLOUD.listMyTenants().then(function(list){
-    var t=list.filter(function(x){return x.wid===wid;})[0];
-    var current=(t&&t.name)||'';
-    var nm=window.prompt('Rename this group:',current);
-    if(nm===null)return;                /* user cancelled */
-    nm=(nm||'').trim();
-    if(!nm){toast('Enter a name');return;}
-    if(nm===current)return;
-    toast('Renaming…');
-    return window.CLOUD.renameTenant(wid,nm);
-  }).then(function(name){
-    if(!name)return;
-    toast('Renamed');
-    if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();
-  }).catch(function(e){toast(e.message||'Could not rename');});
 }
 /* owner-deletes-their-own-tenant from the switcher. If they're deleting the
    ACTIVE tenant, switch to another in wids first (deleteMyTenant refuses to
@@ -3826,10 +3803,35 @@ function scrTenant(){
   for(var k=0;k<trips.length;k++){var t=trips[k];var mc=(t.members||[]).length;
     body+='<div class="hub-row" style="cursor:default"><div class="hub-icon" style="background:'+(t.color||'#475569')+'">'+IC.map+'</div><div class="hub-main"><div class="hub-title" style="font-size:14px">'+esc(t.name||'(unnamed)')+'</div><div class="hub-sub">'+esc(t.dates||(t.start||'')+(t.end?' – '+t.end:''))+' · '+mc+' '+(mc===1?'person':'people')+'</div></div></div>';}
   var own=(window.CLOUD&&window.CLOUD.wid&&window.CLOUD.wid===S._tenantWid);
+  /* one-time fix for stale tenant names (e.g. the old "Planning Party" default
+     left over from previous builds). Inline field so iOS PWA doesn't suppress
+     a window.prompt. */
+  var curName=(function(){for(var z=0;z<(S._tenants||[]).length;z++)if(S._tenants[z].wid===S._tenantWid)return S._tenants[z].name||'';return '';})();
+  body+='<div class="hub-section-label" style="margin-left:0">Tenant name</div>';
+  body+='<div class="field"><input class="field-input" id="tenant-rename" value="'+esc(curName)+'" placeholder="Tenant name"></div>';
+  body+='<button class="btn-secondary" onclick="superRenameTenant(\''+esc(S._tenantWid)+'\')">Save name</button>';
   body+='<div class="hub-section-label" style="margin-left:0">Danger zone</div>';
   if(own)body+='<div class="body-empty" style="text-align:left;padding:0 2px;font-size:12px">This is your own active space — manage it from your own account.</div>';
   else body+='<button class="btn-danger-link" onclick="deleteTenant(\''+esc(S._tenantWid)+'\')">Delete this tenant permanently</button>';
   return screenShell(nm,body,null,null,'Back','<button class="sec-add" onclick="enterTenant(\''+esc(S._tenantWid)+'\')">Manage this tenant</button>','openTenants()');
+}
+/* super-admin one-time rename for a stale tenant name (e.g. legacy defaults
+   left over from older builds). Uses C.renameTenant which writes to the
+   workspace doc; refreshes the tenants list so the new name shows everywhere. */
+function superRenameTenant(wid){
+  if(!(window.CLOUD&&window.CLOUD.isSuper)){toast('Super-admin only');return;}
+  if(!(window.CLOUD.renameTenant))return;
+  var nm=val('tenant-rename');
+  if(!nm){toast('Enter a name');return;}
+  toast('Renaming…');
+  window.CLOUD.renameTenant(wid,nm).then(function(){
+    /* update cached tenants list so the title at the top + the parent screen
+       both pick up the new name without a full reload */
+    for(var i=0;i<(S._tenants||[]).length;i++)if(S._tenants[i].wid===wid)S._tenants[i].name=nm;
+    S._tenantName=nm;
+    toast('Renamed');
+    if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();
+  }).catch(function(e){toast(e.message||'Could not rename');});
 }
 /* super-admin: permanently remove an orphaned/unwanted tenant */
 function deleteTenant(wid){
