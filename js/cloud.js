@@ -171,17 +171,23 @@
   /* create a party from your current data and switch onto it */
   C.createParty=function(name){
     if(!C.user)return Promise.reject(new Error('Sign in first'));
+    /* never create a second tenant for an account that already has one. The UI
+       gates on inParty(), but a fast double-tap or a race before profile.wid is
+       written could otherwise spawn duplicate (empty) tenants. */
+    if(C.wid)return Promise.reject(new Error('You already have a group'));
+    if(C._creating)return C._creating;
     var wid=newCode(), nm=(name||'My Group');
     /* the tenant's stable label = the owner's display name (not the party name) */
     var tn=null;
     try{var fam=JSON.parse(localStorage.getItem('dtp_family')||'[]');var a=fam.filter(function(p){return p.admin;})[0]||fam[0];if(a&&a.name)tn=a.name+(a.lastName?' '+a.lastName:'');}catch(e){}
     if(!tn)tn=(C.user.email||'').split('@')[0]||null;
     var wref=db().doc('workspaces/'+wid);
-    return wref.set({name:nm,tenantName:tn,by:C.user.uid,byEmail:C.user.email||null,createdAt:Date.now()})
+    C._creating = wref.set({name:nm,tenantName:tn,by:C.user.uid,byEmail:C.user.email||null,createdAt:Date.now()})
       .then(function(){ return wref.collection('members').doc(C.user.uid).set({email:C.user.email||null,joinedAt:Date.now()}); })
       .then(function(){ C.isMember=true; setLocalWid(wid); C.partyName=nm; return profileRef().set({wid:wid},{merge:true}); })
       .then(function(){ return reconcile('merge'); })   /* push your data up into the new party */
-      .then(function(){ return wid; });
+      .then(function(){ C._creating=null; return wid; }, function(e){ C._creating=null; throw e; });
+    return C._creating;
   };
 
   /* join an existing party by code and adopt its data */

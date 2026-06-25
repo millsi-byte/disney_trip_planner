@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='172';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='173';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -3247,8 +3247,19 @@ function cloudSection(){
 }
 function cloudCreateParty(){
   var nm=val('party-name');if(!nm){toast('Enter a group name');return;}
-  toast('Creating…');
-  window.CLOUD.createParty(nm).then(function(){toast('Group ready');if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();}).catch(function(e){toast(e.message||'Could not create');});
+  /* a "group" is a party inside the owner's tenant — add it locally so it
+     actually appears (not an empty tenant), assign the owner to it, then ensure
+     the cloud workspace exists so it syncs up. If a workspace already exists the
+     new party just syncs via the normal push. */
+  var gid='g'+Date.now();
+  PARTIES.push({id:gid,name:nm,by:S.persona,color:PALETTE[PARTIES.length%PALETTE.length][0]});
+  var me=person(S.persona);if(me){if(!Array.isArray(me.parties))me.parties=[];if(me.parties.indexOf(gid)<0)me.parties.push(gid);}
+  S.partyId=gid;save('dtp_family',FAMILY);saveParties();savePartyId();
+  var done=function(){toast('Group ready');if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();};
+  if(window.CLOUD&&window.CLOUD.inParty&&!window.CLOUD.inParty()&&window.CLOUD.createParty){
+    toast('Creating…');
+    window.CLOUD.createParty(nm).then(done).catch(function(e){toast(e.message||'Could not create');});
+  }else done();
 }
 function cloudJoinParty(inputId){
   var code=val(inputId||'cloud-join');if(!code){toast('Enter a code');return;}
