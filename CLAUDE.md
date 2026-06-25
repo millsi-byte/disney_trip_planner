@@ -2,14 +2,18 @@
 
 ## Critical rules (do NOT break these)
 
-### "My Group" phantom creation
-`ensurePartyTags()` in app.js auto-creates a group called "My Group" whenever
-`PARTIES` is empty. This fires on every `rehydrate()`, which fires on every
-`reconcile()`, which fires on `commitActive()`. During fresh-tenant creation
-(`resetToBlank` sets `PARTIES=[]`), this means "My Group" springs back to life
-unless `S._freshTenant=true` is set BEFORE `resetToBlank()`. The flag gates
-`ensurePartyTags` so it skips the auto-seed. Clear the flag in `ntFinish`,
-`ntCancel`, and `wizSkip`.
+### "My Group" phantom creation — THREE sources, ALL must be guarded
+"My Group" auto-creates whenever PARTIES is empty. There are THREE places:
+1. **Boot seed** (line ~121): runs at script init before S or CLOUD exist.
+   Guarded by checking `localStorage.getItem('dtp__lastuid')` — if cloud has
+   ever been used on this device, skip the seed and leave PARTIES=[].
+2. **ensurePartyTags()** (line ~128): runs on every rehydrate/render. Same
+   `dtp__lastuid` guard, PLUS `S._freshTenant` flag for mid-session resets.
+3. **resetToBlank()** sets `PARTIES=[]` intentionally — the wizard creates
+   the real group. Set `S._freshTenant=true` BEFORE calling `resetToBlank()`
+   in every tenant-creation path. Clear it in `ntFinish`, `ntCancel`, `wizSkip`.
+
+NEVER add a new auto-seed for PARTIES without these guards.
 
 ### Tenant vs Group vs Trip — the data model
 - **Tenant** = Firestore workspace doc (`workspaces/{wid}`). Has its own `name`

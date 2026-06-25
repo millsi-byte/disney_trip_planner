@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='201';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='202';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -119,8 +119,13 @@ function saveTripId(){save('dtp_tripId',S.tripId);}
 var PARTIES = load('dtp_parties', null);
 if(!PARTIES){ var _legacy=load('dtp_groups',null); if(_legacy&&_legacy.length)PARTIES=_legacy; }
 if(!PARTIES||!PARTIES.length){
-  var _pa=(FAMILY.filter(function(p){return p.admin;})[0]||FAMILY[0]||{}).id||null;
-  PARTIES=[{id:'g1',name:'My Group',by:_pa}];
+  var _hasCloud=false;try{_hasCloud=!!localStorage.getItem('dtp__lastuid');}catch(e){}
+  if(!_hasCloud){
+    var _pa=(FAMILY.filter(function(p){return p.admin;})[0]||FAMILY[0]||{}).id||null;
+    PARTIES=[{id:'g1',name:'My Group',by:_pa}];
+  }else{
+    PARTIES=[];
+  }
 }
 /* every person & trip belongs to >=1 party (migrate legacy .groups). Must run
    on first load AND after every cloud pull, since synced records may predate
@@ -130,7 +135,12 @@ function ensurePartyTags(){
     if(S._freshTenant)return;
     var _legacy=load('dtp_groups',null);
     if(_legacy&&_legacy.length)PARTIES=_legacy;
-    else{var _pa=(FAMILY.filter(function(p){return p.admin;})[0]||FAMILY[0]||{}).id||null;PARTIES=[{id:'g1',name:'My Group',by:_pa}];}
+    else{
+      var _hc=false;try{_hc=!!localStorage.getItem('dtp__lastuid');}catch(e){}
+      if(_hc)return;
+      var _pa=(FAMILY.filter(function(p){return p.admin;})[0]||FAMILY[0]||{}).id||null;
+      PARTIES=[{id:'g1',name:'My Group',by:_pa}];
+    }
   }
   var pid=PARTIES[0].id;
   /* parties carry a color too (like people and trips) — backfill any missing
