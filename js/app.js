@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='207';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='208';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2549,6 +2549,12 @@ function importPromptText(){
 '• show:      {"type":"show","name":"","day":"","time":"9:00 PM","status":"attend|scheduled"}',
 '• flight:    {"type":"flight","label":"Outbound|Return","day":"","status":"booked|planning","legs":[',
 '     {"airline":"","num":"WN 4657","conf":"","depApt":"BOS","depCity":"Boston","depTime":"5:45 AM","depDate":"","arrApt":"MCO","arrCity":"Orlando","arrTime":"11:50 AM","arrDate":""} ]}',
+'• day:       {"type":"day","day":"","headline":"Magic Kingdom","blurb":"short line under the headline","strategy":"The plan / verbiage for the day. Use blank lines to start a new paragraph.","tags":["Activate APs"],"alert":"optional heads-up"}',
+'   (day-level VERBIAGE for one date — the strategy narrative, headline, blurb, tags and any alert. The first sentence of strategy shows as “The plan” on the Day Plan. One day item per date; it UPDATES the existing day, so omit any field you do not have.)',
+'• todo:      {"type":"todo","text":"Airline online check-in","when":"24h before"}',
+'   (a to-do / checklist task for the trip. when = optional timing label.)',
+'• packing:   {"type":"packing","section":"Health","item":"Sunblock","qty":1,"needBuy":false}',
+'   (a packing-list item, grouped under section. qty optional. needBuy:true flags it as “need to get”.)',
 '',
 'Status — default to "not booked yet" unless I clearly have it confirmed:',
 '• Lightning Lane: "planning" until actually booked; "booked" only with a real return time/confirmation (omit bookedTime and conf until then).',
@@ -2601,6 +2607,9 @@ function importSummary(type,rec){
   if(type==='Re-book')return (rec.afterRide?'After '+rec.afterRide+' → ':'')+(rec.text||'')+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'');
   if(type==='Show')return rec.name+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'')+(rec.time?' · '+rec.time:'');
   if(type==='Flight'){var f=(rec.legs&&rec.legs[0])||{},l=(rec.legs&&rec.legs[rec.legs.length-1])||{};return rec.label+' · '+(f.depApt||'?')+' → '+(l.arrApt||'?')+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'');}
+  if(type==='Day'){var lead=rec.visit||rec.blurb||(rec.strategy?firstSentence(rec.strategy):'')||'(notes)';return (impDLabel(rec.day)||'?')+' · '+lead;}
+  if(type==='To Do')return (rec.n||'')+(rec.when?' · '+rec.when:'');
+  if(type==='Packing')return (rec.section||'General')+' · '+(rec.n||'')+(rec.qty>1?' ×'+rec.qty:'');
   return '';
 }
 /* build one real record from a loose imported item → {type,rec,summary,error}.
@@ -2664,6 +2673,37 @@ function buildImportItem(it){
     if(!cl.length)o6.error='Flight needs at least one leg';
     return o6;
   }
+  if(t==='day'||t==='strategy'||t==='dayplan'||t==='day plan'){
+    /* day-level VERBIAGE: headline/blurb/strategy/tags/alert. Updates the
+       existing day record at save time (dayByDate) — never pushes a new day.
+       who:[] so the review screen shows no people badge. */
+    var dtags=Array.isArray(it.tags)?it.tags:(it.tags?String(it.tags).split(','):[]);
+    var recD={_kind:'day',trip:tid,who:[],day:impDate(it.day),
+      visit:(it.headline||it.visit||'')+'',blurb:(it.blurb||'')+'',
+      strategy:(it.strategy||it.text||it.notes||'')+'',
+      tags:dtags.map(function(x){return String(x).trim();}).filter(Boolean),
+      alert:(it.alert||'')+''};
+    var oD=finalizeImport('Day',recD);
+    if(!oD.error&&!recD.strategy&&!recD.blurb&&!recD.visit&&!recD.tags.length&&!recD.alert)oD.error='Day needs strategy or notes';
+    return oD;
+  }
+  if(t==='todo'||t==='to-do'||t==='task'){
+    var tdDone=it.done===true||it.done==='true'||/^done$/i.test(it.status||'');
+    var recT={_kind:'todo',id:impId('td'),trip:tid,by:S.persona,who:[],priv:false,done:tdDone,
+      n:(it.text||it.task||it.n||'')+'',when:(it.when||'')+''};
+    var oT=finalizeImport('To Do',recT);
+    if(!oT.error&&!recT.n)oT.error='To Do needs a task';
+    return oT;
+  }
+  if(t==='packing'||t==='pack'){
+    var pq=parseInt(it.qty,10);
+    var recP={_kind:'packing',trip:tid,who:[],section:(it.section||it.cat||'General')+'',
+      n:(it.item||it.n||it.name||'')+'',qty:(pq>0?pq:1),
+      l:it.l===true||it.checkOnly===true,needBuy:!!it.needBuy||!!it.need};
+    var oP=finalizeImport('Packing',recP);
+    if(!oP.error&&!recP.n)oP.error='Packing needs an item';
+    return oP;
+  }
   return {type:it.type||'?',error:'Unknown type "'+(it.type||'')+'"'};
 }
 /* non-blocking guard: does a built item\'s date fall outside the selected
@@ -2710,12 +2750,31 @@ function importSave(){
       delete e.rec.afterRide;   /* helper field — not part of the stored record */
     }
   });
+  var extra=0,touchedLists=false;
   items.forEach(function(e){
     if(e.error||e._removed||!e.rec)return;
+    if(e.type==='Day'){
+      var d=dayByDate(e.rec.day);if(!d)return;   /* date not in this trip — skip */
+      if(e.rec.visit)d.visit=e.rec.visit;
+      if(e.rec.blurb)d.blurb=e.rec.blurb;
+      if(e.rec.strategy)d.strategy=e.rec.strategy;
+      if(e.rec.alert)d.alert=e.rec.alert;
+      if(e.rec.tags&&e.rec.tags.length){d.tags=(d.tags||[]).concat(e.rec.tags.filter(function(x){return (d.tags||[]).indexOf(x)<0;}));}
+      extra++;return;
+    }
+    if(e.type==='To Do'){TODO.push(e.rec);tdMarkStarted(e.rec.by);touchedLists=true;extra++;return;}
+    if(e.type==='Packing'){
+      var pid=S.persona;if(!PACKING[pid])PACKING[pid]=[];
+      var sec=null;for(var si=0;si<PACKING[pid].length;si++){if(PACKING[pid][si].cat===e.rec.section){sec=PACKING[pid][si];break;}}
+      if(!sec){sec={cat:e.rec.section,items:[]};PACKING[pid].push(sec);}
+      sec.items.push({n:e.rec.n,qty:e.rec.l?0:(e.rec.qty||1),l:!!e.rec.l,done:false,needBuy:!!e.rec.needBuy,who:[]});
+      pkMarkStarted(pid);touchedLists=true;extra++;return;
+    }
     var coll=M[e.type];if(!coll)return;coll.push(e.rec);added.push(e);
   });
   persist();
-  S._importCount=added.length;S.importStep=3;renderScreen_inplace2();
+  if(touchedLists)saveLists();   /* per-trip to-do + packing keys (synced) */
+  S._importCount=added.length+extra;S.importStep=3;renderScreen_inplace2();
   importNotify(added);   /* notify the assigned people, exactly like a manual add */
 }
 /* fire notifications for a batch of just-imported items — one combined picker
@@ -2738,7 +2797,7 @@ function importReset(){S._importItems=null;S._importEdit=null;S.importStep=1;ren
 
 /* ── CSV template (download → fill in Excel/Sheets → upload) ──
    Reuses the same builder + review screen as the JSON path. */
-var IMPORT_CSV_COLS=['type','name','room','checkin','checkout','inTime','outTime','day','meal','time','park','loc','ride','tier','bookedTime','window','afterRide','text','label','airline','num','depApt','depCity','depTime','depDate','arrApt','arrCity','arrTime','arrDate','open','close','early','late','crowd','conf','status'];
+var IMPORT_CSV_COLS=['type','name','room','checkin','checkout','inTime','outTime','day','meal','time','park','loc','ride','tier','bookedTime','window','afterRide','text','label','airline','num','depApt','depCity','depTime','depDate','arrApt','arrCity','arrTime','arrDate','open','close','early','late','crowd','headline','blurb','strategy','tags','alert','when','section','item','needBuy','conf','status'];
 function csvEsc(v){v=(v==null?'':String(v));return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}
 function importCsvTemplate(){
   var rows=[IMPORT_CSV_COLS];
@@ -2842,7 +2901,10 @@ var IMPORT_FIELDS={
   'Lightning Lane':[['ride','Ride','text'],['day','Date','date'],['park','Park',['mk','ep','hs','ak']],['tier','Tier',['sp','mp1','mp2']],['status','Status',['booked','planning']],['bookedTime','Booked time','text'],['conf','Confirmation #','text']],
   'Park reservation':[['day','Date','date'],['park','Park',['mk','ep','hs','ak']],['status','Status',['booked','planning']]],
   Show:[['name','Name','text'],['day','Date','date'],['time','Time','text'],['status','Status',['attend','scheduled']]],
-  Flight:[['label','Label','text'],['day','Date','date'],['status','Status',['booked','planning']]]
+  Flight:[['label','Label','text'],['day','Date','date'],['status','Status',['booked','planning']]],
+  Day:[['day','Date','date'],['visit','Headline','text'],['blurb','Blurb','text']],
+  'To Do':[['n','Task','text'],['when','When','text']],
+  Packing:[['section','Section','text'],['n','Item','text']]
 };
 /* required fields per type (re-checked after an edit) */
 var IMPORT_REQ={Resort:['name'],Dining:['name','day'],'Lightning Lane':['ride','day'],'Park reservation':['park','day'],'Park hours':['park','day'],'Re-book':['text','day'],Show:['name','day'],Flight:['label']};
