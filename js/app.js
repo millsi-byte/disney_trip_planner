@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='198';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='199';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -3096,6 +3096,25 @@ function scrNewTrip(){
     var nb='<div class="body-empty" style="text-align:left;padding:10px 2px;font-size:14px">'
       +'Only the group\'s owner can start new trips. Ask whoever set up your group to add a trip and you\'ll see it here automatically.</div>';
     return screenShell('Plan a new trip',nb,null,null,'Close');
+  }
+  /* An authorized owner who is only a GUEST in someone else's tenant (a member,
+     not its admin) gets their OWN brand-new tenant when they plan a trip — never
+     adds to the host's. Detach the active session to tenant-less + clean slate,
+     then run the wizard: its createParty() builds a fresh tenant named after the
+     group they create. Super and admins of the current tenant plan in place. */
+  if(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.isOwner&&!window.CLOUD.isSuper
+     &&!isAdmin()&&window.CLOUD.inParty&&window.CLOUD.inParty()
+     &&window.CLOUD.detachActive&&!S._detaching){
+    S._detaching=true;
+    window.CLOUD.detachActive().then(function(){
+      resetToBlank();
+      S._seated=true;
+      S._detaching=false;
+      S._formInit=null;            /* re-run ntInit cleanly against the blank slate */
+      openScreen({type:'newtrip'});
+    }).catch(function(e){S._detaching=false;toast(e&&e.message||'Could not start');});
+    var wait='<div class="body-empty" style="text-align:center;padding:30px 2px;font-size:14px">Starting your own space…</div>';
+    return screenShell('Plan a new trip',wait,null,null,null);
   }
   ntInit();
   var fr=S._ntFirstRun,body='';

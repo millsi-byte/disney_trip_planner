@@ -234,6 +234,25 @@
      slate into the new (empty) workspace. */
   C.commitActive=function(){ return reconcile('merge'); };
 
+  /* Detach the ACTIVE session from the current tenant WITHOUT leaving it: the
+     cloud membership and the in-memory wids list stay intact, so the host tenant
+     still appears in the switcher. Used when an authorized owner who is only a
+     GUEST in someone else's tenant taps "Plan a New Trip" — we drop the active
+     wid to null and suppress sync so the wizard runs TENANT-LESS, and its own
+     createParty() then spins up a brand-new tenant named after the group they
+     create (exactly like a first-time owner). The host tenant is never written
+     to: C.synced=false gates every C.push, and wipeLocalState clears the host's
+     local cache so the wizard starts from a clean slate. */
+  C.detachActive=function(){
+    stopListener();
+    C.synced=false;
+    wipeLocalState();
+    C.wid=null;
+    try{localStorage.removeItem('dtp_wid');}catch(e){}
+    C.partyName=null;
+    return Promise.resolve();
+  };
+
   /* join an existing party by code and adopt its data */
   C.joinParty=function(code){
     if(!C.user)return Promise.reject(new Error('Sign in first'));
