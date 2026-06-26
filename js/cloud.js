@@ -107,11 +107,20 @@
   }
   function newCode(){return (Math.random().toString(36).slice(2,6)+Math.random().toString(36).slice(2,6)).toUpperCase();}
 
-  /* mirror a single local save up to the active target (no-op until reconciled) */
+  /* mirror a single local save up to the active target.
+     CRITICAL: record the local recency for EVERY genuine local write, even when
+     we cannot push right now (signed out, or mid-reconcile with synced=false).
+     If we only stamped the time on a successful push, an edit made during a
+     sync gap would keep its OLD timestamp — so the next reconcile would see the
+     cloud copy as "newer or equal" and silently overwrite the edit that never
+     got pushed. Stamping it as the latest makes the merge push it up instead of
+     clobbering it. The actual upload, when we can't do it now, is handled by the
+     next reconcile (which re-pushes every key whose local ts beats the cloud). */
   C.push=function(k,v){
-    if(!C.synced||!C.user||C.applyingRemote||!syncable(k))return;
+    if(C.applyingRemote||!syncable(k))return;   /* never re-stamp remote-applied writes */
     var ts=Date.now();
     var times=loadTimes(); times[k]=ts; saveTimes(times);
+    if(!C.synced||!C.user)return;               /* recency recorded; reconcile will upload it */
     try{ kvCol().doc(k).set({v:JSON.stringify(v),ts:ts}); }catch(e){ console.warn('cloud push',k,e&&e.message); }
   };
 
