@@ -38,6 +38,7 @@ var IC = {
   send:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
   upload:'<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
   bell:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
+  clock:'<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>',
   users:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
   cal:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'
 };
@@ -69,7 +70,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='210';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='211';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1786,6 +1787,8 @@ function renderAdminHub(){
   o+='<div class="hub-section-label">Data</div>';
   o+='<button class="hub-row" onclick="exportAllData()"><div class="hub-icon" style="background:#475569">'+IC.upload+'</div>'
     +'<div class="hub-main"><div class="hub-title">Export / Backup</div><div class="hub-sub">Download all data as JSON</div></div><div class="chev">'+IC.chev+'</div></button>';
+  o+='<button class="hub-row" onclick="openScreen({type:\'backups\'})"><div class="hub-icon" style="background:#0F766E">'+IC.clock+'</div>'
+    +'<div class="hub-main"><div class="hub-title">Restore from backup</div><div class="hub-sub">'+backupCountLabel()+'</div></div><div class="chev">'+IC.chev+'</div></button>';
   o+='<button class="hub-row" onclick="startOver()"><div class="hub-icon" style="background:#B91C1C">'+IC.warn+'</div>'
     +'<div class="hub-main"><div class="hub-title">Start over</div><div class="hub-sub">Wipe all trips, people & lists — leaves just you</div></div><div class="chev">'+IC.chev+'</div></button>';
   return o;
@@ -2256,6 +2259,7 @@ function renderScreen(){
   if(t==='needbuy')   return scrNeedBuy();
   if(t==='section')   return scrSection();
   if(t==='notifs')    return scrNotifs();
+  if(t==='backups')   return scrBackups();
   return scrGeneric();
 }
 function scrNotifs(){
@@ -2774,6 +2778,7 @@ function importSave(){
   });
   persist();
   if(touchedLists)saveLists();   /* per-trip to-do + packing keys (synced) */
+  try{autoBackup(true);}catch(e){}   /* capture the freshly imported data right away */
   S._importCount=added.length+extra;S.importStep=3;renderScreen_inplace2();
   importNotify(added);   /* notify the assigned people, exactly like a manual add */
 }
@@ -2838,6 +2843,97 @@ function exportAllData(){
   if(!isAdmin()){toast('Admin only');return;}
   var d=buildBackup();
   downloadFile('disney-trip-backup-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(d,null,2),'application/json','Backup downloaded');
+}
+/* ── Automatic rolling local backups ──────────────────────────
+   A safety net independent of the cloud. Every few minutes (and right after an
+   import) we snapshot all data into ONE non-synced, wipe-surviving localStorage
+   key. 'dtpbackups' deliberately does NOT start with 'dtp_' so syncable(),
+   wipeLocalState() and the boot loader all ignore it — it survives sign-out,
+   tenant switches and even "Start over", so a bad cloud merge or an accidental
+   wipe can be rolled back from inside the app. */
+var BACKUP_KEY='dtpbackups', BACKUP_MAX=12, BACKUP_MIN_MS=5*60*1000, BACKUP_MAX_BYTES=3500000;
+function loadBackups(){try{var s=localStorage.getItem(BACKUP_KEY);if(s){var a=JSON.parse(s);if(Array.isArray(a))return a;}}catch(e){}return [];}
+function saveBackups(a){
+  try{localStorage.setItem(BACKUP_KEY,JSON.stringify(a));return;}catch(e){}
+  while(a.length>1){a.shift();try{localStorage.setItem(BACKUP_KEY,JSON.stringify(a));return;}catch(e2){}}
+}
+/* raw dump of every data key (single-underscore dtp_*; skips dtp__ sync
+   bookkeeping so a restore never corrupts timestamps/lastuid) */
+function snapshotKeys(){
+  var keys={};
+  try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);
+    if(k&&k.indexOf('dtp_')===0&&k.indexOf('dtp__')!==0){try{keys[k]=localStorage.getItem(k);}catch(e){}}
+  }}catch(e){}
+  return keys;
+}
+function backupSig(keys){var s='';var ks=Object.keys(keys).sort();for(var i=0;i<ks.length;i++)s+=ks[i]+':'+(keys[ks[i]]||'').length+';';return s;}
+function autoBackup(force){
+  try{
+    if(window.CLOUD&&window.CLOUD.applyingRemote)return;     /* mid cloud-apply — unstable */
+    var keys=snapshotKeys();
+    if(!keys.dtp_trips)return;                               /* nothing worth keeping yet */
+    var sig=backupSig(keys), list=loadBackups(), last=list[list.length-1], now=Date.now();
+    if(!force&&last){
+      if(last._sig===sig)return;                             /* unchanged since last snapshot */
+      if(now-(last.ts||0)<BACKUP_MIN_MS)return;              /* too soon */
+    }
+    list.push({ts:now,iso:new Date(now).toISOString(),build:BUILD,wid:(window.CLOUD&&window.CLOUD.wid)||null,_sig:sig,keys:keys});
+    while(list.length>BACKUP_MAX)list.shift();
+    var blob=JSON.stringify(list);
+    while(list.length>1&&blob.length>BACKUP_MAX_BYTES){list.shift();blob=JSON.stringify(list);}
+    saveBackups(list);
+  }catch(e){}
+}
+function backupWhen(b){try{return new Date(b.ts||b.iso).toLocaleString();}catch(e){return b.iso||'';}}
+function backupSummary(b){
+  function cnt(k){try{var a=JSON.parse((b.keys&&b.keys[k])||'[]');return Array.isArray(a)?a.length:0;}catch(e){return 0;}}
+  function days(){var c=0;try{var a=JSON.parse((b.keys&&b.keys.dtp_days)||'[]');for(var i=0;i<a.length;i++)if(a[i]&&a[i].strategy)c++;}catch(e){}return c;}
+  return cnt('dtp_trips')+' trips · '+cnt('dtp_family')+' people · '+days()+' day strategies';
+}
+function backupCountLabel(){var n=loadBackups().length;return n?(n+' snapshot'+(n===1?'':'s')+' saved'):'Auto-saved snapshots';}
+function snapshotNow(){autoBackup(true);if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();toast('Snapshot saved');}
+function restoreBackup(idx){
+  if(!isAdmin()&&!(window.CLOUD&&window.CLOUD.isSuper)){toast('Admin only');return;}
+  var list=loadBackups(),b=list[idx];
+  if(!b||!b.keys){toast('Backup not found');return;}
+  if(!confirm('Restore the snapshot from '+backupWhen(b)+'?\n\nThis overwrites your current data with that snapshot and syncs it to the cloud.'))return;
+  /* snapshot the CURRENT state first so a restore is itself undoable */
+  autoBackup(true);
+  try{
+    Object.keys(b.keys).forEach(function(k){
+      var raw=b.keys[k],val;
+      try{val=JSON.parse(raw);}catch(e){val=raw;}
+      save(k,val);   /* localStorage + cloud push with a fresh (winning) timestamp */
+    });
+  }catch(e){}
+  /* reload selection + collections from the restored localStorage */
+  try{S.persona=load('dtp_persona',S.persona);}catch(e){}
+  try{S.partyId=load('dtp_partyId',S.partyId);}catch(e){}
+  try{S.tripId=load('dtp_tripId',S.tripId);}catch(e){}
+  try{rehydrate();}catch(e){}
+  try{materializeAllDays();ensureActiveParty();ensureVisibleTrip();loadLists();}catch(e){}
+  try{closeScreen();}catch(e){}
+  S.tab='home';render();
+  toast('Restored snapshot from '+backupWhen(b));
+}
+function scrBackups(){
+  if(!isAdmin()&&!(window.CLOUD&&window.CLOUD.isSuper))return screenShell('Backups','<div class="body-empty" style="padding:24px 12px">This tool is admin-only.</div>',null,null,'Close');
+  var list=loadBackups();
+  var body='<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:14px;color:var(--ink)">'
+    +'Automatic local snapshots, taken as you make changes and kept on this device (the last '+BACKUP_MAX+'). Restore one to roll back a bad sync or an accidental change. <span style="white-space:nowrap">Build '+BUILD+'</span></div>';
+  if(!list.length){
+    body+='<div class="body-empty" style="text-align:left;padding:2px">No snapshots yet — they start saving automatically as you edit. Tap “Snapshot now” to take one immediately.</div>';
+  }else{
+    for(var ri=list.length-1;ri>=0;ri--){var b=list[ri];
+      body+='<div class="ov-card" style="margin:0 0 8px"><div style="padding:12px 14px">'
+        +'<div style="font-weight:700">'+esc(backupWhen(b))+'</div>'
+        +'<div style="font-size:13px;color:var(--muted);margin-top:2px">'+esc(backupSummary(b))+' · Build '+esc(b.build||'?')+'</div>'
+        +'<button class="ri-btn" style="margin-top:8px" onclick="restoreBackup('+ri+')">Restore this snapshot</button>'
+        +'</div></div>';
+    }
+  }
+  body+='<button class="btn-secondary" onclick="snapshotNow()">Snapshot now</button>';
+  return screenShell('Backups',body,null,null,'Close');
 }
 function importCsvDownload(){downloadCSV('trip-template.csv',importCsvTemplate());}
 /* small RFC-ish CSV parser (handles quotes, commas, CRLF) → array of rows */
@@ -4939,6 +5035,13 @@ ensureVisibleTrip();
 loadLists();
 S.open=defOpen();
 render();
+/* automatic rolling backups: a first snapshot once data has settled, then a
+   throttled check every minute (autoBackup itself skips if unchanged / too
+   soon). A pure local safety net — see the backup engine above. */
+try{
+  setTimeout(function(){try{autoBackup();}catch(e){}},20000);
+  setInterval(function(){try{autoBackup();}catch(e){}},60000);
+}catch(e){}
 /* an invite link (#join=CODE&as=PERSON) — stash it so onCloudSynced can act
    on it after sign-in, then strip it from the URL */
 try{
