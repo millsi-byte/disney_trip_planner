@@ -56,6 +56,19 @@ silent data loss (this is what wiped day strategies/day plans pre-Build 210).
   recency makes reconcile PUSH the local edit up instead of clobbering it.
 - NEVER gate the `times[k]=ts` recording behind `C.synced`/`C.user`.
 
+### Cloud sync — stale-data guard + resilient push (Build 212)
+- **Stale-data guard (`startSync`):** if signing in to a tenant for which this
+  device holds NO local trip data (`dtp_trips` empty), reconcile in **adopt**
+  (pull-only) mode, never merge. A blank/fresh device must never push its empty
+  state up and clobber a tenant another member filled in. Devices that already
+  hold data still merge (timestamps protect offline edits). Joins are already
+  adopt-only.
+- **Resilient push (`_pushKey`):** `CLOUD.push` must NOT be fire-and-forget. It
+  retries transient Firestore write failures (skipping if a newer local write
+  superseded) and records `C._lastPushErr`. The big `dtp_days` record is the one
+  most likely to fail (size/limits); a silent failure there while small records
+  succeed = day strategies/plans lost while dining survives.
+
 ### Service worker
 - `sw.js` uses network-first strategy; cache is offline fallback only.
 - `index.html` registers with `updateViaCache:'none'` and polls every 60s.

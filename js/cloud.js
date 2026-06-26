@@ -121,8 +121,26 @@
     var ts=Date.now();
     var times=loadTimes(); times[k]=ts; saveTimes(times);
     if(!C.synced||!C.user)return;               /* recency recorded; reconcile will upload it */
-    try{ kvCol().doc(k).set({v:JSON.stringify(v),ts:ts}); }catch(e){ console.warn('cloud push',k,e&&e.message); }
+    _pushKey(k,JSON.stringify(v),ts,0);
   };
+  /* Actually write one key to the cloud, with retry. The previous version was
+     fire-and-forget and swallowed the async rejection, so a single failed write
+     (transient network error, or the doc hitting Firestore's ~1 MB limit — most
+     likely on the big dtp_days record) vanished silently while smaller records
+     like dtp_dining went up fine. Now we retry transient failures a few times
+     and record the last error so it's observable. A retry is skipped if a newer
+     local write has already superseded this one (times[k] changed). */
+  function _pushKey(k,vs,ts,attempt){
+    try{
+      kvCol().doc(k).set({v:vs,ts:ts}).then(function(){
+        C._lastPushErr=null;
+      },function(e){
+        var t=loadTimes(); if((t[k]||0)!==ts) return;   /* superseded by a newer edit */
+        if(attempt<3){ setTimeout(function(){ var t2=loadTimes(); if((t2[k]||0)===ts) _pushKey(k,vs,ts,attempt+1); }, 1500*(attempt+1)); }
+        else { C._lastPushErr={key:k,msg:(e&&e.message)||'write failed',at:Date.now()}; console.warn('cloud push failed',k,e&&e.message); }
+      });
+    }catch(e){ C._lastPushErr={key:k,msg:(e&&e.message)||'write threw',at:Date.now()}; console.warn('cloud push',k,e&&e.message); }
+  }
 
   /* sync the local store against the active target.
        mode 'merge'  → last-write-wins per key, both directions (device sync)
@@ -656,6 +674,15 @@
            data into our cloud). Normal startup uses merge. */
         var stranded=null;try{stranded=localStorage.getItem('dtp_adminWid');}catch(e){}
         if(stranded){try{localStorage.removeItem('dtp_adminWid');}catch(e){}C.adminWid=null;return reconcile('adopt');}
+        /* STALE-DATA GUARD: if we're entering a tenant but this device holds NO
+           local trip data for it, PULL ONLY (adopt). A device with nothing local
+           must never push its blank/default state up and clobber a tenant that
+           another member has been filling in — that is how one fresh sign-in can
+           wipe shared data. A device that already holds data uses merge, where
+           per-key timestamps keep genuine offline edits (see CLOUD.push). */
+        var hasLocal=false;
+        try{var tj=localStorage.getItem('dtp_trips');hasLocal=!!tj&&((JSON.parse(tj)||[]).length>0);}catch(e){hasLocal=false;}
+        if(C.wid&&!hasLocal)return reconcile('adopt');
         return reconcile('merge');
       });
   }
