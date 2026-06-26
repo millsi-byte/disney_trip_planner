@@ -69,7 +69,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='208';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='209';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1438,7 +1438,7 @@ function renderAgenda(){
   o+=dayConditions(d);
   o+='<button class="add-link" style="margin:2px 0 6px" onclick="openScreen({type:\'dayedit\',day:\''+d.date+'\'})">'+IC.pencil+' Edit day details</button>';
 
-  /* Order: Strategy · Flights · Resort · Dining · Night Shows · Lightning Lanes · Day Plan */
+  /* Order: Strategy · Flights · Resort · Day Plan · Dining · Night Shows · Lightning Lanes */
   if(d.strategy) o+=stratCard(d,pk);
 
   var flts=flightsFor(d.date).filter(function(f){return visible(f.who);});
@@ -1446,6 +1446,8 @@ function renderAgenda(){
 
   var stays=resortsFor(d.date).filter(function(r){return visible(r.who)&&(r.checkin===d.date||r.checkout===d.date);});
   for(var s=0;s<stays.length;s++) o+=resortCard(stays[s],d.date);
+
+  o+=dayPlanCard(d,pk);
 
   var din=diningFor(d.date).filter(function(x){return visible(x.who);});
   o+=diningCard(din,pk,d.date);
@@ -1455,8 +1457,6 @@ function renderAgenda(){
 
   var lls=llFor(d.date).filter(function(l){return visible(l.who);});
   if(lls.length) o+=llCard(lls,d,pk);
-
-  o+=dayPlanCard(d,pk);
 
   return o;
 }
