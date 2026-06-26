@@ -42,6 +42,20 @@ These are SEPARATE actions. Never conflate them:
   input field so the user picks the name. Uses `CLOUD.createOwnTenant`, then
   `resetToBlank` + `commitActive`. Drops into wizard for first trip setup.
 
+### Cloud sync — local recency MUST be recorded on every save (data-loss guard)
+`save()` (app.js) writes localStorage then calls `CLOUD.push(k,v)`. `CLOUD.push`
+MUST stamp `times[k]=Date.now()` for every genuine local write — even when it
+can't upload right now (`!C.synced` during a reconcile, `!C.user`, offline).
+Sync is last-write-wins by per-key timestamp (`dtp__synctimes`). If a local
+edit's timestamp is NOT bumped, the next `reconcile()` sees the cloud copy as
+newer-or-equal (`cts>=lts`) and OVERWRITES the edit that never got pushed —
+silent data loss (this is what wiped day strategies/day plans pre-Build 210).
+- Only skip stamping when `C.applyingRemote` (the write originated from cloud).
+- `reconcile()` sets `C.synced=false` for the whole round-trip (sign-in, tenant
+  switch, `commitActive`, periodic merge) — that is the danger window. Recording
+  recency makes reconcile PUSH the local edit up instead of clobbering it.
+- NEVER gate the `times[k]=ts` recording behind `C.synced`/`C.user`.
+
 ### Service worker
 - `sw.js` uses network-first strategy; cache is offline fallback only.
 - `index.html` registers with `updateViaCache:'none'` and polls every 60s.
