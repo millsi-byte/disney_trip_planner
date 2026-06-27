@@ -71,7 +71,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='228';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='229';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -953,7 +953,7 @@ function switchTrip(id){saveLists();S.tripId=id;saveTripId();var _st=tripById(id
 
 /* screens (slide-in) */
 function openScreen(def){
-  S.screen=def;S._who=null;S._formStatus={};S._delpk=null;S._deltd=null;S.tdForm=null;S.tdScope='mine';S._tdPriv=false;S.listWho=null;
+  S.screen=def;S._who=null;S._formStatus={};S._delpk=null;S._deltd=null;S.tdForm=null;S.tdScope='mine';S._tdPriv=false;S.listWho=null;S.pkStoreFilter=null;
   S.pkForm=null;S.pkScope='mine';S._delsect=null;S._pksect=null;ADD.psect=null;
   S._formLoc=null;S._formTier=null;S._formInit=null;S._formColor=null;
   S._notify=notifDefault();
@@ -2027,7 +2027,7 @@ function packingBody(){
   if(listOversight())o+=packScopeToggle();
   if(listOversight()&&S.pkScope==='all')return o+packEveryoneView();
   o+=packSticky(me);
-  o+=pkHideToggle(pkAnyDone(me));
+  if((PACKING[me]||[]).some(function(c){return c.items&&c.items.length;}))o+=pkToolbar(pkAnyDone(me));
   if(!pkHasStarted(me))o+=packStarter();
   o+=packingPerson(me);
   return o;
@@ -2048,17 +2048,31 @@ function packScopeToggle(){
   return '<div class="seg" style="margin-bottom:12px"><button class="seg-btn'+(all?'':' on')+'" onclick="setPkScope(\'mine\')">My list</button>'
     +'<button class="seg-btn'+(all?' on':'')+'" onclick="setPkScope(\'all\')">Everyone</button></div>';
 }
-function setPkScope(s){S.pkScope=s;S.pkForm=null;ADD.pk=null;ADD.psect=null;S._pksect=null;S.listWho=null;refreshLists();}
+function setPkScope(s){S.pkScope=s;S.pkForm=null;ADD.pk=null;ADD.psect=null;S._pksect=null;S.listWho=null;S.pkStoreFilter=null;refreshLists();}
 /* hide-packed preference (device-local) + toggle, mirrors the to-do version */
 function pkHideDone(){try{return localStorage.getItem('bt_pkHideDone')==='1';}catch(e){return false;}}
 function pkToggleHideDone(){try{localStorage.setItem('bt_pkHideDone',pkHideDone()?'0':'1');}catch(e){}refreshLists();}
 function pkAnyDone(pid){var any=false;(PACKING[pid]||[]).forEach(function(c){(c.items||[]).forEach(function(it){if(it.done)any=true;});});return any;}
 function pkHideToggle(anyDone){if(!anyDone)return '';return '<div style="display:flex;justify-content:flex-end;margin:-2px 2px 8px"><button class="lens-btn'+(pkHideDone()?' on':'')+'" onclick="pkToggleHideDone()">'+(pkHideDone()?'Show packed':'Hide packed')+'</button></div>';}
+/* storage filter (suitcase / on-person / locker) shown left of the hide button */
+function pkSetStoreFilter(v){S.pkStoreFilter=(S.pkStoreFilter===v)?null:v;refreshLists();}
+function pkToolbar(anyDone){
+  var f=S.pkStoreFilter;
+  var o='<div class="pk-toolbar">';
+  o+='<button class="sfil'+(f==='bag'?' on':'')+'" onclick="pkSetStoreFilter(\'bag\')">Suitcase</button>';
+  o+='<button class="sfil'+(f==='person'?' on':'')+'" onclick="pkSetStoreFilter(\'person\')">On me</button>';
+  o+='<button class="sfil'+(f==='locker'?' on':'')+'" onclick="pkSetStoreFilter(\'locker\')">Locker</button>';
+  if(anyDone){
+    o+='<span class="pk-sep"></span>';
+    o+='<button class="lens-btn'+(pkHideDone()?' on':'')+'" onclick="pkToggleHideDone()">'+(pkHideDone()?'Show packed':'Hide packed')+'</button>';
+  }
+  return o+'</div>';
+}
 function packEveryoneView(){
   var mem=tripMembers();
   var o='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">Everyone\'s packing lists for '+esc(trip().name)+'. As the trip owner or an admin you can edit any item.</div>';
   o+=personFilterRow(mem);
-  o+=pkHideToggle(mem.some(function(pid){return pkAnyDone(pid);}));
+  o+=pkToolbar(mem.some(function(pid){return pkAnyDone(pid);}));
   mem.forEach(function(pid){if(S.listWho&&pid!==S.listWho)return;o+=packingPerson(pid);});
   return o;
 }
@@ -2097,6 +2111,7 @@ function packingPerson(pid){
       if(!shown(cat.items[j]))continue;                /* hide private items from non-owners */
       var pkEditing=S.pkForm&&S.pkForm.pid===pid&&S.pkForm.c===c&&S.pkForm.i===j;
       if(pkHideDone()&&cat.items[j].done&&!pkEditing)continue;   /* hide packed */
+      if(S.pkStoreFilter&&pkStore(cat.items[j])!==S.pkStoreFilter&&!pkEditing)continue;   /* storage filter */
       if(pkEditing){o+=pkItemRow(pid,c,j,true)+pkItemEditor(pid,c,j);continue;}
       o+=pkItemRow(pid,c,j);
     }
