@@ -70,7 +70,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='219';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='220';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -839,6 +839,29 @@ function diningFor(date){
 }
 function llFor(date){return LLS.filter(function(l){return l.trip===S.tripId&&l.day===date;});}
 function showsFor(date){return SHOWS.filter(function(s){return s.trip===S.tripId&&s.day===date;});}
+/* map well-known WDW nighttime shows / parades → their park, by name */
+var SHOW_PARK_RULES=[
+  {p:'mk',re:/happily ever after|disney enchantment|\bwishes\b|festival of fantasy|electrical parade|disney starlight|\bstarlight\b|once upon a time|celebrate the magic|magic kingdom/},
+  {p:'ep',re:/luminous|harmonious|epcot forever|illuminations|reflections of earth|\bepcot\b/},
+  {p:'hs',re:/fantasmic|movie magic|galactic spectacular|star wars|wonderful world of animation|\banimation\b|sunset showcase|hollywood studios/},
+  {p:'ak',re:/rivers of light|tree of life|awakening|kite tails|discovery island|animal kingdom/}
+];
+function parkForShowName(nm){var s=(nm||'').toLowerCase();for(var i=0;i<SHOW_PARK_RULES.length;i++)if(SHOW_PARK_RULES[i].re.test(s))return SHOW_PARK_RULES[i].p;return '';}
+/* one-tap: tag every show in the active trip to its park by recognizing the
+   name. Idempotent; only changes shows whose park is wrong/missing. */
+function autoAssignShowParks(){
+  if(!isAdmin()&&!(window.CLOUD&&window.CLOUD.isSuper)){toast('Admin only');return;}
+  var n=0,unmatched=0;
+  SHOWS.forEach(function(s){
+    if(s.trip!==S.tripId)return;
+    var pk=parkForShowName(s.name);
+    if(pk){if(s.park!==pk){s.park=pk;n++;}}
+    else if(!s.park)unmatched++;
+  });
+  if(n)save('dtp_shows',SHOWS);
+  toast((n?('Tagged '+n+' show'+(n===1?'':'s')):'No changes')+(unmatched?(' · '+unmatched+' unrecognized — set manually'):''));
+  if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();else render();
+}
 function resortsFor(date){return RESORTS.filter(function(r){return r.trip===S.tripId&&date>=r.checkin&&date<=r.checkout;});}
 function parkResFor(date){return PARKRES.filter(function(p){return p.trip===S.tripId&&p.day===date;});}
 function rebooksFor(date){return REBOOKS.filter(function(r){return r.trip===S.tripId&&r.day===date;});}
@@ -4624,6 +4647,8 @@ function scrSection(){
     if(!anyH) body+='<div class="body-empty">No park hours yet.</div>';
     add='<button class="sec-add" onclick="openScreen({type:\'hoursedit\',day:\''+dft+'\'})">Add park hours</button>';
   }else if(sec==='shows'){
+    if(SHOWS.some(function(s){return s.trip===S.tripId;}))
+      body+='<button class="btn-secondary" style="margin:0 0 10px" onclick="autoAssignShowParks()">'+IC.sparkles+' Auto-assign parks by show name</button>';
     for(var ish=0;ish<TD.length;ish++){var shd=showsFor(TD[ish].date).filter(function(x){return visible(x.who);});if(!shd.length)continue;
       body+=dayHd(TD[ish].date);
       for(var sj=0;sj<shd.length;sj++){var sx=shd[sj],spk=sx.park&&PARKS[sx.park];
