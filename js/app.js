@@ -71,7 +71,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='230';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='231';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2557,6 +2557,20 @@ function scrAddFlight(){
 }
 function addLeg(){S.formLegs=(S.formLegs||1)+1;renderScreen_inplace2();}
 function removeLeg(){S.formLegs=Math.max(1,(S.formLegs||1)-1);renderScreen_inplace2();}
+/* hard in-place screen re-render: rebuild from the data model with NO input
+   snapshot/restore. Use after STRUCTURAL changes (insert/delete/reorder in a
+   list) where restoring old values by id would mis-apply them to shifted rows
+   — callers must persist current input values into the model first. */
+function renderScreenHard(){
+  if(!S.screen){render();return;}
+  var host=document.getElementById('screen-host');
+  var oldBody=host.querySelector?host.querySelector('.screen-body'):null;
+  var scrollTop=oldBody?oldBody.scrollTop:0;
+  host.innerHTML=renderScreen();
+  var nb=host.querySelector?host.querySelector('.screen-body'):null;
+  if(nb&&scrollTop)nb.scrollTop=scrollTop;
+  var s=host.firstChild;if(s)s.classList.add('in');
+}
 function renderScreen_inplace2(){
   if(!S.screen){render();return;}
   var host=document.getElementById('screen-host');
@@ -4630,8 +4644,8 @@ function ttCapture(){
   }
   TODO_TMPL[S.persona]=list;
 }
-function ttAdd(){ttCapture();(TODO_TMPL[S.persona]||(TODO_TMPL[S.persona]=[])).push({n:'',when:''});renderScreen_inplace2();}
-function ttDel(i){ttCapture();TODO_TMPL[S.persona].splice(i,1);renderScreen_inplace2();}
+function ttAdd(){ttCapture();(TODO_TMPL[S.persona]||(TODO_TMPL[S.persona]=[])).push({n:'',when:''});renderScreenHard();}
+function ttDel(i){ttCapture();TODO_TMPL[S.persona].splice(i,1);renderScreenHard();}
 function ttSave(){
   ttCapture();
   TODO_TMPL[S.persona]=(TODO_TMPL[S.persona]||[]).filter(function(t){return t.n;});
@@ -4672,11 +4686,11 @@ function ptCapture(){
   }
   PACKING_TMPL[S.persona]=list;
 }
-function ptSectAdd(){ptCapture();(PACKING_TMPL[S.persona]||(PACKING_TMPL[S.persona]=[])).push({cat:'New section',items:[]});renderScreen_inplace2();}
-function ptSectDel(c){ptCapture();PACKING_TMPL[S.persona].splice(c,1);renderScreen_inplace2();}
-function ptItemAdd(c){ptCapture();PACKING_TMPL[S.persona][c].items.push({n:'',qty:1,l:false});renderScreen_inplace2();}
-function ptItemDel(c,i){ptCapture();PACKING_TMPL[S.persona][c].items.splice(i,1);renderScreen_inplace2();}
-function ptLock(c,i){ptCapture();var it=PACKING_TMPL[S.persona][c].items[i];it.l=!it.l;if(it.l)it.qty=0;else if(!it.qty)it.qty=1;renderScreen_inplace2();}
+function ptSectAdd(){ptCapture();(PACKING_TMPL[S.persona]||(PACKING_TMPL[S.persona]=[])).push({cat:'New section',items:[]});renderScreenHard();}
+function ptSectDel(c){ptCapture();PACKING_TMPL[S.persona].splice(c,1);renderScreenHard();}
+function ptItemAdd(c){ptCapture();PACKING_TMPL[S.persona][c].items.push({n:'',qty:1,l:false});renderScreenHard();}
+function ptItemDel(c,i){ptCapture();PACKING_TMPL[S.persona][c].items.splice(i,1);renderScreenHard();}
+function ptLock(c,i){ptCapture();var it=PACKING_TMPL[S.persona][c].items[i];it.l=!it.l;if(it.l)it.qty=0;else if(!it.qty)it.qty=1;renderScreenHard();}
 function ptSave(){
   ptCapture();
   var list=(PACKING_TMPL[S.persona]||[]).map(function(cat){cat.items=(cat.items||[]).filter(function(it){return it.n;});return cat;}).filter(function(cat){return cat.cat;});
