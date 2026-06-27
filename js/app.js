@@ -72,7 +72,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='240';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='241';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -5155,8 +5155,7 @@ function scrTicketEdit(){
         +(tt.hop?'<span class="inpark-badge" style="background:#0F766E;align-self:center">Park Hopper</span>':'')+'</div>';
     });
     body+='</div>';
-    body+='<div class="field-row"><div class="field"><label class="field-label">Activation date</label><input type="date" class="field-input" id="tk-activation" value="'+esc(S._tkAct||'')+'" onchange="tkSyncExp()"></div>';
-    body+='<div class="field"><label class="field-label">Expires (auto)</label><div class="field-input" id="tk-exp" style="background:var(--cream);color:var(--muted);display:flex;align-items:center">'+esc(expDisplay(S._tkAct)||'—')+'</div></div></div>';
+    body+='<div class="field"><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px"><label class="field-label" style="margin-bottom:0">Activation date</label><span id="tk-exp" style="font-size:13px;color:var(--muted)">'+esc(expDisplay(S._tkAct)||'—')+'</span></div><input type="date" class="field-input" id="tk-activation" value="'+esc(S._tkAct||'')+'" onchange="tkSyncExp()"></div>';
     body+='<div class="field"><label class="field-label">Status</label><div class="notify-row'+(S._tkActivated?' on':'')+'" onclick="tkActivated('+(S._tkActivated?'false':'true')+')"><span class="notify-check">'+(S._tkActivated?IC.checkw:'')+'</span><div><div class="notify-lbl">Pass activated</div><div class="notify-sub">Switch on once the pass has been activated in-park.</div></div></div></div>';
     body+='<div class="body-empty" style="text-align:left;padding:2px 2px 6px;color:#92400E"><strong>Reminder:</strong> Annual Pass holders still need a park reservation for every day they plan to enter a park.</div>';
   }
