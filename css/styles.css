@@ -404,6 +404,9 @@ button{font-family:inherit}
 .sfil{font-size:12px;font-weight:700;padding:6px 11px;border-radius:999px;border:1px solid var(--border);background:var(--card);color:var(--muted);cursor:pointer;font-family:inherit}
 .sfil.on{background:#15803D;color:#fff;border-color:#15803D}
 .pk-sep{width:1px;align-self:stretch;min-height:24px;background:var(--border);margin-left:auto}
+.drag-handle{display:flex;align-items:center;justify-content:center;width:28px;flex-shrink:0;margin-left:-4px;color:#AEB4BE;cursor:grab;touch-action:none;-webkit-user-select:none;user-select:none}
+.drag-handle:active{cursor:grabbing}
+.dgrow.dragging{opacity:.65;background:#EEF2FF;border-radius:8px}
 .pk-toolbar .lens-btn{padding:6px 14px}
 .qty-wrap{display:flex;align-items:center;gap:4px;flex-shrink:0}
 .qty-btn{width:44px;height:44px;border-radius:22px;border:1.5px solid var(--border);background:var(--cream);font-size:20px;cursor:pointer;color:var(--ink);display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1;font-family:inherit}

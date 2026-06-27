@@ -13,6 +13,7 @@ var IC = {
   chevd:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>',
   chev:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>',
   chevUp:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>',
+  grip:'<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>',
   plane:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21 4 19.5 2.5S16 1 14.5 2.5L11 6 2.8 4.2 1.4 5.6l6.5 5.5-2.9 3.4-2.8.5-.9.9 2.3 2.3 2.3 2.3.9-.9.5-2.8 3.4-2.9 5.5 6.5 1.4-1.4z"/></svg>',
   planexs:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21 4 19.5 2.5S16 1 14.5 2.5L11 6 2.8 4.2 1.4 5.6l6.5 5.5-2.9 3.4-2.8.5-.9.9 2.3 2.3 2.3 2.3.9-.9.5-2.8 3.4-2.9 5.5 6.5 1.4-1.4z"/></svg>',
   route:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg>',
@@ -71,7 +72,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='232';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='233';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -88,7 +89,7 @@ function stripPackTmpl(dict){
   var o={};
   Object.keys(dict||{}).forEach(function(k){
     o[k]=(dict[k]||[]).map(function(c){
-      return {cat:c.cat, items:(c.items||[]).map(function(it){return {n:it.n,qty:it.qty,l:!!it.l,store:it.store||''};})};
+      return {cat:c.cat, items:(c.items||[]).map(function(it){return {n:it.n,qty:it.qty,l:!!it.l,store:it.store||'',priv:!!it.priv};})};
     });
   });
   return o;
@@ -953,7 +954,7 @@ function switchTrip(id){saveLists();S.tripId=id;saveTripId();var _st=tripById(id
 
 /* screens (slide-in) */
 function openScreen(def){
-  S.screen=def;S._who=null;S._formStatus={};S._delpk=null;S._deltd=null;S.tdForm=null;S.tdScope='mine';S._tdPriv=false;S.listWho=null;S.pkStoreFilter=null;S.ttForm=null;S._ttPriv=false;
+  S.screen=def;S._who=null;S._formStatus={};S._delpk=null;S._deltd=null;S.tdForm=null;S.tdScope='mine';S._tdPriv=false;S.listWho=null;S.pkStoreFilter=null;S.ttForm=null;S._ttPriv=false;S.ptForm=null;S._ptStore='bag';S._ptPriv=false;
   S.pkForm=null;S.pkScope='mine';S._delsect=null;S._pksect=null;ADD.psect=null;
   S._formLoc=null;S._formTier=null;S._formInit=null;S._formColor=null;
   S._notify=notifDefault();
@@ -1304,12 +1305,12 @@ function pkHasStarted(pid){pid=pid||S.persona;
 function pkMarkStarted(pid){pid=pid||S.persona;var s=pkStartedSet();if(s.indexOf(pid)<0){s.push(pid);save(pkStartKey(),s);}}
 function pkStartFromTemplate(){
   var t=PACKING_TMPL[S.persona];
-  PACKING[S.persona]=t?t.map(function(c){return {cat:c.cat,items:(c.items||[]).map(function(it){return {n:it.n,qty:it.qty,l:!!it.l,store:it.store||'',done:false,needBuy:false,who:[]};})};}):[];
+  PACKING[S.persona]=t?t.map(function(c){return {cat:c.cat,items:(c.items||[]).map(function(it){return {n:it.n,qty:it.qty,l:!!it.l,store:it.store||'',priv:!!it.priv,done:false,needBuy:false,who:[]};})};}):[];
   pkMarkStarted(S.persona);saveLists();toast(t&&t.length?'Loaded your template':'Your template is empty');refreshLists();
 }
 function pkStartEmpty(){if(!PACKING[S.persona])PACKING[S.persona]=[];pkMarkStarted(S.persona);refreshLists();}
 function pkSaveAsTemplate(){
-  PACKING_TMPL[S.persona]=(PACKING[S.persona]||[]).map(function(c){return {cat:c.cat,items:(c.items||[]).map(function(it){return {n:it.n,qty:it.qty,l:!!it.l,store:it.store||''};})};});
+  PACKING_TMPL[S.persona]=(PACKING[S.persona]||[]).map(function(c){return {cat:c.cat,items:(c.items||[]).map(function(it){return {n:it.n,qty:it.qty,l:!!it.l,store:it.store||'',priv:!!it.priv};})};});
   savePackTmpl();toast('Saved as your global packing template');
 }
 /* ── To Do — assignable per-trip items ─────────────────────────
@@ -2135,7 +2136,9 @@ function pkItemRow(pid,c,j,expanded){
   if(it.by&&it.by!==pid&&person(it.by))subs.push('Added by '+esc(person(it.by).name));
   if(it.needBuy){var bs=(it.who&&it.who.length)?it.who.map(function(p){var pp=person(p);return pp?esc(pp.name):'';}).filter(Boolean).join(', '):(person(pid)?esc(person(pid).name):'');subs.push('Buy · '+bs);}
   if(it.priv)subs.push(IC.lock+' Hidden');
-  var o='<div class="pk-row'+(expanded?' expanded':'')+'">';
+  var drag=pkCanList(pid)&&!expanded&&!pkHideDone()&&!S.pkStoreFilter&&(PACKING[pid][c].items.length>1);
+  var o='<div class="pk-row'+(expanded?' expanded':'')+(drag?' dgrow':'')+'"'+(drag?' data-dg="pk|'+pid+'|'+c+'" data-di="'+j+'"':'')+'>';
+  if(drag)o+=dgHandle();
   o+='<div class="chkbox'+(it.done?' on':'')+'" onclick="pkChk(\''+pid+'\','+c+','+j+')">'+(it.done?IC.checkw:'')+'</div>';
   o+='<div class="pk-name'+(it.done?' done':'')+'" onclick="pkChk(\''+pid+'\','+c+','+j+')">'+esc(it.n)+(subs.length?'<div class="pk-by">'+subs.join(' · ')+'</div>':'')+'</div>';
   var pst=pkStore(it);
@@ -2205,7 +2208,8 @@ function todoBody(){
   o+='<div class="card" style="padding:6px 0 0">';
   if(!adding)o+='<button class="add-link" onclick="tdAddOpen()">'+IC.plus+' Add task</button>';   /* add sits ABOVE the list */
   if(!mineV.length&&!adding)o+='<div class="body-empty" style="text-align:left;padding:6px 12px">'+(hide&&mine.length?'All done — nothing outstanding.':'Nothing here yet.')+'</div>';
-  for(var i=0;i<mineV.length;i++)o+=todoRowOrEditor(mineV[i]);
+  var tdDrag=!hide&&!adding&&mine.length>1;   /* reorder only when full unfiltered list shown */
+  for(var i=0;i<mineV.length;i++)o+=todoRowOrEditor(mineV[i],tdDrag?{group:'td',idx:i}:null);
   if(adding)o+=todoEditor(null);   /* new task opens at the BOTTOM (tdAddOpen scrolls to it) */
   o+='</div>';
   /* Assigned to me by others */
@@ -2269,11 +2273,11 @@ function todoStarter(){
   o+='</div></div>';
   return o;
 }
-function todoRowOrEditor(t){
+function todoRowOrEditor(t,drag){
   if(S.tdForm&&S.tdForm.id===t.id)return todoRow(t,true)+todoEditor(t);
-  return todoRow(t);
+  return todoRow(t,false,drag);
 }
-function todoRow(t,expanded){
+function todoRow(t,expanded,drag){
   var me=S.persona;
   var canEdit=tdCanEdit(t), amAssignee=t.who&&t.who.indexOf(me)>=0;
   var pend=S._deltd==='tdrm_'+t.id;
@@ -2281,7 +2285,9 @@ function todoRow(t,expanded){
   if(t.who&&t.who.length)sub.push('Assigned to '+t.who.map(function(p){var pp=person(p);return pp?esc(pp.name):'';}).filter(Boolean).join(', '));
   if(!todoOversight()&&t.by!==me){var c=person(t.by);sub.push('From '+(c?esc(c.name):'someone'));}
   if(t.priv)sub.push(IC.lock+' Hidden');
-  var o='<div class="pk-row'+(expanded?' expanded':'')+'">';
+  var dg=drag&&!expanded;
+  var o='<div class="pk-row'+(expanded?' expanded':'')+(dg?' dgrow':'')+'"'+(dg?' data-dg="'+drag.group+'" data-di="'+drag.idx+'"':'')+'>';
+  if(dg)o+=dgHandle();
   o+='<div class="chkbox'+(t.done?' on':'')+'" onclick="tdToggle(\''+t.id+'\')">'+(t.done?IC.checkw:'')+'</div>';
   o+='<div class="pk-name'+(t.done?' done':'')+'" onclick="tdToggle(\''+t.id+'\')">'+esc(t.n)+(sub.length?'<div class="pk-by">'+sub.join(' · ')+'</div>':'')+'</div>';
   if(t.when)o+='<div class="td-when">'+esc(t.when)+'</div>';
@@ -2570,6 +2576,60 @@ function renderScreenHard(){
   var nb=host.querySelector?host.querySelector('.screen-body'):null;
   if(nb&&scrollTop)nb.scrollTop=scrollTop;
   var s=host.firstChild;if(s)s.classList.add('in');
+}
+/* ── Drag-to-reorder (pointer-based, works on touch) ───────────
+   A row opts in with class "dgrow", data-dg=<group>, data-di=<index>, and a
+   child .drag-handle. While dragging we live-move the row among its same-group
+   siblings; on drop we read the new data-di order and hand it to a per-group
+   reorder. Lists with active filters must NOT render handles (indices wouldn't
+   cover every item). */
+function dgHandle(group,idx){return '<span class="drag-handle" onpointerdown="dgDown(event)" title="Drag to reorder">'+IC.grip+'</span>';}
+var DRAG=null;
+function dgRows(group){return Array.prototype.slice.call(document.querySelectorAll('.dgrow[data-dg="'+group+'"]'));}
+function dgDown(ev){
+  var row=ev.target.closest?ev.target.closest('.dgrow'):null;if(!row)return;
+  ev.preventDefault();
+  DRAG={group:row.getAttribute('data-dg'),row:row};
+  row.classList.add('dragging');
+  try{ev.target.setPointerCapture&&ev.target.setPointerCapture(ev.pointerId);}catch(_){}
+  document.addEventListener('pointermove',dgMove,{passive:false});
+  document.addEventListener('pointerup',dgUp);
+  document.addEventListener('pointercancel',dgUp);
+}
+function dgMove(ev){
+  if(!DRAG)return;ev.preventDefault();
+  var dragged=DRAG.row,y=ev.clientY,rows=dgRows(DRAG.group),ref=null;
+  for(var i=0;i<rows.length;i++){var r=rows[i];if(r===dragged)continue;var rc=r.getBoundingClientRect();if(y<rc.top+rc.height/2){ref=r;break;}}
+  if(ref){if(dragged.nextSibling!==ref)dragged.parentNode.insertBefore(dragged,ref);}
+  else{var last=rows[rows.length-1];if(last&&last!==dragged)last.parentNode.insertBefore(dragged,last.nextSibling);}
+}
+function dgUp(){
+  document.removeEventListener('pointermove',dgMove);
+  document.removeEventListener('pointerup',dgUp);
+  document.removeEventListener('pointercancel',dgUp);
+  if(!DRAG)return;
+  var group=DRAG.group;if(DRAG.row)DRAG.row.classList.remove('dragging');
+  var order=dgRows(group).map(function(r){return parseInt(r.getAttribute('data-di'),10);});
+  DRAG=null;
+  dgApply(group,order);
+}
+function dgApply(group,order){
+  S.pkForm=null;S.ptForm=null;S.ttForm=null;   /* close index-based editors so a shifted index can't mis-target */
+  function permute(arr){var out=order.map(function(i){return arr[i];}).filter(function(x){return x!==undefined;});return (out.length===arr.length)?out:arr;}
+  var p=group.split('|');
+  if(p[0]==='pk'){var pid=p[1],c=+p[2];if(PACKING[pid]&&PACKING[pid][c]){PACKING[pid][c].items=permute(PACKING[pid][c].items);saveLists();refreshLists();}}
+  else if(p[0]==='pt'){var c2=+p[1];if(PACKING_TMPL[S.persona]&&PACKING_TMPL[S.persona][c2]){PACKING_TMPL[S.persona][c2].items=permute(PACKING_TMPL[S.persona][c2].items);renderScreenHard();}}
+  else if(p[0]==='tt'){TODO_TMPL[S.persona]=permute(TODO_TMPL[S.persona]||[]);renderScreenHard();}
+  else if(p[0]==='td'){dgReorderTodoMine(order);}
+}
+/* reorder the current persona's own to-dos within TODO, keeping everything else */
+function dgReorderTodoMine(order){
+  var me=S.persona,tid=S.tripId,positions=[],mine=[];
+  for(var i=0;i<TODO.length;i++){if(TODO[i].trip===tid&&TODO[i].by===me){positions.push(i);mine.push(TODO[i]);}}
+  var reordered=order.map(function(k){return mine[k];}).filter(Boolean);
+  if(reordered.length!==mine.length)return;
+  for(var j=0;j<positions.length;j++)TODO[positions[j]]=reordered[j];
+  saveTODO();refreshTodo();
 }
 function renderScreen_inplace2(){
   if(!S.screen){render();return;}
@@ -4636,7 +4696,9 @@ function ttRow(i,expanded){
   var it=TODO_TMPL[S.persona][i],sub=[];
   if(it.when)sub.push(esc(it.when));
   if(it.priv)sub.push(IC.lock+' Hidden');
-  var o='<div class="pk-row'+(expanded?' expanded':'')+'">';
+  var dg=!expanded&&(TODO_TMPL[S.persona]||[]).length>1;
+  var o='<div class="pk-row'+(expanded?' expanded':'')+(dg?' dgrow':'')+'"'+(dg?' data-dg="tt" data-di="'+i+'"':'')+'>';
+  if(dg)o+=dgHandle();
   o+='<div class="pk-name" onclick="ttEditOpen('+i+')">'+(it.n?esc(it.n):'<span style="color:var(--muted)">Untitled task</span>')+(sub.length?'<div class="pk-by">'+sub.join(' · ')+'</div>':'')+'</div>';
   if(expanded)o+='<button class="hdr-icon pk-edit-on" style="width:30px;height:30px;flex-shrink:0" title="Close" onclick="ttEditClose()">'+IC.chevUp+'</button>';
   else o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0" onclick="ttEditOpen('+i+')">'+IC.pencil+'</button>';
@@ -4682,13 +4744,9 @@ function scrPackTmpl(){
   for(var c=0;c<list.length;c++){var cat=list[c];
     body+='<div class="card">';
     body+='<div class="add-row" style="padding:10px 12px"><input class="field-input" id="pt-s-'+c+'" style="flex:1;min-width:0;font-weight:700" value="'+esc(cat.cat)+'" placeholder="Section name"><button class="del-btn" onclick="ptSectDel('+c+')">&times;</button></div>';
-    for(var i=0;i<cat.items.length;i++){var it=cat.items[i];
-      body+='<div class="pk-row">';
-      body+='<input class="field-input" id="pt-n-'+c+'-'+i+'" style="flex:2;min-width:0" value="'+esc(it.n)+'" placeholder="Item">';
-      body+='<input class="field-input" id="pt-q-'+c+'-'+i+'" type="number" inputmode="numeric" style="width:54px;flex:0 0 auto" value="'+(it.l?0:(it.qty||1))+'">';
-      body+='<button class="na-btn'+(it.l?' active':'')+'" onclick="ptLock('+c+','+i+')">Locker</button>';
-      body+='<button class="del-btn" onclick="ptItemDel('+c+','+i+')">&times;</button>';
-      body+='</div>';
+    for(var i=0;i<cat.items.length;i++){
+      if(S.ptForm&&S.ptForm.c===c&&S.ptForm.i===i)body+=ptItemRow(c,i,true)+ptItemEditor(c,i);
+      else body+=ptItemRow(c,i,false);
     }
     body+='<button class="add-link" onclick="ptItemAdd('+c+')">'+IC.plus+' Add item</button>';
     body+='</div>';
@@ -4696,25 +4754,54 @@ function scrPackTmpl(){
   body+='<button class="add-link" onclick="ptSectAdd()">'+IC.plus+' Add section</button>';
   return screenShell('Global Packing Template',body,'Save','ptSave()');
 }
-function ptCapture(){
-  var list=PACKING_TMPL[S.persona]||[];
-  for(var c=0;c<list.length;c++){
-    var s=document.getElementById('pt-s-'+c);if(s&&typeof s.value==='string')list[c].cat=s.value.trim();
-    for(var i=0;i<list[c].items.length;i++){
-      var n=document.getElementById('pt-n-'+c+'-'+i),q=document.getElementById('pt-q-'+c+'-'+i);
-      if(n&&typeof n.value==='string')list[c].items[i].n=n.value.trim();
-      if(q&&typeof q.value==='string'){var v=parseInt(q.value,10);list[c].items[i].qty=isNaN(v)?(list[c].items[i].l?0:1):v;}
-    }
-  }
-  PACKING_TMPL[S.persona]=list;
+function ptItemRow(c,i,expanded){
+  var it=PACKING_TMPL[S.persona][c].items[i],st=pkStore(it),sub=[];
+  if(st==='locker')sub.push('Locker');else if(st==='person')sub.push('On me');else if(it.qty>1)sub.push('×'+it.qty);
+  if(it.priv)sub.push(IC.lock+' Hidden');
+  var dg=!expanded&&PACKING_TMPL[S.persona][c].items.length>1;
+  var o='<div class="pk-row'+(expanded?' expanded':'')+(dg?' dgrow':'')+'"'+(dg?' data-dg="pt|'+c+'" data-di="'+i+'"':'')+'>';
+  if(dg)o+=dgHandle();
+  o+='<div class="pk-name" onclick="ptItemEditOpen('+c+','+i+')">'+(it.n?esc(it.n):'<span style="color:var(--muted)">Untitled item</span>')+(sub.length?'<div class="pk-by">'+sub.join(' · ')+'</div>':'')+'</div>';
+  if(expanded)o+='<button class="hdr-icon pk-edit-on" style="width:30px;height:30px;flex-shrink:0" title="Close" onclick="ptItemClose()">'+IC.chevUp+'</button>';
+  else o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0" onclick="ptItemEditOpen('+c+','+i+')">'+IC.pencil+'</button>';
+  o+='<button class="del-btn" onclick="ptItemDel('+c+','+i+')">&times;</button>';
+  return o+'</div>';
 }
-function ptSectAdd(){ptCapture();(PACKING_TMPL[S.persona]||(PACKING_TMPL[S.persona]=[])).push({cat:'New section',items:[]});renderScreenHard();}
-function ptSectDel(c){ptCapture();PACKING_TMPL[S.persona].splice(c,1);renderScreenHard();}
-function ptItemAdd(c){ptCapture();PACKING_TMPL[S.persona][c].items.push({n:'',qty:1,l:false});renderScreenHard();}
-function ptItemDel(c,i){ptCapture();PACKING_TMPL[S.persona][c].items.splice(i,1);renderScreenHard();}
-function ptLock(c,i){ptCapture();var it=PACKING_TMPL[S.persona][c].items[i];it.l=!it.l;if(it.l)it.qty=0;else if(!it.qty)it.qty=1;renderScreenHard();}
+function ptItemEditor(c,i){
+  var it=PACKING_TMPL[S.persona][c].items[i];
+  var o='<div class="inline-editor pk-acc">';
+  o+='<div class="field" style="margin:0"><label class="field-label">Item</label><input class="field-input" id="pti-name" value="'+esc(it.n||'')+'" placeholder="e.g. Sunscreen"></div>';
+  o+='<div class="field" style="margin:0"><label class="field-label">Storage</label><div class="seg seg3">'
+    +'<button class="seg-btn'+(S._ptStore==='bag'?' on':'')+'" onclick="ptFormStore(\'bag\')">Suitcase</button>'
+    +'<button class="seg-btn'+(S._ptStore==='person'?' on':'')+'" onclick="ptFormStore(\'person\')">On Person</button>'
+    +'<button class="seg-btn'+(S._ptStore==='locker'?' on':'')+'" onclick="ptFormStore(\'locker\')">Locker</button></div></div>';
+  if(S._ptStore==='bag')o+='<div class="field" style="margin:0"><label class="field-label">Quantity</label><input class="field-input" id="pti-qty" type="number" inputmode="numeric" value="'+(it.qty||1)+'"></div>';
+  o+='<div class="field" style="margin:0"><label class="field-label">Privacy</label><div class="seg"><button class="seg-btn'+(!S._ptPriv?' on':'')+'" onclick="ptFormPriv(false)">Visible</button><button class="seg-btn'+(S._ptPriv?' on book':'')+'" onclick="ptFormPriv(true)">'+IC.lock+' Hidden</button></div></div>';
+  if(S._ptPriv)o+='<div class="priv-note">When loaded into a trip, this item starts hidden from the trip owner and admins.</div>';
+  o+='<div style="display:flex;gap:8px"><button class="btn-primary" style="margin:0;flex:1" onclick="ptItemClose()">Done</button></div>';
+  return o+'</div>';
+}
+function ptCaptureSections(){var list=PACKING_TMPL[S.persona]||[];for(var c=0;c<list.length;c++){var s=document.getElementById('pt-s-'+c);if(s&&typeof s.value==='string')list[c].cat=s.value.trim();}}
+function ptCaptureOpen(){
+  ptCaptureSections();
+  if(!S.ptForm)return;
+  var col=PACKING_TMPL[S.persona]&&PACKING_TMPL[S.persona][S.ptForm.c];
+  var it=col&&col.items[S.ptForm.i];if(!it)return;
+  var n=document.getElementById('pti-name');if(n&&typeof n.value==='string')it.n=n.value.trim();
+  it.store=(S._ptStore==='person')?'person':'';it.l=(S._ptStore==='locker');
+  if(S._ptStore==='bag'){var q=document.getElementById('pti-qty');var v=q?parseInt(q.value,10):it.qty;it.qty=(isNaN(v)||v<1)?1:v;}else it.qty=0;
+  it.priv=!!S._ptPriv;
+}
+function ptItemEditOpen(c,i){ptCaptureOpen();var it=PACKING_TMPL[S.persona][c].items[i];S.ptForm={c:c,i:i};S._ptStore=pkStore(it);S._ptPriv=!!it.priv;renderScreenHard();setTimeout(function(){var e=document.getElementById('pti-name');if(e)e.focus({preventScroll:true});},50);}
+function ptItemClose(){ptCaptureOpen();S.ptForm=null;renderScreenHard();}
+function ptFormStore(v){S._ptStore=v;ptCaptureOpen();renderScreenHard();}
+function ptFormPriv(v){S._ptPriv=v;ptCaptureOpen();renderScreenHard();}
+function ptSectAdd(){ptCaptureOpen();(PACKING_TMPL[S.persona]||(PACKING_TMPL[S.persona]=[])).push({cat:'New section',items:[]});renderScreenHard();}
+function ptSectDel(c){ptCaptureOpen();PACKING_TMPL[S.persona].splice(c,1);if(S.ptForm&&S.ptForm.c===c)S.ptForm=null;else if(S.ptForm&&S.ptForm.c>c)S.ptForm.c--;renderScreenHard();}
+function ptItemAdd(c){ptCaptureOpen();var items=PACKING_TMPL[S.persona][c].items;items.push({n:'',qty:1,l:false,store:'',priv:false});S.ptForm={c:c,i:items.length-1};S._ptStore='bag';S._ptPriv=false;renderScreenHard();setTimeout(function(){var e=document.getElementById('pti-name');if(e){try{e.scrollIntoView({block:'center',behavior:'smooth'});}catch(_){}e.focus({preventScroll:true});}},60);}
+function ptItemDel(c,i){ptCaptureOpen();PACKING_TMPL[S.persona][c].items.splice(i,1);if(S.ptForm&&S.ptForm.c===c&&S.ptForm.i===i)S.ptForm=null;else if(S.ptForm&&S.ptForm.c===c&&S.ptForm.i>i)S.ptForm.i--;renderScreenHard();}
 function ptSave(){
-  ptCapture();
+  ptCaptureOpen();S.ptForm=null;
   var list=(PACKING_TMPL[S.persona]||[]).map(function(cat){cat.items=(cat.items||[]).filter(function(it){return it.n;});return cat;}).filter(function(cat){return cat.cat;});
   PACKING_TMPL[S.persona]=list;
   savePackTmpl();toast('Packing template saved');closeScreen();render();
