@@ -70,7 +70,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='212';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='213';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -97,7 +97,7 @@ function savePackTmpl(){save('dtp_pack_tmpl',PACKING_TMPL);}
 
 FAMILY  = load('dtp_family', FAMILY);
 ALL_IDS = FAMILY.map(function(p){return p.id;});
-DAYS    = load('dtp_days', DAYS);
+migrateDays(); DAYS = loadDays();
 VISITS  = load('dtp_visits', VISITS);
 PARKHOURS = load('dtp_hours', PARKHOURS);
 DINING  = load('dtp_dining', DINING);
@@ -231,12 +231,54 @@ function materializeAllDays(){
   for(var i=0;i<TRIPS.length;i++){var tid=TRIPS[i].id,has=false;
     for(var j=0;j<DAYS.length;j++)if(DAYS[j].trip===tid){has=true;break;}
     if(!has){genDays(tid);changed=true;}}
-  if(changed)save('dtp_days',DAYS);
+  if(changed)saveDays();
+}
+
+/* ── Per-trip day storage ──────────────────────────────────────
+   Days used to live in ONE record (dtp_days = every day of every trip). That
+   single doc was the biggest thing we synced and the most likely to hit
+   Firestore's size limit — and a failed write there silently lost ALL day
+   strategies/plans at once. Now each trip's days are their own record
+   (dtp_days_<tripId>), so size is bounded and a problem with one trip can't
+   take down the rest. In-memory we still keep one flat DAYS array, so nothing
+   else in the app changes. */
+function daysKey(tid){return 'dtp_days_'+tid;}
+/* read every per-trip day record back into one flat array; fall back to the
+   legacy single key for any trip not yet migrated so nothing is ever lost */
+function loadDays(){
+  var out=[],seen={};
+  try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);
+    if(k&&k.indexOf('dtp_days_')===0){var a=load(k,[]);if(Array.isArray(a)){for(var j=0;j<a.length;j++)out.push(a[j]);seen[k.slice(9)]=1;}}
+  }}catch(e){}
+  var legacy=load('dtp_days',null);
+  if(Array.isArray(legacy))legacy.forEach(function(d){if(d&&d.trip&&!seen[d.trip])out.push(d);});
+  return out;
+}
+/* write the flat DAYS array back out, one record per trip */
+function saveDays(){
+  var byTrip={};
+  for(var i=0;i<DAYS.length;i++){var d=DAYS[i];if(!d||!d.trip)continue;(byTrip[d.trip]=byTrip[d.trip]||[]).push(d);}
+  for(var tid in byTrip)save(daysKey(tid),byTrip[tid]);
+}
+/* one-time split of the legacy dtp_days record into per-trip records. Safe to
+   run repeatedly: it only writes a trip's record if one doesn't already exist
+   (never clobbers newer per-trip data), then empties the legacy doc so the big
+   record stops being written/synced. Also runs after cloud pulls in case data
+   arrives from a device still on the old single-record build. */
+function migrateDays(){
+  var legacy=load('dtp_days',null);
+  if(!Array.isArray(legacy)||!legacy.length)return;
+  var existing={};
+  try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf('dtp_days_')===0)existing[k.slice(9)]=1;}}catch(e){}
+  var byTrip={};
+  legacy.forEach(function(d){if(d&&d.trip)(byTrip[d.trip]=byTrip[d.trip]||[]).push(d);});
+  Object.keys(byTrip).forEach(function(tid){if(!existing[tid])save(daysKey(tid),byTrip[tid]);});
+  save('dtp_days',[]);   /* retire the legacy record (kept empty so the empty state syncs out) */
 }
 
 /* collection savers */
 function persist(){
-  save('dtp_days',DAYS);save('dtp_visits',VISITS);save('dtp_hours',PARKHOURS);save('dtp_dining',DINING);save('dtp_lls',LLS);
+  saveDays();save('dtp_visits',VISITS);save('dtp_hours',PARKHOURS);save('dtp_dining',DINING);save('dtp_lls',LLS);
   save('dtp_shows',SHOWS);save('dtp_flights',FLIGHTS);save('dtp_resorts',RESORTS);
   save('dtp_parkres',PARKRES);save('dtp_rebooks',REBOOKS);save('dtp_trips',TRIPS);save('dtp_family',FAMILY);save('dtp_parties',PARTIES);save('dtp_chat',CHAT);
 }
@@ -249,7 +291,7 @@ function rehydrate(){
   TODO_TMPL=load('dtp_todo_tmpl',TODO_TMPL);
   PACKING_TMPL=load('dtp_pack_tmpl',PACKING_TMPL);
   FAMILY=load('dtp_family',FAMILY); ALL_IDS=FAMILY.map(function(p){return p.id;});
-  DAYS=load('dtp_days',DAYS); VISITS=load('dtp_visits',VISITS); PARKHOURS=load('dtp_hours',PARKHOURS);
+  migrateDays(); DAYS=loadDays(); VISITS=load('dtp_visits',VISITS); PARKHOURS=load('dtp_hours',PARKHOURS);
   DINING=load('dtp_dining',DINING); LLS=load('dtp_lls',LLS); SHOWS=load('dtp_shows',SHOWS);
   FLIGHTS=load('dtp_flights',FLIGHTS); RESORTS=load('dtp_resorts',RESORTS); PARKRES=load('dtp_parkres',PARKRES);
   REBOOKS=load('dtp_rebooks',REBOOKS); TRIPS=load('dtp_trips',TRIPS); NOTIFS=load('dtp_notifs',NOTIFS);
@@ -2887,7 +2929,7 @@ function autoBackup(force){
 function backupWhen(b){try{return new Date(b.ts||b.iso).toLocaleString();}catch(e){return b.iso||'';}}
 function backupSummary(b){
   function cnt(k){try{var a=JSON.parse((b.keys&&b.keys[k])||'[]');return Array.isArray(a)?a.length:0;}catch(e){return 0;}}
-  function days(){var c=0;try{var a=JSON.parse((b.keys&&b.keys.dtp_days)||'[]');for(var i=0;i<a.length;i++)if(a[i]&&a[i].strategy)c++;}catch(e){}return c;}
+  function days(){var c=0;try{var ks=b.keys||{};Object.keys(ks).forEach(function(k){if(k==='dtp_days'||k.indexOf('dtp_days_')===0){var a=JSON.parse(ks[k]||'[]');for(var i=0;i<a.length;i++)if(a[i]&&a[i].strategy)c++;}});}catch(e){}return c;}
   return cnt('dtp_trips')+' trips · '+cnt('dtp_family')+' people · '+days()+' day strategies';
 }
 function backupCountLabel(){var n=loadBackups().length;return n?(n+' snapshot'+(n===1?'':'s')+' saved'):'Auto-saved snapshots';}
@@ -3227,7 +3269,7 @@ function ntBack(){
       TRIPS=TRIPS.filter(function(x){return x.id!==S._ntTripId;});
       DAYS=DAYS.filter(function(d){return d.trip!==S._ntTripId;});
       try{localStorage.removeItem('dtp_packing_'+S._ntTripId);localStorage.removeItem('dtp_todo_'+S._ntTripId);}catch(e){}
-      save('dtp_trips',TRIPS);save('dtp_days',DAYS);S._ntTripId=null;S._members=null;
+      save('dtp_trips',TRIPS);saveDays();S._ntTripId=null;S._members=null;
     }
     S._ntStep='who';S._ntWhoMode='existing';renderScreen_inplace2();return;
   }
@@ -3241,7 +3283,7 @@ function ntMakeTrip(partyId,mem){
   var dates=(start&&end)?(monOf(start)+' '+(+start.slice(8))+' – '+monOf(end)+' '+(+end.slice(8))+', '+start.slice(0,4)):'Dates TBD';
   TRIPS.push({id:id,name:nm,sub:'Walt Disney World',notifyByDefault:false,start:start,end:end,dates:dates,color:col,members:mem,by:S.persona,parties:partyId?[partyId]:[]});
   genDays(id);var np={},nt=[];mem.forEach(function(pid){np[pid]=[];});
-  save('dtp_packing_'+id,np);save('dtp_todo_'+id,nt);save('dtp_trips',TRIPS);save('dtp_days',DAYS);
+  save('dtp_packing_'+id,np);save('dtp_todo_'+id,nt);save('dtp_trips',TRIPS);saveDays();
   S._ntTripId=id;S._members=new Set(mem);
 }
 function ntCreateTripExisting(){
@@ -3310,7 +3352,7 @@ function ntCancel(){
     TRIPS=TRIPS.filter(function(x){return x.id!==S._ntTripId;});
     DAYS=DAYS.filter(function(d){return d.trip!==S._ntTripId;});
     try{localStorage.removeItem('dtp_packing_'+S._ntTripId);localStorage.removeItem('dtp_todo_'+S._ntTripId);}catch(e){}
-    save('dtp_trips',TRIPS);save('dtp_days',DAYS);
+    save('dtp_trips',TRIPS);saveDays();
   }
   S._ntStep=null;S._ntWhoMode=null;S._ntPartyId=null;S._ntProvParty=null;
   S._ntTripId=null;S._ntFirstRun=false;S._members=null;S._formInit=null;
@@ -3555,6 +3597,9 @@ function resetToBlank(){
   var owner={id:oid,name:wizOwnerName(),color:PALETTE[0][0],admin:true,parties:[],email:(window.CLOUD&&window.CLOUD.user&&window.CLOUD.user.email)||'',uid:cloudUid()};
   FAMILY.push(owner);ALL_IDS=[oid];
   S.persona=oid;S.partyId=null;S.tripId=null;PACKING={};TODO=[];
+  /* drop every per-trip day record locally so loadDays() can't resurrect a
+     wiped trip's days from a stale dtp_days_<id> key */
+  try{for(var _i=localStorage.length-1;_i>=0;_i--){var _k=localStorage.key(_i);if(_k&&(_k==='dtp_days'||_k.indexOf('dtp_days_')===0))localStorage.removeItem(_k);}}catch(e){}
   persist();save('dtp_persona',oid);savePartyId();saveTripId();
 }
 function startWizard(){openScreen({type:'newtrip'});}
@@ -4619,7 +4664,7 @@ function saveDay(){
   d.tags=val('dy-tags').split(',').map(function(s){return s.trim();}).filter(function(s){return s;});
   d.alert=val('dy-alert')||null;
   d.strategy=val('dy-strat');
-  save('dtp_days',DAYS);toast('Day updated');closeScreen();render();
+  saveDays();toast('Day updated');closeScreen();render();
 }
 
 /* ── Park reservation (first-class item: park + day + people) ─ */
@@ -4756,12 +4801,12 @@ function saveStop(){
   var cr=val('st-crit');if(cr)rec.crit=cr;
   rec.by=(S.screen.idx!=null&&d.itin[S.screen.idx]&&d.itin[S.screen.idx].by)||S.persona;
   if(S.screen.idx!=null)d.itin[S.screen.idx]=rec; else d.itin.push(rec);
-  save('dtp_days',DAYS);S._who=null;toast('Stop saved');closeScreen();render();
+  saveDays();S._who=null;toast('Stop saved');closeScreen();render();
 }
 function delStop(){
   var d=dayByDate(S.screen.day);
   if(d&&S.screen.idx!=null){if(!ownOK(d.itin[S.screen.idx]))return;d.itin.splice(S.screen.idx,1);}
-  save('dtp_days',DAYS);toast('Stop removed');closeScreen();render();
+  saveDays();toast('Stop removed');closeScreen();render();
 }
 
 /* ── Rolling re-book (sequence-based LL item) ──────────────── */
@@ -4945,7 +4990,7 @@ function saveTrip(){
   if(st&&en){
     t.start=st;t.end=en;
     t.dates=monOf(st)+' '+(+st.slice(8))+' – '+monOf(en)+' '+(+en.slice(8))+', '+st.slice(0,4);
-    reconcileDays(t.id);save('dtp_days',DAYS);
+    reconcileDays(t.id);saveDays();
     if(t.id===S.tripId){S.dayIdx=0;S.open=defOpen();}
   }
   t.notifyByDefault=!!S._notify;
@@ -4971,6 +5016,7 @@ function doDelTrip(id){
   [DAYS,VISITS,PARKHOURS,DINING,LLS,SHOWS,FLIGHTS,RESORTS,PARKRES,REBOOKS].forEach(drop);
   for(var c=CHAT.length-1;c>=0;c--)if(CHAT[c].trip===id)CHAT.splice(c,1);
   try{localStorage.removeItem('dtp_packing_'+id);localStorage.removeItem('dtp_todo_'+id);}catch(e){}
+  save(daysKey(id),[]);   /* empty the deleted trip's day record so the deletion syncs out */
   if(S.tripId===id){S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();}
   ensureVisibleTrip();saveTripId();persist();toast('Trip deleted');closeScreen();render();
 }

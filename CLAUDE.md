@@ -69,6 +69,23 @@ silent data loss (this is what wiped day strategies/day plans pre-Build 210).
   most likely to fail (size/limits); a silent failure there while small records
   succeed = day strategies/plans lost while dining survives.
 
+### Day storage — one record PER TRIP (Build 213)
+Days are stored per trip in `dtp_days_<tripId>` (NOT the legacy single
+`dtp_days`). In memory they're still one flat `DAYS` array, so consumers are
+unchanged — only load/save differ:
+- `loadDays()` concatenates every `dtp_days_*` record, falling back to legacy
+  `dtp_days` for any trip not yet migrated (nothing is ever lost).
+- `saveDays()` writes DAYS back grouped by trip — use it everywhere instead of
+  `save('dtp_days',DAYS)`.
+- `migrateDays()` (run at boot AND in `rehydrate()`) splits a legacy `dtp_days`
+  into per-trip records once, then empties the legacy doc. Idempotent; never
+  clobbers an existing per-trip record.
+- Deleting a trip must `save(daysKey(id),[])`; `resetToBlank()` purges all
+  `dtp_days*` local keys so a wiped trip can't be resurrected by `loadDays()`.
+Rationale: the single `dtp_days` doc was the biggest synced record and the most
+likely to hit Firestore's size limit — one failed write there lost ALL day
+strategies/plans at once. Per-trip records bound the size and the blast radius.
+
 ### Service worker
 - `sw.js` uses network-first strategy; cache is offline fallback only.
 - `index.html` registers with `updateViaCache:'none'` and polls every 60s.
