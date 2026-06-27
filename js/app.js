@@ -71,7 +71,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='225';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='226';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1342,7 +1342,7 @@ function setListWho(pid){
 function personFilterRow(members){
   if(!members||members.length<2)return '';
   var o='<div class="pfilter-row">';
-  o+='<button class="pf-chip'+(!S.listWho?' on':'')+'" onclick="setListWho(null)">Everyone</button>';
+  o+='<button class="pf-chip all'+(!S.listWho?' on':'')+'" onclick="setListWho(null)">Everyone</button>';
   for(var i=0;i<members.length;i++){var p=person(members[i]);if(!p)continue;
     o+='<button class="pf-chip'+(S.listWho===p.id?' on':'')+'" onclick="setListWho(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+'</button>';
   }
@@ -1358,10 +1358,23 @@ function tdHasStarted(pid){pid=pid||S.persona;
   return tdStartedSet().indexOf(pid)>=0;}
 function tdMarkStarted(pid){pid=pid||S.persona;var s=tdStartedSet();if(s.indexOf(pid)<0){s.push(pid);save(tdStartKey(),s);}}
 
-function refreshTodo(){var b=document.getElementById('todo-body');if(b&&S.screen&&S.screen.type==='todolist')b.innerHTML=todoBody();else render();}
+function refreshTodo(){
+  var b=document.getElementById('todo-body');
+  if(b&&S.screen&&S.screen.type==='todolist'){
+    var sc=b.closest?b.closest('.screen-body'):null,top=sc?sc.scrollTop:0;
+    b.innerHTML=todoBody();
+    if(sc)sc.scrollTop=top;   /* keep position so the accordion expand/collapse doesn't jump */
+    return;
+  }
+  render();
+}
 
 function tdToggle(id){var t=tdById(id);if(!t)return;if(!tdCanCheck(t)){toast('Only the creator, an assignee or an admin can check this');return;}t.done=!t.done;saveTODO();refreshTodo();}
-function tdAddOpen(){S.tdForm={id:null};S._who=new Set();S._tdPriv=false;S._notify=notifDefault();refreshTodo();}
+function tdAddOpen(){
+  S.tdForm={id:null};S._who=new Set();S._tdPriv=false;S._notify=notifDefault();refreshTodo();
+  /* the new-task editor renders at the BOTTOM of My to-dos — scroll to it + focus */
+  setTimeout(function(){var e=document.getElementById('td-name');if(e){try{e.scrollIntoView({block:'center',behavior:'smooth'});}catch(_){e.scrollIntoView();}try{e.focus({preventScroll:true});}catch(_2){e.focus();}}},60);
+}
 function tdEdit(id){var t=tdById(id);if(!t)return;if(!tdCanEdit(t)){toast('Only the creator or an admin can edit this');return;}S.tdForm={id:id};S._who=new Set(t.who||[]);S._tdPriv=!!t.priv;S._notify=notifDefault();refreshTodo();}
 function tdCancelForm(){S.tdForm=null;S._who=null;S._tdPriv=false;refreshTodo();}
 function tdRemoveCancel(){S._deltd=null;refreshTodo();}
@@ -2149,12 +2162,13 @@ function todoBody(){
   var hide=tdHideDone();
   var mineV=hide?mine.filter(tdNotDone):mine, assignedV=hide?assigned.filter(tdNotDone):assigned;
   /* My to-dos */
+  var adding=S.tdForm&&S.tdForm.id===null;
   o+='<div class="hub-section-label" style="margin-left:0">My to-dos</div>';
   o+='<div class="card" style="padding:6px 0 0">';
-  if(S.tdForm&&S.tdForm.id===null)o+=todoEditor(null);
-  if(!mineV.length&&!(S.tdForm&&S.tdForm.id===null))o+='<div class="body-empty" style="text-align:left;padding:6px 12px">'+(hide&&mine.length?'All done — nothing outstanding.':'Nothing here yet.')+'</div>';
+  if(!adding)o+='<button class="add-link" onclick="tdAddOpen()">'+IC.plus+' Add task</button>';   /* add sits ABOVE the list */
+  if(!mineV.length&&!adding)o+='<div class="body-empty" style="text-align:left;padding:6px 12px">'+(hide&&mine.length?'All done — nothing outstanding.':'Nothing here yet.')+'</div>';
   for(var i=0;i<mineV.length;i++)o+=todoRowOrEditor(mineV[i]);
-  if(!S.tdForm)o+='<button class="add-link" onclick="tdAddOpen()">'+IC.plus+' Add task</button>';
+  if(adding)o+=todoEditor(null);   /* new task opens at the BOTTOM (tdAddOpen scrolls to it) */
   o+='</div>';
   /* Assigned to me by others */
   if(assignedV.length){
