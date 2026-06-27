@@ -70,7 +70,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='216';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='217';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -432,14 +432,25 @@ function collapseWho(who){
   return 'all';
 }
 function whoChips(who){return whoStack(who);}
+/* live member id-set for the active trip, computed from its groups' CURRENT
+   membership (not the t.members snapshot, which can lag). Used to hide the icons
+   of people who've been removed from the trip's group without needing the item
+   re-saved. Returns null when membership is unknown (don't filter). */
+function tripMemberIds(){
+  var t=trip();if(!t)return null;
+  if(t.parties&&t.parties.length){var ids={};t.parties.forEach(function(g){partyPeople(g).forEach(function(p){ids[p.id]=1;});});return ids;}
+  if(t.members&&t.members.length){var m={};t.members.forEach(function(id){if(person(id))m[id]=1;});return m;}
+  return null;
+}
 function whoStack(who){
   who=collapseWho(who);
   if(who==="all"||!who) return '<span class="who-all">Everyone</span>';
   if(!who.length) return '';
-  var h='<div class="who-stack">';
-  for(var i=0;i<who.length;i++){var p=person(who[i]);if(!p)continue;
-    h+='<span class="wdot" style="background:'+p.color+'" title="'+esc(p.name)+'">'+esc(p.name[0])+'</span>';}
-  return h+'</div>';
+  var set=tripMemberIds();
+  var dots='';
+  for(var i=0;i<who.length;i++){var id=who[i];if(set&&!set[id])continue;var p=person(id);if(!p)continue;
+    dots+='<span class="wdot" style="background:'+p.color+'" title="'+esc(p.name)+'">'+esc(p.name[0])+'</span>';}
+  return dots?'<div class="who-stack">'+dots+'</div>':'';
 }
 
 /* status badge */
@@ -4331,6 +4342,7 @@ function peToggleParty(gid){
 function peGotoTrip(pid,tid){var p=person(pid);if(p){var nm=val('pe-name');if(nm)p.name=nm;var c=document.getElementById('pe-color');if(c&&c.value)p.color=c.value;var gs=[];if(S._peParties)S._peParties.forEach(function(x){gs.push(x);});if(gs.length)p.parties=gs;captureTravel(p,'pe');S._newPerson=null;save('dtp_family',FAMILY);}openTripPlanning(tid);}
 function savePersonEdit(pid){
   var p=person(pid);if(!p){closeScreen();return;}
+  var oldParties=(p.parties||[]).slice();   /* capture BEFORE reassign so removed groups get refreshed too */
   var nm=val('pe-name');if(nm)p.name=nm;
   p.lastName=val('pe-last');
   var c=document.getElementById('pe-color');if(c&&c.value)p.color=c.value;
@@ -4349,7 +4361,8 @@ function savePersonEdit(pid){
      a newly-added person is counted on (and notified about) trips that already
      existed before they were added. peToggleParty only refreshes groups whose
      chip was tapped; a new person kept in their default group never triggered it. */
-  (p.parties||[]).forEach(function(gid){refreshTripMembers(gid);});
+  var affected={};oldParties.concat(p.parties||[]).forEach(function(gid){if(gid)affected[gid]=1;});
+  Object.keys(affected).forEach(function(gid){refreshTripMembers(gid);});
   syncPersonInvite(p,oldEmail);toast('Saved');
   backToPeople();
 }
