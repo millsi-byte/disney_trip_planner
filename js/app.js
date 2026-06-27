@@ -71,7 +71,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='231';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='232';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -953,7 +953,7 @@ function switchTrip(id){saveLists();S.tripId=id;saveTripId();var _st=tripById(id
 
 /* screens (slide-in) */
 function openScreen(def){
-  S.screen=def;S._who=null;S._formStatus={};S._delpk=null;S._deltd=null;S.tdForm=null;S.tdScope='mine';S._tdPriv=false;S.listWho=null;S.pkStoreFilter=null;
+  S.screen=def;S._who=null;S._formStatus={};S._delpk=null;S._deltd=null;S.tdForm=null;S.tdScope='mine';S._tdPriv=false;S.listWho=null;S.pkStoreFilter=null;S.ttForm=null;S._ttPriv=false;
   S.pkForm=null;S.pkScope='mine';S._delsect=null;S._pksect=null;ADD.psect=null;
   S._formLoc=null;S._formTier=null;S._formInit=null;S._formColor=null;
   S._notify=notifDefault();
@@ -1411,13 +1411,13 @@ function tdRemove(id){
 function tdUnassignMe(id){var t=tdById(id);if(!t)return;t.who=(t.who||[]).filter(function(p){return p!==S.persona;});saveTODO();toast('Removed you from this');refreshTodo();}
 function tdStartFromTemplate(){
   var tmpl=TODO_TMPL[S.persona]||[];
-  for(var i=0;i<tmpl.length;i++)TODO.push({id:'td'+Date.now()+'_'+i,trip:S.tripId,by:S.persona,done:false,n:tmpl[i].n,when:tmpl[i].when||'',who:[]});
+  for(var i=0;i<tmpl.length;i++)TODO.push({id:'td'+Date.now()+'_'+i,trip:S.tripId,by:S.persona,done:false,n:tmpl[i].n,when:tmpl[i].when||'',priv:!!tmpl[i].priv,who:[]});
   tdMarkStarted(S.persona);saveTODO();toast(tmpl.length?'Loaded your template':'Your template is empty');refreshTodo();
 }
 function tdStartEmpty(){tdMarkStarted(S.persona);refreshTodo();}
 function tdSaveAsTemplate(){
   var mine=tdMine(S.persona);
-  TODO_TMPL[S.persona]=mine.map(function(t){return {n:t.n,when:t.when||''};});
+  TODO_TMPL[S.persona]=mine.map(function(t){return {n:t.n,when:t.when||'',priv:!!t.priv};});
   saveTmpl();toast('Saved as your global template');
 }
 
@@ -4623,31 +4623,53 @@ function scrTodoTmpl(){
   var body='<div class="body-empty" style="text-align:left;padding:0 2px 14px;font-size:16px;color:var(--ink)">Your reusable to-do master, '+esc(me?me.name:'')+'. It\'s not tied to any trip — when you start a trip\'s to-do list you can load these in.</div>';
   body+='<div class="hub-section-label" style="margin-left:0">Template items</div>';
   body+='<div class="card" style="padding:6px 0 0">';
-  if(!list.length)body+='<div class="body-empty" style="text-align:left;padding:6px 12px">No items yet — add a few below.</div>';
+  if(S.ttForm==null)body+='<button class="add-link" onclick="ttAdd()">'+IC.plus+' Add template item</button>';
+  if(!list.length&&S.ttForm==null)body+='<div class="body-empty" style="text-align:left;padding:6px 12px">No items yet — add a few above.</div>';
   for(var i=0;i<list.length;i++){
-    body+='<div class="pk-row">';
-    body+='<input class="field-input" id="tt-n-'+i+'" style="flex:2;min-width:0" value="'+esc(list[i].n)+'" placeholder="Task">';
-    body+='<input class="field-input" id="tt-w-'+i+'" style="flex:1;min-width:0;max-width:120px" value="'+esc(list[i].when||'')+'" placeholder="When">';
-    body+='<button class="del-btn" onclick="ttDel('+i+')">&times;</button>';
-    body+='</div>';
+    if(S.ttForm===i)body+=ttRow(i,true)+ttEditor(i);
+    else body+=ttRow(i,false);
   }
-  body+='<button class="add-link" onclick="ttAdd()">'+IC.plus+' Add template item</button>';
   body+='</div>';
   return screenShell('Global To Do Template',body,'Save','ttSave()');
 }
-function ttCapture(){
-  var list=TODO_TMPL[S.persona]||[];
-  for(var i=0;i<list.length;i++){
-    var n=document.getElementById('tt-n-'+i),w=document.getElementById('tt-w-'+i);
-    if(n&&typeof n.value==='string')list[i].n=n.value.trim();
-    if(w&&typeof w.value==='string')list[i].when=w.value.trim();
-  }
-  TODO_TMPL[S.persona]=list;
+function ttRow(i,expanded){
+  var it=TODO_TMPL[S.persona][i],sub=[];
+  if(it.when)sub.push(esc(it.when));
+  if(it.priv)sub.push(IC.lock+' Hidden');
+  var o='<div class="pk-row'+(expanded?' expanded':'')+'">';
+  o+='<div class="pk-name" onclick="ttEditOpen('+i+')">'+(it.n?esc(it.n):'<span style="color:var(--muted)">Untitled task</span>')+(sub.length?'<div class="pk-by">'+sub.join(' · ')+'</div>':'')+'</div>';
+  if(expanded)o+='<button class="hdr-icon pk-edit-on" style="width:30px;height:30px;flex-shrink:0" title="Close" onclick="ttEditClose()">'+IC.chevUp+'</button>';
+  else o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0" onclick="ttEditOpen('+i+')">'+IC.pencil+'</button>';
+  o+='<button class="del-btn" onclick="ttDel('+i+')">&times;</button>';
+  return o+'</div>';
 }
-function ttAdd(){ttCapture();(TODO_TMPL[S.persona]||(TODO_TMPL[S.persona]=[])).push({n:'',when:''});renderScreenHard();}
-function ttDel(i){ttCapture();TODO_TMPL[S.persona].splice(i,1);renderScreenHard();}
+function ttEditor(i){
+  var it=TODO_TMPL[S.persona][i];
+  var o='<div class="inline-editor pk-acc">';
+  o+='<div class="field" style="margin:0"><label class="field-label">Task</label><input class="field-input" id="tt-n" value="'+esc(it.n||'')+'" placeholder="e.g. Refill prescriptions"></div>';
+  o+='<div class="field" style="margin:0"><label class="field-label">When <span class="opt">(optional)</span></label><input class="field-input" id="tt-w" value="'+esc(it.when||'')+'" placeholder="e.g. 14 days"></div>';
+  o+='<div class="field" style="margin:0"><label class="field-label">Privacy</label><div class="seg"><button class="seg-btn'+(!S._ttPriv?' on':'')+'" onclick="ttFormPriv(false)">Visible</button><button class="seg-btn'+(S._ttPriv?' on book':'')+'" onclick="ttFormPriv(true)">'+IC.lock+' Hidden</button></div></div>';
+  if(S._ttPriv)o+='<div class="priv-note">When loaded into a trip, this task starts hidden from the trip owner and admins.</div>';
+  o+='<div style="display:flex;gap:8px"><button class="btn-primary" style="margin:0;flex:1" onclick="ttEditClose()">Done</button></div>';
+  o+='</div>';
+  return o;
+}
+/* capture the OPEN editor's fields into its template item */
+function ttCaptureOpen(){
+  if(S.ttForm==null)return;
+  var it=TODO_TMPL[S.persona]&&TODO_TMPL[S.persona][S.ttForm];if(!it)return;
+  var n=document.getElementById('tt-n'),w=document.getElementById('tt-w');
+  if(n&&typeof n.value==='string')it.n=n.value.trim();
+  if(w&&typeof w.value==='string')it.when=w.value.trim();
+  it.priv=!!S._ttPriv;
+}
+function ttEditOpen(i){ttCaptureOpen();S.ttForm=i;S._ttPriv=!!(TODO_TMPL[S.persona][i]&&TODO_TMPL[S.persona][i].priv);renderScreenHard();setTimeout(function(){var e=document.getElementById('tt-n');if(e)e.focus({preventScroll:true});},50);}
+function ttEditClose(){ttCaptureOpen();S.ttForm=null;renderScreenHard();}
+function ttFormPriv(v){S._ttPriv=v;ttCaptureOpen();renderScreenHard();}
+function ttAdd(){ttCaptureOpen();var l=(TODO_TMPL[S.persona]||(TODO_TMPL[S.persona]=[]));l.push({n:'',when:'',priv:false});S.ttForm=l.length-1;S._ttPriv=false;renderScreenHard();setTimeout(function(){var e=document.getElementById('tt-n');if(e){try{e.scrollIntoView({block:'center',behavior:'smooth'});}catch(_){}e.focus({preventScroll:true});}},60);}
+function ttDel(i){ttCaptureOpen();TODO_TMPL[S.persona].splice(i,1);if(S.ttForm===i)S.ttForm=null;else if(S.ttForm!=null&&S.ttForm>i)S.ttForm--;renderScreenHard();}
 function ttSave(){
-  ttCapture();
+  ttCaptureOpen();S.ttForm=null;
   TODO_TMPL[S.persona]=(TODO_TMPL[S.persona]||[]).filter(function(t){return t.n;});
   saveTmpl();toast('Template saved');closeScreen();render();
 }
