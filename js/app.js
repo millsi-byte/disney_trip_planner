@@ -72,7 +72,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='234';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='235';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1301,7 +1301,7 @@ function pkGotIt(owner,ci,ii){var it=PACKING[owner]&&PACKING[owner][ci]&&PACKING
 }
 function nbHideDone(){try{return localStorage.getItem('bt_nbHideDone')==='1';}catch(e){return false;}}
 function nbToggleHideDone(){try{localStorage.setItem('bt_nbHideDone',nbHideDone()?'0':'1');}catch(e){}renderScreenHard();}
-function nbHideToggle(anyBought){if(!anyBought)return '';return '<div style="display:flex;justify-content:flex-end;margin:-2px 2px 8px"><button class="lens-btn'+(nbHideDone()?' on':'')+'" onclick="nbToggleHideDone()">'+(nbHideDone()?'Show bought':'Hide bought')+'</button></div>';}
+function nbHideToggle(){return '<div style="display:flex;justify-content:flex-end;margin:-2px 2px 8px"><button class="lens-btn'+(nbHideDone()?' on':'')+'" onclick="nbToggleHideDone()">'+(nbHideDone()?'Show bought':'Hide bought')+'</button></div>';}
 /* packing: per-trip per-person "has started" flag + template seeding */
 function pkStartKey(){return 'dtp_packstart_'+S.tripId;}
 function pkStartedSet(){return load(pkStartKey(),[]);}
@@ -4664,9 +4664,9 @@ function scrNeedBuy(){
   if(!entries.length)return screenShell('Need to Buy',body+'<div class="body-empty">Nothing to buy right now. Flag a packing item “Need to buy” and it shows up here.</div>',null,null,'Done');
   var groups={},order=[];
   entries.forEach(function(e){var buyers=(e.it.who&&e.it.who.length)?e.it.who:[e.owner];buyers.forEach(function(b){if(!groups[b]){groups[b]=[];order.push(b);}groups[b].push(e);});});
-  var hide=nbHideDone(),anyBought=entries.some(function(e){return e.it.bought;}),shownAny=false;
-  body+=personFilterRow(order);
-  body+=nbHideToggle(anyBought);
+  var hide=nbHideDone(),shownAny=false;
+  body+=personFilterRow(tripMembers());
+  body+=nbHideToggle();
   for(var g=0;g<order.length;g++){var b=order[g],p=person(b);
     if(S.listWho&&b!==S.listWho)continue;   /* individual filter */
     var gItems=hide?groups[b].filter(function(e){return !e.it.bought;}):groups[b];
