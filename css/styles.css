@@ -402,7 +402,7 @@ button{font-family:inherit}
 .seg3 .seg-btn{padding:10px 4px;font-size:14px}
 .pk-toolbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:0 2px 10px}
 .sfil{font-size:12px;font-weight:700;padding:6px 11px;border-radius:999px;border:1px solid var(--border);background:var(--card);color:var(--muted);cursor:pointer;font-family:inherit}
-.sfil.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.sfil.on{background:#15803D;color:#fff;border-color:#15803D}
 .pk-sep{width:1px;align-self:stretch;min-height:24px;background:var(--border);margin-left:auto}
 .pk-toolbar .lens-btn{padding:6px 14px}
 .qty-wrap{display:flex;align-items:center;gap:4px;flex-shrink:0}
