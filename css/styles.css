@@ -398,6 +398,8 @@ button{font-family:inherit}
 .pk-name.done{text-decoration:line-through;color:var(--muted)}
 .pk-by{font-size:12px;color:#A8A095;font-weight:500;margin-top:1px}
 .lkr-tag{font-size:13px;font-weight:700;color:#92400E;background:#FEF3C7;padding:2px 7px;border-radius:6px;flex-shrink:0;white-space:nowrap}
+.lkr-tag.onme{color:#3730A3;background:#E0E7FF}
+.seg3 .seg-btn{padding:10px 4px;font-size:14px}
 .qty-wrap{display:flex;align-items:center;gap:4px;flex-shrink:0}
 .qty-btn{width:44px;height:44px;border-radius:22px;border:1.5px solid var(--border);background:var(--cream);font-size:20px;cursor:pointer;color:var(--ink);display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1;font-family:inherit}
 .qty-btn:active{background:var(--border)}

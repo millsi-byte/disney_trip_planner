@@ -71,7 +71,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='227';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='228';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -88,7 +88,7 @@ function stripPackTmpl(dict){
   var o={};
   Object.keys(dict||{}).forEach(function(k){
     o[k]=(dict[k]||[]).map(function(c){
-      return {cat:c.cat, items:(c.items||[]).map(function(it){return {n:it.n,qty:it.qty,l:!!it.l};})};
+      return {cat:c.cat, items:(c.items||[]).map(function(it){return {n:it.n,qty:it.qty,l:!!it.l,store:it.store||''};})};
     });
   });
   return o;
@@ -1267,6 +1267,14 @@ function pkSectDelCancel(){S._delsect=null;refreshLists();}
 function pkFormItem(){var f=S.pkForm;return f?(PACKING[f.pid]&&PACKING[f.pid][f.c]&&PACKING[f.pid][f.c].items[f.i]):null;}
 function pkItemEdit(pid,c,i){var it=PACKING[pid][c].items[i];if(!pkCanItem(pid,it)){toast('Only the owner or an admin can edit this');return;}S.pkForm={pid:pid,c:c,i:i};S._who=new Set(it.who||[]);S._notify=notifDefault();refreshLists();}
 function pkItemCancel(){S.pkForm=null;S._who=null;refreshLists();}
+/* storage location of a packing item: 'bag' (suitcase) | 'person' | 'locker'.
+   Backward compatible: legacy items only had l (true=locker). */
+function pkStore(it){return (it&&it.store==='person')?'person':((it&&it.l)?'locker':'bag');}
+function pkSetStore(v){var it=pkFormItem();if(!it)return;
+  it.store=(v==='person')?'person':'';
+  it.l=(v==='locker');
+  if(v==='bag'){if(!it.qty)it.qty=1;}else{it.qty=0;}   /* carried items have no count */
+  saveLists();renderScreen_inplace2();}
 function pkFormStore(v){var it=pkFormItem();if(!it)return;it.l=v;if(v)it.qty=0;else if(!it.qty)it.qty=1;saveLists();renderScreen_inplace2();}
 function pkFormNeed(v){var it=pkFormItem();if(!it)return;it.needBuy=v;saveLists();renderScreen_inplace2();}
 function pkFormPriv(v){var it=pkFormItem();if(!it)return;it.priv=v;saveLists();renderScreen_inplace2();}
@@ -1296,12 +1304,12 @@ function pkHasStarted(pid){pid=pid||S.persona;
 function pkMarkStarted(pid){pid=pid||S.persona;var s=pkStartedSet();if(s.indexOf(pid)<0){s.push(pid);save(pkStartKey(),s);}}
 function pkStartFromTemplate(){
   var t=PACKING_TMPL[S.persona];
-  PACKING[S.persona]=t?t.map(function(c){return {cat:c.cat,items:(c.items||[]).map(function(it){return {n:it.n,qty:it.qty,l:!!it.l,done:false,needBuy:false,who:[]};})};}):[];
+  PACKING[S.persona]=t?t.map(function(c){return {cat:c.cat,items:(c.items||[]).map(function(it){return {n:it.n,qty:it.qty,l:!!it.l,store:it.store||'',done:false,needBuy:false,who:[]};})};}):[];
   pkMarkStarted(S.persona);saveLists();toast(t&&t.length?'Loaded your template':'Your template is empty');refreshLists();
 }
 function pkStartEmpty(){if(!PACKING[S.persona])PACKING[S.persona]=[];pkMarkStarted(S.persona);refreshLists();}
 function pkSaveAsTemplate(){
-  PACKING_TMPL[S.persona]=(PACKING[S.persona]||[]).map(function(c){return {cat:c.cat,items:(c.items||[]).map(function(it){return {n:it.n,qty:it.qty,l:!!it.l};})};});
+  PACKING_TMPL[S.persona]=(PACKING[S.persona]||[]).map(function(c){return {cat:c.cat,items:(c.items||[]).map(function(it){return {n:it.n,qty:it.qty,l:!!it.l,store:it.store||''};})};});
   savePackTmpl();toast('Saved as your global packing template');
 }
 /* ── To Do — assignable per-trip items ─────────────────────────
@@ -2115,7 +2123,9 @@ function pkItemRow(pid,c,j,expanded){
   var o='<div class="pk-row'+(expanded?' expanded':'')+'">';
   o+='<div class="chkbox'+(it.done?' on':'')+'" onclick="pkChk(\''+pid+'\','+c+','+j+')">'+(it.done?IC.checkw:'')+'</div>';
   o+='<div class="pk-name'+(it.done?' done':'')+'" onclick="pkChk(\''+pid+'\','+c+','+j+')">'+esc(it.n)+(subs.length?'<div class="pk-by">'+subs.join(' · ')+'</div>':'')+'</div>';
-  if(it.l)o+='<span class="lkr-tag">Locker</span>';
+  var pst=pkStore(it);
+  if(pst==='locker')o+='<span class="lkr-tag">Locker</span>';
+  else if(pst==='person')o+='<span class="lkr-tag onme">On me</span>';
   else o+='<div class="qty-wrap"><button class="qty-btn" onclick="pkDec(\''+pid+'\','+c+','+j+')">&#8722;</button><span class="qty-num">'+(it.qty||0)+'</span><button class="qty-btn" onclick="pkInc(\''+pid+'\','+c+','+j+')">+</button></div>';
   if(expanded)o+='<button class="hdr-icon pk-edit-on" style="width:30px;height:30px;flex-shrink:0" title="Close" onclick="pkItemCancel()">'+IC.chevUp+'</button>';
   else if(can&&!pend)o+='<button class="hdr-icon" style="width:30px;height:30px;background:'+(it.needBuy?'#FEF3C7;color:#92400E':'#F3F1EC;color:#6B7280')+';flex-shrink:0" onclick="pkItemEdit(\''+pid+'\','+c+','+j+')">'+IC.pencil+'</button>';
@@ -2132,7 +2142,11 @@ function pkItemEditor(pid,c,j){
   var it=PACKING[pid][c].items[j];
   var o='<div class="inline-editor pk-acc">';
   o+='<div class="field" style="margin:0"><label class="field-label">Item</label><input class="field-input" id="pki-name" value="'+esc(it.n)+'"></div>';
-  o+='<div class="field" style="margin:0"><label class="field-label">Storage</label><div class="seg"><button class="seg-btn'+(!it.l?' on':'')+'" onclick="pkFormStore(false)">Suitcase</button><button class="seg-btn'+(it.l?' on':'')+'" onclick="pkFormStore(true)">Owners Locker</button></div></div>';
+  var est=pkStore(it);
+  o+='<div class="field" style="margin:0"><label class="field-label">Storage</label><div class="seg seg3">'
+    +'<button class="seg-btn'+(est==='bag'?' on':'')+'" onclick="pkSetStore(\'bag\')">Suitcase</button>'
+    +'<button class="seg-btn'+(est==='person'?' on':'')+'" onclick="pkSetStore(\'person\')">On Person</button>'
+    +'<button class="seg-btn'+(est==='locker'?' on':'')+'" onclick="pkSetStore(\'locker\')">Locker</button></div></div>';
   o+='<div class="field" style="margin:0"><label class="field-label">Need to buy</label><div class="seg"><button class="seg-btn'+(!it.needBuy?' on':'')+'" onclick="pkFormNeed(false)">No</button><button class="seg-btn'+(it.needBuy?' on book':'')+'" onclick="pkFormNeed(true)">Need to buy</button></div></div>';
   if(it.needBuy)o+=pkBuyerField();
   o+='<div class="field" style="margin:0"><label class="field-label">Privacy</label><div class="seg"><button class="seg-btn'+(!it.priv?' on':'')+'" onclick="pkFormPriv(false)">Visible</button><button class="seg-btn'+(it.priv?' on book':'')+'" onclick="pkFormPriv(true)">'+IC.lock+' Hidden</button></div></div>';
@@ -2864,8 +2878,9 @@ function buildImportItem(it){
   }
   if(t==='packing'||t==='pack'){
     var pq=parseInt(it.qty,10);
+    var pPerson=(it.store==='person'||it.onPerson===true||/^person$/i.test(it.store||''));
     var recP={_kind:'packing',trip:tid,who:[],section:(it.section||it.cat||'General')+'',
-      n:(it.item||it.n||it.name||'')+'',qty:(pq>0?pq:1),
+      n:(it.item||it.n||it.name||'')+'',qty:(pq>0?pq:1),store:pPerson?'person':'',
       l:it.l===true||it.checkOnly===true,needBuy:!!it.needBuy||!!it.need};
     var oP=finalizeImport('Packing',recP);
     if(!oP.error&&!recP.n)oP.error='Packing needs an item';
@@ -2934,7 +2949,8 @@ function importSave(){
       var pid=S.persona;if(!PACKING[pid])PACKING[pid]=[];
       var sec=null;for(var si=0;si<PACKING[pid].length;si++){if(PACKING[pid][si].cat===e.rec.section){sec=PACKING[pid][si];break;}}
       if(!sec){sec={cat:e.rec.section,items:[]};PACKING[pid].push(sec);}
-      sec.items.push({n:e.rec.n,qty:e.rec.l?0:(e.rec.qty||1),l:!!e.rec.l,done:false,needBuy:!!e.rec.needBuy,who:[]});
+      var stPerson=e.rec.store==='person';
+      sec.items.push({n:e.rec.n,qty:(e.rec.l||stPerson)?0:(e.rec.qty||1),l:!!e.rec.l,store:stPerson?'person':'',done:false,needBuy:!!e.rec.needBuy,who:[]});
       pkMarkStarted(pid);touchedLists=true;extra++;return;
     }
     var coll=M[e.type];if(!coll)return;coll.push(e.rec);added.push(e);
@@ -4560,8 +4576,9 @@ function scrNeedBuy(){
     body+='<div class="card">';
     for(var i=0;i<groups[b].length;i++){var e=groups[b][i],fw=person(e.owner);
       var canGot=(e.it.who&&e.it.who.indexOf(S.persona)>=0)||e.owner===S.persona||b===S.persona||listOversight();
-      body+='<div class="pk-row"><div style="flex:1;min-width:0"><div class="pk-name">'+esc(e.it.n)+((e.it.qty&&!e.it.l)?' <span style="color:var(--muted);font-weight:600">×'+e.it.qty+'</span>':'')+'</div>';
-      body+='<div class="pk-by">For '+(fw?esc(fw.name):'?')+(e.it.l?' · Owners Locker':'')+'</div></div>';
+      var nbSt=pkStore(e.it);
+      body+='<div class="pk-row"><div style="flex:1;min-width:0"><div class="pk-name">'+esc(e.it.n)+((e.it.qty&&nbSt==='bag')?' <span style="color:var(--muted);font-weight:600">×'+e.it.qty+'</span>':'')+'</div>';
+      body+='<div class="pk-by">For '+(fw?esc(fw.name):'?')+(nbSt==='locker'?' · Owners Locker':nbSt==='person'?' · On person':'')+'</div></div>';
       if(canGot)body+='<button class="ri-btn" onclick="pkGotIt(\''+e.owner+'\','+e.ci+','+e.ii+')">Got it</button>';
       body+='</div>';
     }
