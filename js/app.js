@@ -70,7 +70,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='214';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='215';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2409,9 +2409,9 @@ function scrAddFlight(){
     body+='<div class="field"><label class="field-label">Flight #</label><input class="field-input" id="ff-l'+i+'-num" placeholder="WN 4657" value="'+(lg?esc(lg.num):'')+'"></div></div>';
     body+='<div class="field"><label class="field-label">Confirmation code</label><input class="field-input" id="ff-l'+i+'-conf" placeholder="2X4F9K" value="'+(lg?esc(lg.conf):'')+'"></div>';
     body+='<div class="field-row"><div class="field"><label class="field-label">From</label><input class="field-input" id="ff-l'+i+'-depApt" placeholder="BOS" value="'+(lg?esc(lg.depApt):'')+'"></div>';
-    body+='<div class="field"><label class="field-label">Depart</label><input class="field-input" id="ff-l'+i+'-depTime" placeholder="5:45 AM" value="'+(lg?esc(lg.depTime):'')+'"></div></div>';
+    body+='<div class="field"><label class="field-label">Depart</label>'+timeField('ff-l'+i+'-depTime',lg?lg.depTime:'')+'</div></div>';
     body+='<div class="field-row"><div class="field"><label class="field-label">To</label><input class="field-input" id="ff-l'+i+'-arrApt" placeholder="MCO" value="'+(lg?esc(lg.arrApt):'')+'"></div>';
-    body+='<div class="field"><label class="field-label">Arrive</label><input class="field-input" id="ff-l'+i+'-arrTime" placeholder="11:50 AM" value="'+(lg?esc(lg.arrTime):'')+'"></div></div>';
+    body+='<div class="field"><label class="field-label">Arrive</label>'+timeField('ff-l'+i+'-arrTime',lg?lg.arrTime:'')+'</div></div>';
     body+='</div>';
   }
   body+='<button class="add-connecting" onclick="addLeg()">'+IC.plus+' Add connecting leg</button>';
@@ -2465,7 +2465,7 @@ function scrAddDining(){
   body+='<div class="field-row"><div class="field"><label class="field-label">Meal</label><select class="field-select" id="dd-meal">';
   for(var m=0;m<meals.length;m++)body+='<option'+((edit&&edit.meal===meals[m])||(!edit&&meals[m]==='Dinner')?' selected':'')+'>'+meals[m]+'</option>';
   body+='</select></div>';
-  body+='<div class="field"><label class="field-label">Time</label><input class="field-input" id="dd-time" placeholder="6:45 PM" value="'+(edit?esc(edit.time):'')+'"></div></div>';
+  body+='<div class="field"><label class="field-label">Time</label>'+timeField('dd-time',edit?edit.time:'')+'</div></div>';
   body+='<div class="field"><label class="field-label">Status <span class="opt">(Reserved & Planned show on the Day Plan)</span></label><div class="seg">';
   body+='<button class="seg-btn'+(st==='want'?' on':'')+'" onclick="pickStatus(\'dd\',\'want\')">Want to Try</button>';
   body+='<button class="seg-btn'+(st==='planned'?' on':'')+'" onclick="pickStatus(\'dd\',\'planned\')">Planned</button>';
@@ -2506,7 +2506,7 @@ function scrLLBook(){
   body+='<div style="display:flex;align-items:center;gap:10px"><div class="ll-ride" style="font-size:20px">'+esc(l.ride)+'</div><span class="ll-tag '+tagCls(l.tier)+'">'+tagLbl(l.tier)+'</span></div>';
   body+='<div class="ll-win" style="margin-top:8px">Planned window: '+esc(l.window)+'</div></div>';
   body+='<div class="field"><label class="field-label">Status</label><div class="seg"><button class="seg-btn" onclick="toast(\'Already planning\')">Planning</button><button class="seg-btn on book">Booked</button></div></div>';
-  body+='<div class="field"><label class="field-label">Confirmed return time</label><input class="field-input" id="llb-time" placeholder="e.g. 1:25 PM" value=""></div>';
+  body+='<div class="field"><label class="field-label">Confirmed return time</label>'+timeField('llb-time','')+'</div>';
   body+='<div class="field"><label class="field-label">Confirmation #</label><input class="field-input" id="llb-conf" placeholder="MP-00000"></div>';
   body+=whoSelectField(l.who);
   body+=notifyField('Lightning Lane');
@@ -2537,7 +2537,7 @@ function scrAddLL(){
   body+='<button class="seg-btn'+(stt==='booked'?' on book':'')+'" onclick="pickStatus(\'ll\',\'booked\')">Booked</button></div></div>';
   body+='<div class="field"><label class="field-label">Planned window</label><input class="field-input" id="ll-window" placeholder="~3:00–4:00 PM" value="'+(edit?esc(edit.window):'')+'"></div>';
   if(stt==='booked'){
-    body+='<div class="field"><label class="field-label">Confirmed return time</label><input class="field-input" id="ll-btime" placeholder="1:25 PM" value="'+(edit&&edit.bookedTime?esc(edit.bookedTime):'')+'"></div>';
+    body+='<div class="field"><label class="field-label">Confirmed return time</label>'+timeField('ll-btime',edit&&edit.bookedTime?edit.bookedTime:'')+'</div>';
     body+='<div class="field"><label class="field-label">Confirmation #</label><input class="field-input" id="ll-conf" placeholder="MP-44190" value="'+(edit&&edit.conf?esc(edit.conf):'')+'"></div>';
   }
   body+=whoSelectField(pre);
@@ -4612,6 +4612,43 @@ function scrGeneric(){return screenShell('Coming soon','<div class="body-empty">
 
 /* ── shared form helpers ───────────────────────────────────── */
 function val(id){var e=document.getElementById(id);return (e&&typeof e.value==='string')?e.value.trim():'';}
+/* ── Time picker: hour / minute / AM-PM dropdowns ──────────────
+   Renders three <select>s plus a hidden <input> carrying the original field id,
+   so every existing val('<id>') reader keeps working. Selects write the
+   composed "H:MM AM" string into the hidden input on change. */
+function parseTime(v){
+  if(!v)return null;var s=String(v).trim();
+  var m=s.match(/^(\d{1,2})(?::(\d{2}))?\s*([AaPp][Mm])?/);
+  if(!m)return null;
+  var h=+m[1],mm=m[2]?+m[2]:0,ap=(m[3]||'').toUpperCase();
+  if(!ap){ if(h>=13){ap='PM';} else if(h===12){ap='PM';} else if(h===0){ap='AM';} else {ap='AM';} }
+  if(h===0)h=12; if(h>12)h-=12;
+  if(mm>59)mm=0;
+  return {h:h,m:mm,ap:ap};
+}
+function timeField(id,value){
+  var p=parseTime(value);
+  var o='<div class="timesel">';
+  o+='<select class="field-select" id="'+id+'__h" onchange="tfSync(\''+id+'\')"><option value="">–</option>';
+  for(var h=1;h<=12;h++)o+='<option value="'+h+'"'+(p&&p.h===h?' selected':'')+'>'+h+'</option>';
+  o+='</select><span class="timesel-sep">:</span>';
+  var ms=[];for(var mm=0;mm<60;mm+=5)ms.push(mm);
+  if(p&&ms.indexOf(p.m)<0){ms.push(p.m);ms.sort(function(a,b){return a-b;});}
+  o+='<select class="field-select" id="'+id+'__m" onchange="tfSync(\''+id+'\')">';
+  for(var i=0;i<ms.length;i++){var mv=('0'+ms[i]).slice(-2);o+='<option value="'+mv+'"'+((p&&p.m===ms[i])||(!p&&ms[i]===0)?' selected':'')+'>'+mv+'</option>';}
+  o+='</select>';
+  o+='<select class="field-select" id="'+id+'__ap" onchange="tfSync(\''+id+'\')">';
+  o+='<option value="AM"'+((p&&p.ap==='AM')||!p?' selected':'')+'>AM</option>';
+  o+='<option value="PM"'+(p&&p.ap==='PM'?' selected':'')+'>PM</option></select>';
+  o+='<input type="hidden" id="'+id+'" value="'+esc(value||'')+'">';
+  o+='</div>';
+  return o;
+}
+function tfSync(id){
+  var h=document.getElementById(id+'__h'),m=document.getElementById(id+'__m'),ap=document.getElementById(id+'__ap'),hid=document.getElementById(id);
+  if(!hid)return;
+  hid.value=(h&&h.value)?(h.value+':'+((m&&m.value)||'00')+' '+((ap&&ap.value)||'AM')):'';
+}
 function whoVal(){
   var mem=tripMembers();
   if(!S._who||S._who.size===0||S._who.size>=mem.length)return 'all';
@@ -4729,10 +4766,10 @@ function scrVisitEdit(){
   /* inline park hours & crowd — prefilled from / saved to the Park Hours item */
   var eh=hoursFor(edit?edit.park:'mk',(edit&&edit.day)||S.screen.day)||{};
   body+='<div class="field-group"><div class="field-group-title">Park hours & crowd <span style="text-transform:none;font-weight:600;color:var(--muted)">(optional · saved as a Park Hours item)</span></div>';
-  body+='<div class="field-row"><div class="field"><label class="field-label">Opening</label><input class="field-input" id="vh-open" placeholder="8:30 AM" value="'+esc(eh.open||'')+'"></div>';
-  body+='<div class="field"><label class="field-label">Closing</label><input class="field-input" id="vh-close" placeholder="9:00 PM" value="'+esc(eh.close||'')+'"></div></div>';
-  body+='<div class="field-row"><div class="field"><label class="field-label">Early Entry</label><input class="field-input" id="vh-early" placeholder="8:00 AM" value="'+esc(eh.early||'')+'"></div>';
-  body+='<div class="field"><label class="field-label">Extended / Late</label><input class="field-input" id="vh-late" placeholder="11:00 PM" value="'+esc(eh.late||'')+'"></div></div>';
+  body+='<div class="field-row"><div class="field"><label class="field-label">Opening</label>'+timeField('vh-open',eh.open||'')+'</div>';
+  body+='<div class="field"><label class="field-label">Closing</label>'+timeField('vh-close',eh.close||'')+'</div></div>';
+  body+='<div class="field-row"><div class="field"><label class="field-label">Early Entry</label>'+timeField('vh-early',eh.early||'')+'</div>';
+  body+='<div class="field"><label class="field-label">Extended / Late</label>'+timeField('vh-late',eh.late||'')+'</div></div>';
   body+='<div class="field"><label class="field-label">Expected crowd</label><select class="field-select" id="vh-crowd">'+crowdOptions(eh.crowd!=null?eh.crowd:null)+'</select></div></div>';
   body+='<div class="body-empty" style="text-align:left;padding:2px 2px 0">The first visit on a day is the primary park (sets the day\'s color and hero); add a second visit for a hopper / two-park day.</div>';
   if(edit) body+='<button class="btn-danger-link" onclick="delVisit(\''+edit.id+'\')">Delete this visit</button>';
@@ -4768,10 +4805,10 @@ function scrHoursEdit(){
   var edit=S.screen.edit?PARKHOURS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
   var body='<div class="field"><label class="field-label">Park</label><select class="field-select" id="ph-park">'+parkResOptions(edit?edit.park:'mk')+'</select></div>';
   body+='<div class="field"><label class="field-label">Day</label><select class="field-select" id="ph-day">'+dayOptions((edit&&edit.day)||S.screen.day)+'</select></div>';
-  body+='<div class="field-row"><div class="field"><label class="field-label">Opening</label><input class="field-input" id="ph-open" placeholder="8:30 AM" value="'+(edit?esc(edit.open||''):'')+'"></div>';
-  body+='<div class="field"><label class="field-label">Closing</label><input class="field-input" id="ph-close" placeholder="9:00 PM" value="'+(edit?esc(edit.close||''):'')+'"></div></div>';
-  body+='<div class="field-row"><div class="field"><label class="field-label">Early Entry <span class="opt">(opt)</span></label><input class="field-input" id="ph-early" placeholder="8:00 AM" value="'+(edit?esc(edit.early||''):'')+'"></div>';
-  body+='<div class="field"><label class="field-label">Extended / Late <span class="opt">(opt)</span></label><input class="field-input" id="ph-late" placeholder="11:00 PM" value="'+(edit?esc(edit.late||''):'')+'"></div></div>';
+  body+='<div class="field-row"><div class="field"><label class="field-label">Opening</label>'+timeField('ph-open',edit?edit.open||'':'')+'</div>';
+  body+='<div class="field"><label class="field-label">Closing</label>'+timeField('ph-close',edit?edit.close||'':'')+'</div></div>';
+  body+='<div class="field-row"><div class="field"><label class="field-label">Early Entry <span class="opt">(opt)</span></label>'+timeField('ph-early',edit?edit.early||'':'')+'</div>';
+  body+='<div class="field"><label class="field-label">Extended / Late <span class="opt">(opt)</span></label>'+timeField('ph-late',edit?edit.late||'':'')+'</div></div>';
   body+='<div class="field"><label class="field-label">Expected crowd</label><select class="field-select" id="ph-crowd">'+crowdOptions(edit?edit.crowd:null)+'</select></div>';
   body+='<div class="body-empty" style="text-align:left;padding:2px 2px 0">Park hours & crowd are facts about a park on a date — independent of whether you visit. On a two-park day, add hours for each park.</div>';
   if(edit) body+='<button class="btn-danger-link" onclick="delHours(\''+edit.id+'\')">Delete these hours</button>';
@@ -4796,7 +4833,7 @@ function delHours(id){
 function scrStopEdit(){
   var d=dayByDate(S.screen.day);if(!d)return scrGeneric();
   var has=S.screen.idx!=null,it=has?d.itin[S.screen.idx]:null;
-  var body='<div class="field"><label class="field-label">Time</label><input class="field-input" id="st-time" placeholder="9:30 AM" value="'+(it?esc(it.t):'')+'"></div>';
+  var body='<div class="field"><label class="field-label">Time</label>'+timeField('st-time',it?it.t:'')+'</div>';
   body+='<div class="field"><label class="field-label">What\'s happening</label><input class="field-input" id="st-text" placeholder="e.g. Rope drop — Test Track" value="'+(it?esc(it.x):'')+'"></div>';
   body+='<div class="field"><label class="field-label">Tag <span class="opt">(optional, e.g. Critical, Hop)</span></label><input class="field-input" id="st-crit" placeholder="Critical" value="'+(it&&it.crit?esc(it.crit):'')+'"></div>';
   body+=whoSelectField(it?it.who:'all');
@@ -4855,7 +4892,7 @@ function scrShowEdit(){
   if(S._formInit!=='sh'){S._formStatus.sh=edit?(edit.status||'attend'):'attend';S._formInit='sh';}
   var st=S._formStatus.sh,pre=edit?edit.who:'all';
   var body='<div class="field"><label class="field-label">Show name</label><input class="field-input" id="sh-name" placeholder="e.g. Happily Ever After" value="'+(edit?esc(edit.name):'')+'"></div>';
-  body+='<div class="field"><label class="field-label">Time</label><input class="field-input" id="sh-time" placeholder="9:00 PM" value="'+(edit?esc(edit.time):'')+'"></div>';
+  body+='<div class="field"><label class="field-label">Time</label>'+timeField('sh-time',edit?edit.time:'')+'</div>';
   body+='<div class="field"><label class="field-label">Status <span class="opt">(only Attend shows on the Day Plan)</span></label><div class="seg">';
   body+='<button class="seg-btn'+(st==='scheduled'?' on':'')+'" onclick="pickStatus(\'sh\',\'scheduled\')">Scheduled</button>';
   body+='<button class="seg-btn'+(st==='attend'?' on book':'')+'" onclick="pickStatus(\'sh\',\'attend\')">Attend</button></div></div>';
@@ -4889,9 +4926,9 @@ function scrResortEdit(){
   body+='<div class="field"><label class="field-label">Room type</label><input class="field-input" id="rs-room" placeholder="Standard Room · Pool View" value="'+(edit?esc(edit.room):'')+'"></div>';
   var _td=tripDays();var _d0=(_td[0]||{date:''}).date,_dN=(_td[_td.length-1]||{date:''}).date;
   body+='<div class="field-row"><div class="field"><label class="field-label">Check-in day</label><select class="field-select" id="rs-in">'+dayOptions(edit?edit.checkin:_d0)+'</select></div>';
-  body+='<div class="field"><label class="field-label">Check-in time</label><input class="field-input" id="rs-intime" placeholder="4:00 PM" value="'+(edit&&edit.inTime?esc(edit.inTime):'')+'"></div></div>';
+  body+='<div class="field"><label class="field-label">Check-in time</label>'+timeField('rs-intime',edit&&edit.inTime?edit.inTime:'')+'</div></div>';
   body+='<div class="field-row"><div class="field"><label class="field-label">Check-out day</label><select class="field-select" id="rs-out">'+dayOptions(edit?edit.checkout:_dN)+'</select></div>';
-  body+='<div class="field"><label class="field-label">Check-out time</label><input class="field-input" id="rs-outtime" placeholder="11:00 AM" value="'+(edit&&edit.outTime?esc(edit.outTime):'')+'"></div></div>';
+  body+='<div class="field"><label class="field-label">Check-out time</label>'+timeField('rs-outtime',edit&&edit.outTime?edit.outTime:'')+'</div></div>';
   body+='<div class="field"><label class="field-label">Confirmation #</label><input class="field-input" id="rs-conf" placeholder="A10293847" value="'+(edit&&edit.conf?esc(edit.conf):'')+'"></div>';
   body+='<div class="field"><label class="field-label">Status</label><div class="seg">';
   body+='<button class="seg-btn'+(st==='planning'?' on':'')+'" onclick="pickStatus(\'rs\',\'planning\')">Planning</button>';
