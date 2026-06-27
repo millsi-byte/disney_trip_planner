@@ -71,7 +71,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='223';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='224';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1323,6 +1323,15 @@ function tdCanSee(t){
   return todoOversight()&&!t.priv;
 }
 function tdVisibleCount(pid){return TODO.filter(function(t){return t.trip===S.tripId&&tdCanSee(t);}).length;}
+/* hide-completed preference — device-local (non-synced key) so it sticks per
+   device without syncing a view setting across the group */
+function tdHideDone(){try{return localStorage.getItem('bt_tdHideDone')==='1';}catch(e){return false;}}
+function tdToggleHideDone(){try{localStorage.setItem('bt_tdHideDone',tdHideDone()?'0':'1');}catch(e){}refreshTodo();}
+function tdNotDone(t){return !t.done;}
+function todoHideToggle(anyDone){
+  if(!anyDone)return '';
+  return '<div style="display:flex;justify-content:flex-end;margin:-2px 2px 8px"><button class="ri-btn" onclick="tdToggleHideDone()">'+(tdHideDone()?'Show completed':'Hide completed')+'</button></div>';
+}
 function tdCanEdit(t){return !!t&&(t.by===S.persona||todoOversight());}
 function tdCanCheck(t){return !!t&&(t.by===S.persona||todoOversight()||(t.who&&t.who.indexOf(S.persona)>=0));}
 /* per-trip per-person "has started a list" flag (so we can offer template / blank) */
@@ -2117,20 +2126,23 @@ function todoBody(){
   /* personal view — identical for every user */
   var mine=tdMine(me), assigned=tdAssignedTo(me);
   o+=todoSticky(mine.concat(assigned));
+  o+=todoHideToggle(mine.concat(assigned).some(function(t){return t.done;}));
   if(!tdHasStarted(me))o+=todoStarter();
+  var hide=tdHideDone();
+  var mineV=hide?mine.filter(tdNotDone):mine, assignedV=hide?assigned.filter(tdNotDone):assigned;
   /* My to-dos */
   o+='<div class="hub-section-label" style="margin-left:0">My to-dos</div>';
   o+='<div class="card" style="padding:6px 0 0">';
   if(S.tdForm&&S.tdForm.id===null)o+=todoEditor(null);
-  if(!mine.length&&!(S.tdForm&&S.tdForm.id===null))o+='<div class="body-empty" style="text-align:left;padding:6px 12px">Nothing here yet.</div>';
-  for(var i=0;i<mine.length;i++)o+=todoRowOrEditor(mine[i]);
+  if(!mineV.length&&!(S.tdForm&&S.tdForm.id===null))o+='<div class="body-empty" style="text-align:left;padding:6px 12px">'+(hide&&mine.length?'All done — nothing outstanding.':'Nothing here yet.')+'</div>';
+  for(var i=0;i<mineV.length;i++)o+=todoRowOrEditor(mineV[i]);
   if(!S.tdForm)o+='<button class="add-link" onclick="tdAddOpen()">'+IC.plus+' Add task</button>';
   o+='</div>';
   /* Assigned to me by others */
-  if(assigned.length){
+  if(assignedV.length){
     o+='<div class="hub-section-label" style="margin-left:0">Assigned to me</div>';
     o+='<div class="card" style="padding:6px 0 0">';
-    for(var j=0;j<assigned.length;j++)o+=todoRowOrEditor(assigned[j]);
+    for(var j=0;j<assignedV.length;j++)o+=todoRowOrEditor(assignedV[j]);
     o+='</div>';
   }
   return o;
@@ -2148,19 +2160,23 @@ function setTdScope(s){S.tdScope=s;S.tdForm=null;refreshTodo();}
 /* admin-only oversight: each person\'s list across the trip */
 function todoEveryoneView(){
   var o='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">Everyone\'s to-do lists for '+esc(trip().name)+'. As the trip owner or an admin you can check, edit or remove any item.</div>';
-  var mem=tripMembers();
+  var mem=tripMembers(),hide=tdHideDone(),anyDone=false;
+  var blocks=[];
   for(var p=0;p<mem.length;p++){var pid=mem[p];
     /* a person's list = what they created PLUS what others assigned to them, so an
        item you assign to someone shows up under THEM here (not just under you) */
     var items=tdMine(pid).concat(tdAssignedTo(pid)).filter(tdCanSee);
     var done=items.filter(function(t){return t.done;}).length;
-    o+=pbHead(pid,done,items.length);
-    o+='<div class="card" style="padding:6px 0 0">';
-    if(!items.length)o+='<div class="body-empty" style="text-align:left;padding:6px 12px">No items.</div>';
-    for(var k=0;k<items.length;k++)o+=todoRowOrEditor(items[k]);
-    o+='</div>';
+    if(done)anyDone=true;
+    var shown=hide?items.filter(tdNotDone):items;
+    var b=pbHead(pid,done,items.length);
+    b+='<div class="card" style="padding:6px 0 0">';
+    if(!shown.length)b+='<div class="body-empty" style="text-align:left;padding:6px 12px">'+(hide&&items.length?'All done.':'No items.')+'</div>';
+    for(var k=0;k<shown.length;k++)b+=todoRowOrEditor(shown[k]);
+    b+='</div>';
+    blocks.push(b);
   }
-  return o;
+  return o+todoHideToggle(anyDone)+blocks.join('');
 }
 function todoSticky(items){
   var total=items.length,done=items.filter(function(t){return t.done;}).length;
@@ -2183,10 +2199,10 @@ function todoStarter(){
   return o;
 }
 function todoRowOrEditor(t){
-  if(S.tdForm&&S.tdForm.id===t.id)return todoEditor(t);
+  if(S.tdForm&&S.tdForm.id===t.id)return todoRow(t,true)+todoEditor(t);
   return todoRow(t);
 }
-function todoRow(t){
+function todoRow(t,expanded){
   var me=S.persona;
   var canEdit=tdCanEdit(t), amAssignee=t.who&&t.who.indexOf(me)>=0;
   var pend=S._deltd==='tdrm_'+t.id;
@@ -2194,11 +2210,13 @@ function todoRow(t){
   if(t.who&&t.who.length)sub.push('Assigned to '+t.who.map(function(p){var pp=person(p);return pp?esc(pp.name):'';}).filter(Boolean).join(', '));
   if(!todoOversight()&&t.by!==me){var c=person(t.by);sub.push('From '+(c?esc(c.name):'someone'));}
   if(t.priv)sub.push(IC.lock+' Hidden');
-  var o='<div class="pk-row">';
+  var o='<div class="pk-row'+(expanded?' expanded':'')+'">';
   o+='<div class="chkbox'+(t.done?' on':'')+'" onclick="tdToggle(\''+t.id+'\')">'+(t.done?IC.checkw:'')+'</div>';
   o+='<div class="pk-name'+(t.done?' done':'')+'" onclick="tdToggle(\''+t.id+'\')">'+esc(t.n)+(sub.length?'<div class="pk-by">'+sub.join(' · ')+'</div>':'')+'</div>';
   if(t.when)o+='<div class="td-when">'+esc(t.when)+'</div>';
-  if(canEdit){
+  if(expanded){
+    o+='<button class="hdr-icon pk-edit-on" style="width:30px;height:30px;flex-shrink:0" title="Close" onclick="tdCancelForm()">'+IC.chevUp+'</button>';
+  }else if(canEdit){
     if(pend){
       o+='<button class="del-confirm-btn" onclick="tdRemove(\''+t.id+'\')">Remove?</button>';
       o+='<button class="del-btn" title="Keep" onclick="tdRemoveCancel()">&times;</button>';
@@ -2214,8 +2232,8 @@ function todoRow(t){
 }
 function todoEditor(item){
   var creator=item?item.by:S.persona;
-  var o='<div class="inline-editor">';
-  o+='<div class="inline-editor-title">'+IC.pencil+' '+(item?'Edit task':'New task')+'</div>';
+  var o='<div class="inline-editor'+(item?' pk-acc':'')+'">';
+  if(!item)o+='<div class="inline-editor-title">'+IC.pencil+' New task</div>';
   o+='<div class="field" style="margin:0"><label class="field-label">Task</label><input class="field-input" id="td-name" placeholder="e.g. Refill prescriptions" value="'+(item?esc(item.n):'')+'"></div>';
   o+='<div class="field" style="margin:0"><label class="field-label">When <span class="opt">(optional)</span></label><input class="field-input" id="td-when" placeholder="e.g. 14 days" value="'+(item&&item.when?esc(item.when):'')+'"></div>';
   o+=todoAssignField(creator);
