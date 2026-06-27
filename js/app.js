@@ -70,7 +70,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='217';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='218';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1599,7 +1599,10 @@ function dayPlanItems(d){
   diningFor(date).forEach(function(dn){if(dn.status==='reserved'||dn.status==='planned')out.push({t:dn.time,x:dn.meal+' — '+dn.name,type:'dining',who:dn.who,dstatus:dn.status,soft:dn.status==='planned'});});
   showsFor(date).forEach(function(s){if((s.status||'attend')==='attend')out.push({t:s.time,x:s.name,type:'show',who:s.who});});
   llFor(date).forEach(function(l){var bk=l.status==='booked';out.push({t:bk?(l.bookedTime||l.window):l.window,x:l.ride+' ('+tagShort(l.tier)+')',type:'ll',who:l.who,ref:l.id,soft:!bk});});
-  (d.itin||[]).forEach(function(it,idx){out.push({t:it.t,x:it.x,type:'manual',who:it.who||'all',crit:it.crit,idx:idx});});
+  (d.itin||[]).forEach(function(it,idx){
+    if(it.priv&&it.by&&it.by!==S.persona)return;   /* private stop — only its author sees it */
+    out.push({t:it.t,x:it.x,type:'manual',who:it.who||'all',crit:it.crit,idx:idx,priv:!!it.priv});
+  });
   out=out.filter(function(e){return visible(e.who);});
   out.sort(function(a,b){return mins(a.t)-mins(b.t);});
   // weave each rolling re-book in right after the booked LL it follows
@@ -1634,6 +1637,7 @@ function dayPlanCard(d,pk){
       o+=whoStack(e.who);
       var tags=[];
       var chip=planChip(e.type);if(chip)tags.push(chip);
+      if(e.priv) tags.push('<span class="t-tag" style="background:#EEF2FF;color:#3730A3">'+IC.lock+' Private</span>');
       if(e.soft) tags.push('<span class="t-tag" style="background:transparent;color:#92724A;border:1.5px dashed #C9A45E">Planned</span>');
       if(e.type==='dining'&&e.dstatus==='reserved') tags.push('<span class="t-tag" style="background:#DCFCE7;color:#15803D">Reserved</span>');
       if(e.type==='ll'&&!e.soft) tags.push('<span class="t-tag" style="background:#DCFCE7;color:#15803D">Booked</span>');
@@ -4846,19 +4850,24 @@ function delHours(id){
 function scrStopEdit(){
   var d=dayByDate(S.screen.day);if(!d)return scrGeneric();
   var has=S.screen.idx!=null,it=has?d.itin[S.screen.idx]:null;
+  if(S._formInit!=='stop'){S._stPriv=!!(it&&it.priv);S._formInit='stop';}
   var body='<div class="field"><label class="field-label">Time</label>'+timeField('st-time',it?it.t:'')+'</div>';
   body+='<div class="field"><label class="field-label">What\'s happening</label><input class="field-input" id="st-text" placeholder="e.g. Rope drop — Test Track" value="'+(it?esc(it.x):'')+'"></div>';
   body+='<div class="field"><label class="field-label">Tag <span class="opt">(optional, e.g. Critical, Hop)</span></label><input class="field-input" id="st-crit" placeholder="Critical" value="'+(it&&it.crit?esc(it.crit):'')+'"></div>';
   body+=whoSelectField(it?it.who:'all');
+  body+='<div class="field" style="margin:0"><label class="field-label">Privacy</label><div class="seg"><button class="seg-btn'+(!S._stPriv?' on':'')+'" onclick="stFormPriv(false)">Shared</button><button class="seg-btn'+(S._stPriv?' on book':'')+'" onclick="stFormPriv(true)">'+IC.lock+' Keep private</button></div></div>';
+  if(S._stPriv)body+='<div class="priv-note">Only you see this stop on your Day Plan — no one else on the trip, not even admins.</div>';
   if(has) body+='<button class="btn-danger-link" onclick="delStop()">Delete this stop</button>';
   return screenShell(has?'Edit Stop':'Add Stop',body,'Save','saveStop()');
 }
+function stFormPriv(v){S._stPriv=v;renderScreen_inplace2();}
 function saveStop(){
   var d=dayByDate(S.screen.day);if(!d){closeScreen();return;}
   var tx=val('st-text');if(!tx){toast('Add a description');return;}
   var rec={t:val('st-time')||'TBD',x:tx,who:whoVal()};
   var cr=val('st-crit');if(cr)rec.crit=cr;
   rec.by=(S.screen.idx!=null&&d.itin[S.screen.idx]&&d.itin[S.screen.idx].by)||S.persona;
+  rec.priv=!!S._stPriv;
   if(S.screen.idx!=null)d.itin[S.screen.idx]=rec; else d.itin.push(rec);
   saveDays();S._who=null;toast('Stop saved');closeScreen();render();
 }
