@@ -72,7 +72,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='233';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='234';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1289,13 +1289,19 @@ function needBuyEntries(){
   });});});
   return out;
 }
-function needBuyCount(){return needBuyEntries().length;}
+/* hub badge counts only OUTSTANDING (not-yet-bought) items */
+function needBuyCount(){return needBuyEntries().filter(function(e){return !e.it.bought;}).length;}
+/* mark bought / not bought — keeps the item on the list (struck through) instead
+   of removing it, so the record of what's been purchased stays visible */
 function pkGotIt(owner,ci,ii){var it=PACKING[owner]&&PACKING[owner][ci]&&PACKING[owner][ci].items[ii];if(!it)return;
   var buyers=(it.who&&it.who.length)?it.who:[owner];
   if(!(buyers.indexOf(S.persona)>=0||owner===S.persona||listOversight())){toast('Only the buyer, the owner or an admin can do this');return;}
-  it.needBuy=false;saveLists();toast('Marked as bought');
-  if(S.screen&&S.screen.type==='needbuy'){var h=document.getElementById('screen-host');if(h){h.innerHTML=renderScreen();var s=h.firstChild;if(s)s.classList.add('in');}}else render();
+  it.bought=!it.bought;saveLists();toast(it.bought?'Marked as bought':'Back on the list');
+  if(S.screen&&S.screen.type==='needbuy')renderScreenHard();else render();
 }
+function nbHideDone(){try{return localStorage.getItem('bt_nbHideDone')==='1';}catch(e){return false;}}
+function nbToggleHideDone(){try{localStorage.setItem('bt_nbHideDone',nbHideDone()?'0':'1');}catch(e){}renderScreenHard();}
+function nbHideToggle(anyBought){if(!anyBought)return '';return '<div style="display:flex;justify-content:flex-end;margin:-2px 2px 8px"><button class="lens-btn'+(nbHideDone()?' on':'')+'" onclick="nbToggleHideDone()">'+(nbHideDone()?'Show bought':'Hide bought')+'</button></div>';}
 /* packing: per-trip per-person "has started" flag + template seeding */
 function pkStartKey(){return 'dtp_packstart_'+S.tripId;}
 function pkStartedSet(){return load(pkStartKey(),[]);}
@@ -4658,21 +4664,27 @@ function scrNeedBuy(){
   if(!entries.length)return screenShell('Need to Buy',body+'<div class="body-empty">Nothing to buy right now. Flag a packing item “Need to buy” and it shows up here.</div>',null,null,'Done');
   var groups={},order=[];
   entries.forEach(function(e){var buyers=(e.it.who&&e.it.who.length)?e.it.who:[e.owner];buyers.forEach(function(b){if(!groups[b]){groups[b]=[];order.push(b);}groups[b].push(e);});});
+  var hide=nbHideDone(),anyBought=entries.some(function(e){return e.it.bought;}),shownAny=false;
   body+=personFilterRow(order);
+  body+=nbHideToggle(anyBought);
   for(var g=0;g<order.length;g++){var b=order[g],p=person(b);
     if(S.listWho&&b!==S.listWho)continue;   /* individual filter */
-    body+='<div class="person-block-hd"><span class="pbdot" style="background:'+(p?p.color:'#999')+'">'+(p?esc(p.name[0]):'?')+'</span><span class="pbname">'+(p?esc(p.name):'Someone')+(b===S.persona?' (you)':'')+' to buy</span><span class="pbcount">'+groups[b].length+'</span></div>';
+    var gItems=hide?groups[b].filter(function(e){return !e.it.bought;}):groups[b];
+    var rem=groups[b].filter(function(e){return !e.it.bought;}).length;
+    if(!gItems.length)continue;
+    shownAny=true;
+    body+='<div class="person-block-hd"><span class="pbdot" style="background:'+(p?p.color:'#999')+'">'+(p?esc(p.name[0]):'?')+'</span><span class="pbname">'+(p?esc(p.name):'Someone')+(b===S.persona?' (you)':'')+' to buy</span><span class="pbcount">'+rem+'</span></div>';
     body+='<div class="card">';
-    for(var i=0;i<groups[b].length;i++){var e=groups[b][i],fw=person(e.owner);
-      var canGot=(e.it.who&&e.it.who.indexOf(S.persona)>=0)||e.owner===S.persona||b===S.persona||listOversight();
-      var nbSt=pkStore(e.it);
-      body+='<div class="pk-row"><div style="flex:1;min-width:0"><div class="pk-name">'+esc(e.it.n)+((e.it.qty&&nbSt==='bag')?' <span style="color:var(--muted);font-weight:600">×'+e.it.qty+'</span>':'')+'</div>';
-      body+='<div class="pk-by">For '+(fw?esc(fw.name):'?')+(nbSt==='locker'?' · Owners Locker':nbSt==='person'?' · On person':'')+'</div></div>';
-      if(canGot)body+='<button class="ri-btn" onclick="pkGotIt(\''+e.owner+'\','+e.ci+','+e.ii+')">Got it</button>';
+    for(var i=0;i<gItems.length;i++){var e=gItems[i],fw=person(e.owner);
+      var nbSt=pkStore(e.it),bought=!!e.it.bought;
+      body+='<div class="pk-row">';
+      body+='<div class="chkbox'+(bought?' on':'')+'" onclick="pkGotIt(\''+e.owner+'\','+e.ci+','+e.ii+')">'+(bought?IC.checkw:'')+'</div>';
+      body+='<div class="pk-name'+(bought?' done':'')+'" onclick="pkGotIt(\''+e.owner+'\','+e.ci+','+e.ii+')">'+esc(e.it.n)+((e.it.qty&&nbSt==='bag')?' <span style="color:var(--muted);font-weight:600">×'+e.it.qty+'</span>':'')+'<div class="pk-by">For '+(fw?esc(fw.name):'?')+(nbSt==='locker'?' · Owners Locker':nbSt==='person'?' · On person':'')+'</div></div>';
       body+='</div>';
     }
     body+='</div>';
   }
+  if(!shownAny)body+='<div class="body-empty">'+(hide?'Everything\'s bought. ':'')+(S.listWho?'Nothing for this person.':'Nothing to buy right now.')+'</div>';
   return screenShell('Need to Buy',body,null,null,'Done');
 }
 
