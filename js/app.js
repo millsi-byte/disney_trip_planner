@@ -70,7 +70,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='213';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='214';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -816,7 +816,16 @@ function afterWhoSave(cat,rec,oldWho){
 
 /* queries — all scoped to the current trip */
 function flightsFor(date){return FLIGHTS.filter(function(f){return f.trip===S.tripId&&f.day===date;});}
-function diningFor(date){return DINING.filter(function(d){return d.trip===S.tripId&&d.day===date;});}
+var MEAL_ORDER={breakfast:0,brunch:1,lunch:2,snack:3,dinner:4,dessert:5,drinks:6};
+function mealRank(m){var r=MEAL_ORDER[(m||'').toLowerCase()];return r==null?5:r;}
+function diningFor(date){
+  return DINING.filter(function(d){return d.trip===S.tripId&&d.day===date;})
+    .sort(function(a,b){
+      var ta=mins(a.time),tb=mins(b.time);
+      if(ta!==tb)return ta-tb;                 /* earliest time first */
+      return mealRank(a.meal)-mealRank(b.meal);/* tie / no time → breakfast·lunch·dinner */
+    });
+}
 function llFor(date){return LLS.filter(function(l){return l.trip===S.tripId&&l.day===date;});}
 function showsFor(date){return SHOWS.filter(function(s){return s.trip===S.tripId&&s.day===date;});}
 function resortsFor(date){return RESORTS.filter(function(r){return r.trip===S.tripId&&date>=r.checkin&&date<=r.checkout;});}
