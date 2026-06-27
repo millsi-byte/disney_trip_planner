@@ -70,7 +70,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='218';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='219';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1752,8 +1752,8 @@ function showsCard(sh,pk,date){
   if(S.open[key]){
     o+='<div class="card-body">';
     if(!sh.length) o+='<div class="body-empty">No shows'+(filterActive()?' for the current filter':'')+' on this day.</div>';
-    for(var i=0;i<sh.length;i++){var x=sh[i];
-      o+='<div class="show-row"><div style="flex:1"><div class="show-name">'+esc(x.name)+'</div><div style="display:flex;align-items:center;gap:6px;margin-top:4px">'+statusBadge(x.status||'attend')+whoChips(x.who)+'</div></div><div class="show-time">'+esc(x.time)+'</div>';
+    for(var i=0;i<sh.length;i++){var x=sh[i];var xpk=x.park&&PARKS[x.park];
+      o+='<div class="show-row"><div style="flex:1"><div class="show-name">'+esc(x.name)+'</div><div style="display:flex;align-items:center;gap:6px;margin-top:4px">'+statusBadge(x.status||'attend')+(xpk?'<span class="inpark-badge" style="background:'+xpk.color+'">'+esc(xpk.short)+'</span>':'')+whoChips(x.who)+'</div></div><div class="show-time">'+esc(x.time)+'</div>';
       o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;margin-left:8px" onclick="openScreen({type:\'showedit\',edit:\''+x.id+'\',day:\''+x.day+'\'})">'+IC.pencil+'</button></div>';
     }
     o+='<button class="add-link" onclick="openScreen({type:\'showedit\',day:\''+date+'\'})">'+IC.plus+' Add show</button>';
@@ -1813,6 +1813,7 @@ function renderPlanHub(){
     ['Flights',IC.plane,'var(--hd-flight)',cnt(FLIGHTS)+' journeys','addflight'],
     ['Dining',IC.fork,'var(--hd-din)',cnt(DINING)+' reservations','dining'],
     ['Lightning Lanes',IC.bolt,'var(--hd-ll)',cnt(LLS)+' rides','ll'],
+    ['Night Shows',IC.star,'var(--hd-show)',cnt(SHOWS)+' show'+(cnt(SHOWS)===1?'':'s'),'shows'],
     ['Resort',IC.bed,'var(--hd-resort)',cnt(RESORTS)+' stays','resort'],
     ['Park Reservations',IC.ticket,'#0F5F73',cnt(PARKRES)+' reservations','parkres'],
     ['Park Visits',IC.map,'#3B7549',cnt(VISITS)+' visits','visits'],
@@ -2616,7 +2617,7 @@ function importPromptText(){
 '• parkres:   {"type":"parkres","day":"","park":"mk|ep|hs|ak","status":"booked|planning"}',
 '• parkhours: {"type":"parkhours","day":"","park":"mk|ep|hs|ak","open":"9:00 AM","close":"10:00 PM","early":"8:30 AM","late":"11:00 PM","crowd":5}',
 '   (early = Early Theme Park Entry start time for eligible resort guests; late = Extended Evening Hours / late close time — OMIT early and/or late if that park has none that day; crowd = expected crowd level 1-10, omit if unknown. One parkhours item per park per day.)',
-'• show:      {"type":"show","name":"","day":"","time":"9:00 PM","status":"attend|scheduled"}',
+'• show:      {"type":"show","name":"","day":"","time":"9:00 PM","park":"mk|ep|hs|ak (optional)","status":"attend|scheduled"}',
 '• flight:    {"type":"flight","label":"Outbound|Return","day":"","status":"booked|planning","legs":[',
 '     {"airline":"","num":"WN 4657","conf":"","depApt":"BOS","depCity":"Boston","depTime":"5:45 AM","depDate":"","arrApt":"MCO","arrCity":"Orlando","arrTime":"11:50 AM","arrDate":""} ]}',
 '• day:       {"type":"day","day":"","headline":"Magic Kingdom","blurb":"short line under the headline","strategy":"The plan / verbiage for the day. Use blank lines to start a new paragraph.","tags":["Activate APs"],"alert":"optional heads-up"}',
@@ -2730,7 +2731,7 @@ function buildImportItem(it){
       after:'',afterRide:(it.afterRide||it.after||'')+''}));
   }
   if(t==='show'){
-    return finalizeImport('Show',base({name:it.name?String(it.name):'',day:impDate(it.day),time:it.time||'',status:it.status||'attend'}));
+    return finalizeImport('Show',base({name:it.name?String(it.name):'',day:impDate(it.day),time:it.time||'',park:impPark(it.park),status:it.status||'attend'}));
   }
   if(t==='flight'){
     var legs=Array.isArray(it.legs)?it.legs:[];
@@ -3062,7 +3063,7 @@ var IMPORT_FIELDS={
   Dining:[['name','Name','text'],['day','Date','date'],['time','Time','text'],['meal','Meal',['Breakfast','Lunch','Dinner','Drinks']],['loc','Location',['in','off']],['conf','Confirmation #','text'],['status','Status',['reserved','want','planned']]],
   'Lightning Lane':[['ride','Ride','text'],['day','Date','date'],['park','Park',['mk','ep','hs','ak']],['tier','Tier',['sp','mp1','mp2']],['status','Status',['booked','planning']],['bookedTime','Booked time','text'],['conf','Confirmation #','text']],
   'Park reservation':[['day','Date','date'],['park','Park',['mk','ep','hs','ak']],['status','Status',['booked','planning']]],
-  Show:[['name','Name','text'],['day','Date','date'],['time','Time','text'],['status','Status',['attend','scheduled']]],
+  Show:[['name','Name','text'],['day','Date','date'],['time','Time','text'],['park','Park',['mk','ep','hs','ak']],['status','Status',['attend','scheduled']]],
   Flight:[['label','Label','text'],['day','Date','date'],['status','Status',['booked','planning']]],
   Day:[['day','Date','date'],['visit','Headline','text'],['blurb','Blurb','text']],
   'To Do':[['n','Task','text'],['when','When','text']],
@@ -4559,6 +4560,7 @@ function scrSection(){
   var map={
     addflight:['Flights',IC.plane,'var(--hd-flight)'], dining:['Dining',IC.fork,'var(--hd-din)'],
     ll:['Lightning Lanes',IC.bolt,'var(--hd-ll)'], resort:['Resort',IC.bed,'var(--hd-resort)'],
+    shows:['Night Shows',IC.star,'var(--hd-show)'],
     parkres:['Park Reservations',IC.ticket,'#0F5F73'], visits:['Park Visits',IC.map,'#3B7549'],
     hours:['Park Hours',IC.bolt,'#0F5F73']
   };
@@ -4621,6 +4623,15 @@ function scrSection(){
     }
     if(!anyH) body+='<div class="body-empty">No park hours yet.</div>';
     add='<button class="sec-add" onclick="openScreen({type:\'hoursedit\',day:\''+dft+'\'})">Add park hours</button>';
+  }else if(sec==='shows'){
+    for(var ish=0;ish<TD.length;ish++){var shd=showsFor(TD[ish].date).filter(function(x){return visible(x.who);});if(!shd.length)continue;
+      body+=dayHd(TD[ish].date);
+      for(var sj=0;sj<shd.length;sj++){var sx=shd[sj],spk=sx.park&&PARKS[sx.park];
+        body+='<div class="ov-card"><div class="din-row"><div style="flex:1;min-width:0"><div class="din-name">'+esc(sx.name)+'</div><div class="din-time">'+esc(sx.time||'TBD')+(spk?' · '+esc(spk.name):'')+'</div>'+whoChips(sx.who)+'</div>'+statusBadge(sx.status||'attend')+(spk?'<span class="inpark-badge" style="background:'+spk.color+';margin-left:8px">'+esc(spk.short)+'</span>':'')+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'showedit\',edit:\''+sx.id+'\',day:\''+sx.day+'\'})">'+IC.pencil+'</button></div></div>';
+      }
+    }
+    if(!body)body=fnote('night shows');
+    add='<button class="sec-add" onclick="openScreen({type:\'showedit\',day:\''+dft+'\'})">Add show</button>';
   }
   if(owned)body=renderFilter()+body;   /* Mine / Everyone / Not mine on ownership categories */
   return screenShell(m[0],body,null,null,'Done',add);
@@ -4918,6 +4929,7 @@ function scrShowEdit(){
   body+='<div class="field"><label class="field-label">Status <span class="opt">(only Attend shows on the Day Plan)</span></label><div class="seg">';
   body+='<button class="seg-btn'+(st==='scheduled'?' on':'')+'" onclick="pickStatus(\'sh\',\'scheduled\')">Scheduled</button>';
   body+='<button class="seg-btn'+(st==='attend'?' on book':'')+'" onclick="pickStatus(\'sh\',\'attend\')">Attend</button></div></div>';
+  body+='<div class="field"><label class="field-label">Park <span class="opt">(optional)</span></label><select class="field-select" id="sh-park"><option value=""'+(!(edit&&edit.park)?' selected':'')+'>— No park —</option>'+parkResOptions(edit?edit.park:'')+'</select></div>';
   body+=whoSelectField(pre);
   body+=notifyField('Show');
   body+='<div class="field"><label class="field-label">Day</label><select class="field-select" id="sh-day">'+dayOptions((edit&&edit.day)||S.screen.day)+'</select></div>';
@@ -4929,7 +4941,7 @@ function saveShow(){
   var nm=val('sh-name');if(!nm){toast('Add a show name');return;}
   var oldWho=edit?edit.who:[];
   var rec=edit||{id:'s'+Date.now(),trip:S.tripId,by:S.persona};
-  rec.name=nm;rec.time=val('sh-time')||'TBD';rec.day=val('sh-day')||S.screen.day;rec.status=S._formStatus.sh||'attend';rec.who=whoVal();
+  rec.name=nm;rec.time=val('sh-time')||'TBD';rec.day=val('sh-day')||S.screen.day;rec.status=S._formStatus.sh||'attend';rec.park=val('sh-park')||'';rec.who=whoVal();
   if(!edit)SHOWS.push(rec);
   save('dtp_shows',SHOWS);afterWhoSave('Show',rec,oldWho);S._who=null;toast('Show saved');closeScreen();render();
 }
