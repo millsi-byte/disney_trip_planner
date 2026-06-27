@@ -70,7 +70,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='220';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='221';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1229,8 +1229,14 @@ function pkPersons(){
 }
 function refreshLists(){
   var b=document.getElementById('lists-body');
-  if(b&&S.screen&&S.screen.type==='packlist'){b.innerHTML=packingBody();return;}
-  if(b&&S.screen&&S.screen.type==='lists'){b.innerHTML=listScreenBody('packing');return;}
+  if(b&&S.screen&&(S.screen.type==='packlist'||S.screen.type==='lists')){
+    /* preserve scroll: replacing the list HTML otherwise jumps you elsewhere
+       (e.g. editing/saving a packing item) */
+    var sc=b.closest?b.closest('.screen-body'):null,top=sc?sc.scrollTop:0;
+    b.innerHTML=(S.screen.type==='packlist')?packingBody():listScreenBody('packing');
+    if(sc)sc.scrollTop=top;
+    return;
+  }
   render();
 }
 var ADD={};
@@ -2463,9 +2469,13 @@ function renderScreen_inplace2(){
   if(!S.screen){render();return;}
   var host=document.getElementById('screen-host');
   var snap={};
+  var oldBody=host.querySelector?host.querySelector('.screen-body'):null;
+  var scrollTop=oldBody?oldBody.scrollTop:0;
   if(host.querySelectorAll){var olds=host.querySelectorAll('input,select,textarea');for(var i=0;i<olds.length;i++){if(olds[i].id)snap[olds[i].id]=olds[i].value;}}
   host.innerHTML=renderScreen();
   if(host.querySelectorAll){var news=host.querySelectorAll('input,select,textarea');for(var j=0;j<news.length;j++){if(news[j].id&&(news[j].id in snap))news[j].value=snap[news[j].id];}}
+  var newBody=host.querySelector?host.querySelector('.screen-body'):null;
+  if(newBody&&scrollTop)newBody.scrollTop=scrollTop;   /* keep scroll across in-place re-renders */
   var s=host.firstChild;if(s)s.classList.add('in');
 }
 S._formStatus={};
