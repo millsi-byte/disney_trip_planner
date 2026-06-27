@@ -72,7 +72,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='235';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='236';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -108,6 +108,7 @@ SHOWS   = load('dtp_shows', SHOWS);
 FLIGHTS = load('dtp_flights', FLIGHTS);
 RESORTS = load('dtp_resorts', RESORTS);
 PARKRES = load('dtp_parkres', PARKRES);
+TICKETS = load('dtp_tickets', TICKETS);
 REBOOKS = load('dtp_rebooks', REBOOKS);
 TRIPS   = load('dtp_trips', TRIPS);
 NOTIFS  = load('dtp_notifs', NOTIFS);
@@ -170,7 +171,7 @@ function savePartyId(){save('dtp_partyId',S.partyId);}
 
 /* every planning item belongs to a trip — default seed items to jul26 */
 function tagTrip(coll){for(var i=0;i<coll.length;i++)if(!coll[i].trip)coll[i].trip='jul26';}
-[DAYS,VISITS,PARKHOURS,DINING,LLS,SHOWS,FLIGHTS,RESORTS,PARKRES,REBOOKS].forEach(tagTrip);
+[DAYS,VISITS,PARKHOURS,DINING,LLS,SHOWS,FLIGHTS,RESORTS,PARKRES,TICKETS,REBOOKS].forEach(tagTrip);
 CHAT = load('dtp_chat', CHAT);
 /* every chat message needs a trip, a stable id, and a sortable timestamp
    (the seed uses display strings only) — backfill so sync/ordering works later */
@@ -282,7 +283,7 @@ function migrateDays(){
 function persist(){
   saveDays();save('dtp_visits',VISITS);save('dtp_hours',PARKHOURS);save('dtp_dining',DINING);save('dtp_lls',LLS);
   save('dtp_shows',SHOWS);save('dtp_flights',FLIGHTS);save('dtp_resorts',RESORTS);
-  save('dtp_parkres',PARKRES);save('dtp_rebooks',REBOOKS);save('dtp_trips',TRIPS);save('dtp_family',FAMILY);save('dtp_parties',PARTIES);save('dtp_chat',CHAT);
+  save('dtp_parkres',PARKRES);save('dtp_tickets',TICKETS);save('dtp_rebooks',REBOOKS);save('dtp_trips',TRIPS);save('dtp_family',FAMILY);save('dtp_parties',PARTIES);save('dtp_chat',CHAT);
 }
 
 /* re-read every synced collection from localStorage into the in-memory globals.
@@ -295,7 +296,7 @@ function rehydrate(){
   FAMILY=load('dtp_family',FAMILY); ALL_IDS=FAMILY.map(function(p){return p.id;});
   migrateDays(); DAYS=loadDays(); VISITS=load('dtp_visits',VISITS); PARKHOURS=load('dtp_hours',PARKHOURS);
   DINING=load('dtp_dining',DINING); LLS=load('dtp_lls',LLS); SHOWS=load('dtp_shows',SHOWS);
-  FLIGHTS=load('dtp_flights',FLIGHTS); RESORTS=load('dtp_resorts',RESORTS); PARKRES=load('dtp_parkres',PARKRES);
+  FLIGHTS=load('dtp_flights',FLIGHTS); RESORTS=load('dtp_resorts',RESORTS); PARKRES=load('dtp_parkres',PARKRES); TICKETS=load('dtp_tickets',TICKETS);
   REBOOKS=load('dtp_rebooks',REBOOKS); TRIPS=load('dtp_trips',TRIPS); NOTIFS=load('dtp_notifs',NOTIFS);
   PARTIES=load('dtp_parties',PARTIES)||PARTIES; CHAT=load('dtp_chat',CHAT);
   try{ensurePartyTags();}catch(e){}   /* re-tag records that arrived without a party */
@@ -534,7 +535,7 @@ function screenItem(){
   var t=S.screen.type;
   if(t==='stopedit'){var d=dayByDate(S.screen.day);return (d&&d.itin&&S.screen.idx!=null)?d.itin[S.screen.idx]:null;}
   var id=S.screen.edit;if(!id)return null;
-  var M={adddining:DINING,llbook:LLS,addll:LLS,addflight:FLIGHTS,resortedit:RESORTS,showedit:SHOWS,predit:PARKRES,visedit:VISITS,hoursedit:PARKHOURS,rbedit:REBOOKS};
+  var M={adddining:DINING,llbook:LLS,addll:LLS,addflight:FLIGHTS,resortedit:RESORTS,showedit:SHOWS,predit:PARKRES,ticketedit:TICKETS,visedit:VISITS,hoursedit:PARKHOURS,rbedit:REBOOKS};
   var coll=M[t];if(!coll)return null;
   for(var i=0;i<coll.length;i++)if(coll[i].id===id)return coll[i];
   return null;
@@ -600,6 +601,7 @@ function notifLabel(cat,it){
   if(cat==='Flight')return it.label||'a flight';
   if(cat==='Resort')return it.name||'a resort stay';
   if(cat==='Park visit')return (it.park&&PARKS[it.park]?PARKS[it.park].name:'a park')+' visit';
+  if(cat==='Park ticket')return ticketLabel(it);
   if(cat==='To Do')return it.n||'a to-do';
   if(cat==='Packing')return it.n||'a packing item';
   return 'this item';
@@ -1587,6 +1589,9 @@ function renderAgenda(){
   /* Order: Strategy · Flights · Resort · Day Plan · Dining · Night Shows · Lightning Lanes */
   if(d.strategy) o+=stratCard(d,pk);
 
+  var tks=ticketsFor(d.date).filter(function(t){return visible(t.who);});
+  if(tks.length) o+=ticketCard(tks,pk,d.date);
+
   var flts=flightsFor(d.date).filter(function(f){return visible(f.who);});
   if(flts.length) o+=flightCard(flts,d);
 
@@ -1898,6 +1903,7 @@ function renderPlanHub(){
     ['Lightning Lanes',IC.bolt,'var(--hd-ll)',cnt(LLS)+' rides','ll'],
     ['Night Shows',IC.star,'var(--hd-show)',cnt(SHOWS)+' show'+(cnt(SHOWS)===1?'':'s'),'shows'],
     ['Resort',IC.bed,'var(--hd-resort)',cnt(RESORTS)+' stays','resort'],
+    ['Park Tickets',IC.ticket,'#0F766E',cnt(TICKETS)+' ticket'+(cnt(TICKETS)===1?'':'s'),'tickets'],
     ['Park Reservations',IC.ticket,'#0F5F73',cnt(PARKRES)+' reservations','parkres'],
     ['Park Visits',IC.map,'#3B7549',cnt(VISITS)+' visits','visits'],
     ['Park Hours',IC.bolt,'#0F5F73',cnt(PARKHOURS)+' set','hours']
@@ -2419,7 +2425,7 @@ function renderSheet(){
 function renderScreen(){
   var t=S.screen.type;
   /* editing an existing item you don\'t own → limited view (with self-removal) */
-  var EDIT={adddining:1,llbook:1,addll:1,addflight:1,resortedit:1,showedit:1,predit:1,visedit:1,hoursedit:1,rbedit:1,stopedit:1};
+  var EDIT={adddining:1,llbook:1,addll:1,addflight:1,resortedit:1,showedit:1,predit:1,ticketedit:1,visedit:1,hoursedit:1,rbedit:1,stopedit:1};
   if(EDIT[t]){var _it=screenItem();if(_it&&!canManage(_it))return scrLimitedItem(_it);}
   if(t==='addflight') return scrAddFlight();
   if(t==='adddining') return scrAddDining();
@@ -2444,6 +2450,7 @@ function renderScreen(){
   if(t==='alltrips')  return scrAllTrips();
   if(t==='dayedit')   return scrDayEdit();
   if(t==='predit')    return scrPREdit();
+  if(t==='ticketedit')return scrTicketEdit();
   if(t==='visedit')   return scrVisitEdit();
   if(t==='hoursedit') return scrHoursEdit();
   if(t==='rbedit')    return scrRebookEdit();
@@ -3823,7 +3830,7 @@ function wizOwnerName(){
    created here — the owner explicitly chooses or creates one in the wizard, and
    that action is what creates the cloud workspace (tenant). */
 function resetToBlank(){
-  FAMILY=[];TRIPS=[];DAYS=[];VISITS=[];PARKHOURS=[];DINING=[];LLS=[];SHOWS=[];FLIGHTS=[];RESORTS=[];PARKRES=[];REBOOKS=[];NOTIFS=[];CHAT=[];
+  FAMILY=[];TRIPS=[];DAYS=[];VISITS=[];PARKHOURS=[];DINING=[];LLS=[];SHOWS=[];FLIGHTS=[];RESORTS=[];PARKRES=[];TICKETS=[];REBOOKS=[];NOTIFS=[];CHAT=[];
   PARTIES=[];
   var oid='p'+Date.now();
   var owner={id:oid,name:wizOwnerName(),color:PALETTE[0][0],admin:true,parties:[],email:(window.CLOUD&&window.CLOUD.user&&window.CLOUD.user.email)||'',uid:cloudUid()};
@@ -4826,6 +4833,7 @@ function scrSection(){
     addflight:['Flights',IC.plane,'var(--hd-flight)'], dining:['Dining',IC.fork,'var(--hd-din)'],
     ll:['Lightning Lanes',IC.bolt,'var(--hd-ll)'], resort:['Resort',IC.bed,'var(--hd-resort)'],
     shows:['Night Shows',IC.star,'var(--hd-show)'],
+    tickets:['Park Tickets',IC.ticket,'#0F766E'],
     parkres:['Park Reservations',IC.ticket,'#0F5F73'], visits:['Park Visits',IC.map,'#3B7549'],
     hours:['Park Hours',IC.bolt,'#0F5F73']
   };
@@ -4899,6 +4907,13 @@ function scrSection(){
     }
     if(!body)body=fnote('night shows');
     add='<button class="sec-add" onclick="openScreen({type:\'showedit\',day:\''+dft+'\'})">Add show</button>';
+  }else if(sec==='tickets'){
+    var tkl=TICKETS.filter(function(x){return x.trip===S.tripId&&visible(x.who);});
+    for(var itk=0;itk<tkl.length;itk++){var tk=tkl[itk];
+      body+='<div class="ov-card"><div class="din-row" style="padding:10px 12px"><div style="flex:1;min-width:0"><div class="din-name">'+esc(ticketLabel(tk))+'</div><div class="din-time">'+esc(ticketSub(tk))+'</div>'+whoChips(tk.who)+'</div>'+ticketBadge(tk)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'ticketedit\',edit:\''+tk.id+'\'})">'+IC.pencil+'</button></div></div>';
+    }
+    if(!tkl.length)body=fnote('park tickets');
+    add='<button class="sec-add" onclick="openScreen({type:\'ticketedit\'})">Add park ticket</button>';
   }
   if(owned)body=renderFilter()+body;   /* Mine / Everyone / Not mine on ownership categories */
   return screenShell(m[0],body,null,null,'Done',add);
@@ -5043,6 +5058,139 @@ function delPR(id){
   confirmCritical('park reservation',function(){
     for(var i=0;i<PARKRES.length;i++)if(PARKRES[i].id===id){PARKRES.splice(i,1);break;}
     save('dtp_parkres',PARKRES);notifyDelete('Park reservation',it);toast('Reservation removed');closeScreen();render();
+  });
+}
+
+/* ── Park tickets (date-based admission or annual passes) ─────
+   Two-level: category (date | ap). Date tickets carry a date range + base
+   option (base / hopper / hopper-plus) and an optional Water Parks & Sports
+   add-on. Annual passes carry a tier, activation date, auto expiration (+1yr)
+   and an activated toggle. Park visits are managed separately (no auto-gen). */
+var TICKET_BASES={base:'Base Ticket · 1 park per day',hopper:'Park Hopper · hop between parks same day',hopperplus:'Park Hopper Plus · hopping + water parks & sports'};
+var TICKET_BASE_SHORT={base:'1 park/day',hopper:'Hopper',hopperplus:'Hopper Plus'};
+/* WDW annual passes all INCLUDE Park Hopper admission (hop:true). */
+var AP_TIERS={
+  incredi:{name:'Incredi-Pass',elig:'Available nationwide',hop:true},
+  sorcerer:{name:'Sorcerer Pass',elig:'Florida residents & DVC members',hop:true},
+  pirate:{name:'Pirate Pass',elig:'Florida residents',hop:true},
+  pixie:{name:'Pixie Dust Pass',elig:'Florida residents · weekday admission',hop:true}
+};
+function addOneYear(ds){if(!/^\d{4}-\d{2}-\d{2}$/.test(ds||''))return '';var p=ds.split('-');return (+p[0]+1)+'-'+p[1]+'-'+p[2];}
+function fmtMD(ds){return /^\d{4}-\d{2}-\d{2}$/.test(ds||'')?(monOf(ds)+' '+(+ds.slice(8))):'';}
+function ticketsFor(date){return TICKETS.filter(function(t){
+  if(t.trip!==S.tripId)return false;
+  if(t.category==='date')return !!(t.start&&t.end&&date>=t.start&&date<=t.end);
+  return true;   /* annual pass — held for the whole trip */
+});}
+function ticketLabel(t){
+  if(!t)return 'a ticket';
+  if(t.category==='ap')return (AP_TIERS[t.tier]&&AP_TIERS[t.tier].name)||'Annual Pass';
+  return (TICKET_BASE_SHORT[t.base]||'Ticket')+((t.waterSports&&t.base!=='hopperplus')?' + Water Parks & Sports':'');
+}
+function ticketSub(t){
+  if(t.category==='ap')return t.activated?('Activated '+fmtMD(t.activation)+' · Expires '+fmtMD(t.expiration)):'Not activated yet';
+  return fmtMD(t.start)+(t.end&&t.end!==t.start?(' – '+fmtMD(t.end)):'');
+}
+function ticketBadge(t){
+  if(t.category==='ap')return t.activated?'<span class="st-badge st-booked">Active</span>':'<span class="st-badge st-todo">Inactive</span>';
+  return '<span class="inpark-badge" style="background:#0F766E">'+esc(TICKET_BASE_SHORT[t.base]||'Ticket')+'</span>';
+}
+function ticketCard(tks,pk,date){
+  var key='tickets';
+  var o='<div class="card">';
+  o+=cardHead(key,'#0F766E',pk.color,IC.ticket,'Park Tickets',tks.length+' ticket'+(tks.length>1?'s':''));
+  if(S.open[key]){
+    o+='<div class="card-body">';
+    for(var i=0;i<tks.length;i++){var t=tks[i];
+      o+='<div class="din-row" style="padding:10px 14px"><div style="flex:1;min-width:0"><div class="din-name">'+esc(ticketLabel(t))+'</div><div class="din-time">'+esc(ticketSub(t))+'</div>'+whoChips(t.who)+'</div>'+ticketBadge(t)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'ticketedit\',edit:\''+t.id+'\'})">'+IC.pencil+'</button></div>';
+    }
+    o+='<button class="add-link" onclick="openScreen({type:\'ticketedit\'})">'+IC.plus+' Add park ticket</button>';
+    o+='</div>';
+  }
+  return o+'</div>';
+}
+function tkCat(v){S._tkCat=v;renderScreen_inplace2();}
+function tkBase(v){S._tkBase=v;renderScreen_inplace2();}
+function tkWP(v){S._tkWP=!!v;renderScreen_inplace2();}
+function tkTier(v){S._tkTier=v;renderScreen_inplace2();}
+function tkActivated(v){S._tkActivated=!!v;renderScreen_inplace2();}
+function tkSyncExp(){S._tkAct=val('tk-activation');var e=document.getElementById('tk-exp');if(e)e.textContent=addOneYear(S._tkAct)||'—';}
+function scrTicketEdit(){
+  var edit=S.screen.edit?TICKETS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
+  if(S._formInit!=='tk'){
+    S._tkCat=edit?edit.category:'date';
+    S._tkBase=(edit&&edit.base)?edit.base:'base';
+    S._tkWP=!!(edit&&edit.waterSports);
+    S._tkTier=(edit&&edit.tier)?edit.tier:'incredi';
+    S._tkActivated=!!(edit&&edit.activated);
+    S._tkAct=(edit&&edit.activation)||'';
+    S._formInit='tk';
+  }
+  var t=trip(),pre=edit?edit.who:'all';
+  var body='<div class="field"><label class="field-label">Ticket type</label><div class="seg">';
+  body+='<button class="seg-btn'+(S._tkCat==='date'?' on':'')+'" onclick="tkCat(\'date\')">Date-based</button>';
+  body+='<button class="seg-btn'+(S._tkCat==='ap'?' on book':'')+'" onclick="tkCat(\'ap\')">Annual Pass</button></div></div>';
+  if(S._tkCat==='date'){
+    body+='<div class="field-row"><div class="field"><label class="field-label">Start date</label><input type="date" class="field-input" id="tk-start" value="'+esc((edit&&edit.start)||(t&&t.start)||'')+'"></div>';
+    body+='<div class="field"><label class="field-label">End date</label><input type="date" class="field-input" id="tk-end" value="'+esc((edit&&edit.end)||(t&&t.end)||'')+'"></div></div>';
+    body+='<div class="field"><label class="field-label">Base option</label><div class="seg seg3">';
+    body+='<button class="seg-btn'+(S._tkBase==='base'?' on':'')+'" onclick="tkBase(\'base\')">Base</button>';
+    body+='<button class="seg-btn'+(S._tkBase==='hopper'?' on':'')+'" onclick="tkBase(\'hopper\')">Hopper</button>';
+    body+='<button class="seg-btn'+(S._tkBase==='hopperplus'?' on':'')+'" onclick="tkBase(\'hopperplus\')">Hopper Plus</button></div>';
+    body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0">'+esc(TICKET_BASES[S._tkBase]||'')+'</div></div>';
+    body+='<div class="field"><label class="field-label">Add-on</label>';
+    if(S._tkBase==='hopperplus'){
+      body+='<div class="notify-row on"><span class="notify-check">'+IC.checkw+'</span><div><div class="notify-lbl">Water Parks &amp; Sports</div><div class="notify-sub">Included with Park Hopper Plus.</div></div></div>';
+    }else{
+      body+='<div class="notify-row'+(S._tkWP?' on':'')+'" onclick="tkWP('+(S._tkWP?'false':'true')+')"><span class="notify-check">'+(S._tkWP?IC.checkw:'')+'</span><div><div class="notify-lbl">Water Parks &amp; Sports</div><div class="notify-sub">Optional add-on: the two water parks plus ESPN Wide World of Sports &amp; more.</div></div></div>';
+    }
+    body+='</div>';
+  }else{
+    body+='<div class="field"><label class="field-label">Pass tier</label>';
+    ['incredi','sorcerer','pirate','pixie'].forEach(function(k){var tt=AP_TIERS[k],on=S._tkTier===k;
+      body+='<div class="notify-row'+(on?' on':'')+'" style="margin-bottom:8px" onclick="tkTier(\''+k+'\')"><span class="notify-check">'+(on?IC.checkw:'')+'</span>'
+        +'<div style="flex:1"><div class="notify-lbl">'+esc(tt.name)+'</div><div class="notify-sub">'+esc(tt.elig)+'</div></div>'
+        +(tt.hop?'<span class="inpark-badge" style="background:#0F766E;align-self:center">Park Hopper</span>':'')+'</div>';
+    });
+    body+='</div>';
+    body+='<div class="field-row"><div class="field"><label class="field-label">Activation date</label><input type="date" class="field-input" id="tk-activation" value="'+esc(S._tkAct||'')+'" onchange="tkSyncExp()"></div>';
+    body+='<div class="field"><label class="field-label">Expires <span class="opt">(auto · 1 year)</span></label><div class="field-input" id="tk-exp" style="background:var(--cream);color:var(--muted)">'+(esc(addOneYear(S._tkAct))||'—')+'</div></div></div>';
+    body+='<div class="field"><label class="field-label">Status</label><div class="notify-row'+(S._tkActivated?' on':'')+'" onclick="tkActivated('+(S._tkActivated?'false':'true')+')"><span class="notify-check">'+(S._tkActivated?IC.checkw:'')+'</span><div><div class="notify-lbl">Pass activated</div><div class="notify-sub">Switch on once the pass has been activated in-park.</div></div></div></div>';
+    body+='<div class="body-empty" style="text-align:left;padding:2px 2px 6px;color:#92400E"><strong>Reminder:</strong> Annual Pass holders still need a park reservation for every day they plan to enter a park.</div>';
+  }
+  body+=whoSelectField(pre);
+  body+=notifyField('Park ticket');
+  if(edit) body+='<button class="btn-danger-link" onclick="delTicket(\''+edit.id+'\')">Delete this ticket</button>';
+  return screenShell(edit?'Edit Park Ticket':'Add Park Ticket',body,'Save','saveTicket()');
+}
+function saveTicket(){
+  var edit=S.screen.edit?TICKETS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
+  var oldWho=edit?edit.who:[];
+  var rec=edit||{id:'tk'+Date.now(),trip:S.tripId,by:S.persona};
+  rec.category=S._tkCat||'date';
+  if(rec.category==='date'){
+    var s=val('tk-start')||(trip()&&trip().start)||'',e=val('tk-end')||s;
+    if(e&&s&&e<s){var tmp=e;e=s;s=tmp;}
+    rec.start=s;rec.end=e;rec.base=S._tkBase||'base';
+    rec.waterSports=(rec.base==='hopperplus')?true:!!S._tkWP;
+    rec.tier=null;rec.activation=null;rec.expiration=null;rec.activated=false;
+  }else{
+    rec.tier=S._tkTier||'incredi';
+    rec.activation=val('tk-activation')||'';
+    rec.expiration=addOneYear(rec.activation);
+    rec.activated=!!S._tkActivated;
+    rec.start=null;rec.end=null;rec.base=null;rec.waterSports=false;
+  }
+  rec.who=whoVal();
+  if(!edit)TICKETS.push(rec);
+  save('dtp_tickets',TICKETS);afterWhoSave('Park ticket',rec,oldWho);
+  S._who=null;S._formInit=null;toast('Park ticket saved');closeScreen();render();
+}
+function delTicket(id){
+  var it=TICKETS.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;
+  confirmCritical('park ticket',function(){
+    for(var i=0;i<TICKETS.length;i++)if(TICKETS[i].id===id){TICKETS.splice(i,1);break;}
+    save('dtp_tickets',TICKETS);notifyDelete('Park ticket',it);toast('Ticket removed');closeScreen();render();
   });
 }
 
@@ -5360,7 +5508,7 @@ function doDelTrip(id){
   TRIPS=TRIPS.filter(function(x){return x.id!==id;});
   // remove this trip\'s days and items
   function drop(coll){for(var i=coll.length-1;i>=0;i--)if(coll[i].trip===id)coll.splice(i,1);}
-  [DAYS,VISITS,PARKHOURS,DINING,LLS,SHOWS,FLIGHTS,RESORTS,PARKRES,REBOOKS].forEach(drop);
+  [DAYS,VISITS,PARKHOURS,DINING,LLS,SHOWS,FLIGHTS,RESORTS,PARKRES,TICKETS,REBOOKS].forEach(drop);
   for(var c=CHAT.length-1;c>=0;c--)if(CHAT[c].trip===id)CHAT.splice(c,1);
   try{localStorage.removeItem('dtp_packing_'+id);localStorage.removeItem('dtp_todo_'+id);}catch(e){}
   save(daysKey(id),[]);   /* empty the deleted trip's day record so the deletion syncs out */

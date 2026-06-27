@@ -200,6 +200,9 @@ var PARKRES = [
   {id:"pr3", day:"2026-07-18", park:"ak", status:"booked", who:"all"}
 ];
 
+/* ── Park tickets (date-based admission or annual passes) ──── */
+var TICKETS = [];
+
 /* ── Lightning Lanes ──────────────────────────────────────── */
 /* tier: sp | mp1 | mp2 · status: planning | booked           */
 var LLS = [
