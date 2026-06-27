@@ -12,6 +12,7 @@ var IC = {
   gear:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
   chevd:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>',
   chev:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>',
+  chevUp:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>',
   plane:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21 4 19.5 2.5S16 1 14.5 2.5L11 6 2.8 4.2 1.4 5.6l6.5 5.5-2.9 3.4-2.8.5-.9.9 2.3 2.3 2.3 2.3.9-.9.5-2.8 3.4-2.9 5.5 6.5 1.4-1.4z"/></svg>',
   planexs:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21 4 19.5 2.5S16 1 14.5 2.5L11 6 2.8 4.2 1.4 5.6l6.5 5.5-2.9 3.4-2.8.5-.9.9 2.3 2.3 2.3 2.3.9-.9.5-2.8 3.4-2.9 5.5 6.5 1.4-1.4z"/></svg>',
   route:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg>',
@@ -70,7 +71,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='222';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='223';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2039,7 +2040,7 @@ function packingPerson(pid){
     }
     for(var j=0;j<cat.items.length;j++){
       if(!shown(cat.items[j]))continue;                /* hide private items from non-owners */
-      if(S.pkForm&&S.pkForm.pid===pid&&S.pkForm.c===c&&S.pkForm.i===j){o+=pkItemEditor(pid,c,j);continue;}
+      if(S.pkForm&&S.pkForm.pid===pid&&S.pkForm.c===c&&S.pkForm.i===j){o+=pkItemRow(pid,c,j,true)+pkItemEditor(pid,c,j);continue;}
       o+=pkItemRow(pid,c,j);
     }
     if(ADD.pk===pid+'_'+c){
@@ -2056,18 +2057,19 @@ function packingPerson(pid){
   }
   return o;
 }
-function pkItemRow(pid,c,j){
+function pkItemRow(pid,c,j,expanded){
   var it=PACKING[pid][c].items[j],pend=S._delpk==='d_'+pid+'_'+c+'_'+j,can=pkCanItem(pid,it);
   var subs=[];
   if(it.by&&it.by!==pid&&person(it.by))subs.push('Added by '+esc(person(it.by).name));
   if(it.needBuy){var bs=(it.who&&it.who.length)?it.who.map(function(p){var pp=person(p);return pp?esc(pp.name):'';}).filter(Boolean).join(', '):(person(pid)?esc(person(pid).name):'');subs.push('Buy · '+bs);}
   if(it.priv)subs.push(IC.lock+' Hidden');
-  var o='<div class="pk-row">';
+  var o='<div class="pk-row'+(expanded?' expanded':'')+'">';
   o+='<div class="chkbox'+(it.done?' on':'')+'" onclick="pkChk(\''+pid+'\','+c+','+j+')">'+(it.done?IC.checkw:'')+'</div>';
   o+='<div class="pk-name'+(it.done?' done':'')+'" onclick="pkChk(\''+pid+'\','+c+','+j+')">'+esc(it.n)+(subs.length?'<div class="pk-by">'+subs.join(' · ')+'</div>':'')+'</div>';
   if(it.l)o+='<span class="lkr-tag">Locker</span>';
   else o+='<div class="qty-wrap"><button class="qty-btn" onclick="pkDec(\''+pid+'\','+c+','+j+')">&#8722;</button><span class="qty-num">'+(it.qty||0)+'</span><button class="qty-btn" onclick="pkInc(\''+pid+'\','+c+','+j+')">+</button></div>';
-  if(can&&!pend)o+='<button class="hdr-icon" style="width:30px;height:30px;background:'+(it.needBuy?'#FEF3C7;color:#92400E':'#F3F1EC;color:#6B7280')+';flex-shrink:0" onclick="pkItemEdit(\''+pid+'\','+c+','+j+')">'+IC.pencil+'</button>';
+  if(expanded)o+='<button class="hdr-icon pk-edit-on" style="width:30px;height:30px;flex-shrink:0" title="Close" onclick="pkItemCancel()">'+IC.chevUp+'</button>';
+  else if(can&&!pend)o+='<button class="hdr-icon" style="width:30px;height:30px;background:'+(it.needBuy?'#FEF3C7;color:#92400E':'#F3F1EC;color:#6B7280')+';flex-shrink:0" onclick="pkItemEdit(\''+pid+'\','+c+','+j+')">'+IC.pencil+'</button>';
   if(pend){
     o+='<button class="del-confirm-btn" onclick="pkDel(\''+pid+'\','+c+','+j+')">Remove?</button>';
     o+='<button class="del-btn" title="Keep" onclick="pkDelCancel()">&times;</button>';
@@ -2079,8 +2081,7 @@ function pkItemRow(pid,c,j){
 }
 function pkItemEditor(pid,c,j){
   var it=PACKING[pid][c].items[j];
-  var o='<div class="inline-editor">';
-  o+='<div class="inline-editor-title">'+IC.pencil+' Edit item</div>';
+  var o='<div class="inline-editor pk-acc">';
   o+='<div class="field" style="margin:0"><label class="field-label">Item</label><input class="field-input" id="pki-name" value="'+esc(it.n)+'"></div>';
   o+='<div class="field" style="margin:0"><label class="field-label">Storage</label><div class="seg"><button class="seg-btn'+(!it.l?' on':'')+'" onclick="pkFormStore(false)">Suitcase</button><button class="seg-btn'+(it.l?' on':'')+'" onclick="pkFormStore(true)">Owners Locker</button></div></div>';
   o+='<div class="field" style="margin:0"><label class="field-label">Need to buy</label><div class="seg"><button class="seg-btn'+(!it.needBuy?' on':'')+'" onclick="pkFormNeed(false)">No</button><button class="seg-btn'+(it.needBuy?' on book':'')+'" onclick="pkFormNeed(true)">Need to buy</button></div></div>';
