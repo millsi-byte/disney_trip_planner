@@ -272,13 +272,13 @@ button{font-family:inherit}
 .sh-btn{background:none;border:none;color:#fff;font-size:16px;font-weight:600;cursor:pointer;padding:8px 6px;min-width:60px;min-height:44px;display:flex;align-items:center}
 .sh-btn.right{justify-content:flex-end}
 .sh-btn.save{font-weight:700;color:#FBE8B8}
-.screen-body{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 12px calc(28px + env(safe-area-inset-bottom))}
+.screen-body{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;padding:14px 12px calc(28px + env(safe-area-inset-bottom))}
 
 /* ── Form fields ─────────────────────────────────────────── */
 .field{margin-bottom:14px}
 .field-label{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:6px;display:block}
 .field-label .opt{color:var(--muted);font-weight:500;text-transform:none;letter-spacing:0}
-.field-input,.field-select{width:100%;border:1px solid var(--border);border-radius:10px;padding:12px 12px;font-size:17px;background:var(--card);color:var(--ink);outline:none;font-family:inherit;min-height:48px}
+.field-input,.field-select{width:100%;max-width:100%;border:1px solid var(--border);border-radius:10px;padding:12px 12px;font-size:17px;background:var(--card);color:var(--ink);outline:none;font-family:inherit;min-height:48px}
 .field-input:focus,.field-select:focus{border-color:var(--ink)}
 .field-input::placeholder{color:#B6BCC6}
 .field-row{display:flex;gap:8px}
