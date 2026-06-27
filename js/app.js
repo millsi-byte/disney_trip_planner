@@ -71,7 +71,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='224';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='225';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -953,7 +953,7 @@ function switchTrip(id){saveLists();S.tripId=id;saveTripId();var _st=tripById(id
 
 /* screens (slide-in) */
 function openScreen(def){
-  S.screen=def;S._who=null;S._formStatus={};S._delpk=null;S._deltd=null;S.tdForm=null;S.tdScope='mine';S._tdPriv=false;
+  S.screen=def;S._who=null;S._formStatus={};S._delpk=null;S._deltd=null;S.tdForm=null;S.tdScope='mine';S._tdPriv=false;S.listWho=null;
   S.pkForm=null;S.pkScope='mine';S._delsect=null;S._pksect=null;ADD.psect=null;
   S._formLoc=null;S._formTier=null;S._formInit=null;S._formColor=null;
   S._notify=notifDefault();
@@ -1330,7 +1330,23 @@ function tdToggleHideDone(){try{localStorage.setItem('bt_tdHideDone',tdHideDone(
 function tdNotDone(t){return !t.done;}
 function todoHideToggle(anyDone){
   if(!anyDone)return '';
-  return '<div style="display:flex;justify-content:flex-end;margin:-2px 2px 8px"><button class="ri-btn" onclick="tdToggleHideDone()">'+(tdHideDone()?'Show completed':'Hide completed')+'</button></div>';
+  return '<div style="display:flex;justify-content:flex-end;margin:-2px 2px 8px"><button class="lens-btn'+(tdHideDone()?' on':'')+'" onclick="tdToggleHideDone()">'+(tdHideDone()?'Show completed':'Hide completed')+'</button></div>';
+}
+/* shared person filter for the Everyone / Need-to-Buy views */
+function setListWho(pid){
+  S.listWho=(S.listWho===pid)?null:(pid||null);
+  if(S.screen&&S.screen.type==='todolist')refreshTodo();
+  else if(S.screen&&(S.screen.type==='packlist'||S.screen.type==='lists'))refreshLists();
+  else renderScreen_inplace2();
+}
+function personFilterRow(members){
+  if(!members||members.length<2)return '';
+  var o='<div class="pfilter-row">';
+  o+='<button class="pf-chip'+(!S.listWho?' on':'')+'" onclick="setListWho(null)">Everyone</button>';
+  for(var i=0;i<members.length;i++){var p=person(members[i]);if(!p)continue;
+    o+='<button class="pf-chip'+(S.listWho===p.id?' on':'')+'" onclick="setListWho(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+'</button>';
+  }
+  return o+'</div>';
 }
 function tdCanEdit(t){return !!t&&(t.by===S.persona||todoOversight());}
 function tdCanCheck(t){return !!t&&(t.by===S.persona||todoOversight()||(t.who&&t.who.indexOf(S.persona)>=0));}
@@ -2010,10 +2026,12 @@ function packScopeToggle(){
   return '<div class="seg" style="margin-bottom:12px"><button class="seg-btn'+(all?'':' on')+'" onclick="setPkScope(\'mine\')">My list</button>'
     +'<button class="seg-btn'+(all?' on':'')+'" onclick="setPkScope(\'all\')">Everyone</button></div>';
 }
-function setPkScope(s){S.pkScope=s;S.pkForm=null;ADD.pk=null;ADD.psect=null;S._pksect=null;refreshLists();}
+function setPkScope(s){S.pkScope=s;S.pkForm=null;ADD.pk=null;ADD.psect=null;S._pksect=null;S.listWho=null;refreshLists();}
 function packEveryoneView(){
+  var mem=tripMembers();
   var o='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">Everyone\'s packing lists for '+esc(trip().name)+'. As the trip owner or an admin you can edit any item.</div>';
-  tripMembers().forEach(function(pid){o+=packingPerson(pid);});
+  o+=personFilterRow(mem);
+  mem.forEach(function(pid){if(S.listWho&&pid!==S.listWho)return;o+=packingPerson(pid);});
   return o;
 }
 function packSticky(pid){
@@ -2156,7 +2174,7 @@ function todoScopeToggle(){
   o+='</div>';
   return o;
 }
-function setTdScope(s){S.tdScope=s;S.tdForm=null;refreshTodo();}
+function setTdScope(s){S.tdScope=s;S.tdForm=null;S.listWho=null;refreshTodo();}
 /* admin-only oversight: each person\'s list across the trip */
 function todoEveryoneView(){
   var o='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">Everyone\'s to-do lists for '+esc(trip().name)+'. As the trip owner or an admin you can check, edit or remove any item.</div>';
@@ -2168,6 +2186,7 @@ function todoEveryoneView(){
     var items=tdMine(pid).concat(tdAssignedTo(pid)).filter(tdCanSee);
     var done=items.filter(function(t){return t.done;}).length;
     if(done)anyDone=true;
+    if(S.listWho&&pid!==S.listWho)continue;   /* individual filter */
     var shown=hide?items.filter(tdNotDone):items;
     var b=pbHead(pid,done,items.length);
     b+='<div class="card" style="padding:6px 0 0">';
@@ -2176,7 +2195,7 @@ function todoEveryoneView(){
     b+='</div>';
     blocks.push(b);
   }
-  return o+todoHideToggle(anyDone)+blocks.join('');
+  return o+personFilterRow(mem)+todoHideToggle(anyDone)+blocks.join('');
 }
 function todoSticky(items){
   var total=items.length,done=items.filter(function(t){return t.done;}).length;
@@ -4511,7 +4530,9 @@ function scrNeedBuy(){
   if(!entries.length)return screenShell('Need to Buy',body+'<div class="body-empty">Nothing to buy right now. Flag a packing item “Need to buy” and it shows up here.</div>',null,null,'Done');
   var groups={},order=[];
   entries.forEach(function(e){var buyers=(e.it.who&&e.it.who.length)?e.it.who:[e.owner];buyers.forEach(function(b){if(!groups[b]){groups[b]=[];order.push(b);}groups[b].push(e);});});
+  body+=personFilterRow(order);
   for(var g=0;g<order.length;g++){var b=order[g],p=person(b);
+    if(S.listWho&&b!==S.listWho)continue;   /* individual filter */
     body+='<div class="person-block-hd"><span class="pbdot" style="background:'+(p?p.color:'#999')+'">'+(p?esc(p.name[0]):'?')+'</span><span class="pbname">'+(p?esc(p.name):'Someone')+(b===S.persona?' (you)':'')+' to buy</span><span class="pbcount">'+groups[b].length+'</span></div>';
     body+='<div class="card">';
     for(var i=0;i<groups[b].length;i++){var e=groups[b][i],fw=person(e.owner);
