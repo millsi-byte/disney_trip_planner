@@ -284,8 +284,8 @@ button{font-family:inherit}
 .field-row{display:flex;gap:8px}
 .field-row .field{flex:1;margin-bottom:0}
 .timesel{display:flex;align-items:center;gap:6px}
-.timesel .field-select{flex:1;padding-left:8px;padding-right:6px;text-align:center}
-.timesel .field-select:last-of-type{flex:0 0 64px}
+.timesel .field-select{flex:1;padding:12px 4px;text-align:center;text-align-last:center;appearance:none;-webkit-appearance:none;-moz-appearance:none;background-image:none}
+.timesel .field-select:last-of-type{flex:0 0 56px}
 .timesel-sep{font-weight:700;color:var(--muted)}
 .field-group{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:14px;margin-bottom:14px}
 .field-group-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;justify-content:space-between}
