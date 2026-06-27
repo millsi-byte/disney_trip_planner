@@ -70,7 +70,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='221';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='222';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2149,7 +2149,9 @@ function todoEveryoneView(){
   var o='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">Everyone\'s to-do lists for '+esc(trip().name)+'. As the trip owner or an admin you can check, edit or remove any item.</div>';
   var mem=tripMembers();
   for(var p=0;p<mem.length;p++){var pid=mem[p];
-    var items=tdMine(pid).filter(tdCanSee);   /* hide others' private items from oversight */
+    /* a person's list = what they created PLUS what others assigned to them, so an
+       item you assign to someone shows up under THEM here (not just under you) */
+    var items=tdMine(pid).concat(tdAssignedTo(pid)).filter(tdCanSee);
     var done=items.filter(function(t){return t.done;}).length;
     o+=pbHead(pid,done,items.length);
     o+='<div class="card" style="padding:6px 0 0">';
