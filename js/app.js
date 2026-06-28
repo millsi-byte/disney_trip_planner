@@ -1618,28 +1618,24 @@ function dayBadges(d){
   for(var i=0;i<RESORTS.length;i++){var r=RESORTS[i];if(r.trip===S.tripId&&vis(r.who)){if(r.checkin===date)anyIn=true;if(r.checkout===date)anyOut=true;}}
   if(anyIn) out.push('Check-in');
   if(anyOut) out.push('Check-out');
-  if(visitsFor(date).filter(function(v){return vis(v.who);}).length>=2) out.push('Park Hopper');
-  if(parkResFor(date).filter(function(p){return vis(p.who);}).length) out.push('Park Reservation');
-  /* Early Entry / Late Hours are PERKS — only badge them when you actually
-     plan to be at that park in that part of the day. Morning visits unlock
-     Early Entry; evening/late visits unlock Late Hours. "Day" timing covers
-     the full day so it counts for both. Without a matching visit, the tags
-     read as facts-about-Disney rather than facts-about-your-trip. */
   var dayVisits=visitsFor(date).filter(function(v){return vis(v.who);});
-  var morningParks={},eveningParks={};
-  dayVisits.forEach(function(v){
-    if(v.timing==='morning'||v.timing==='day')morningParks[v.park]=1;
-    if(v.timing==='evening'||v.timing==='late'||v.timing==='day')eveningParks[v.park]=1;
-  });
-  var dayHours=parkHoursFor(date);
-  if(dayHours.some(function(h){return h.early&&morningParks[h.park];})) out.push('Early Entry');
-  if(dayHours.some(function(h){return h.late&&eveningParks[h.park];})) out.push('Late Hours');
+  /* Park Hop — only when two visits to DIFFERENT parks are planned */
+  var distinctParks={};dayVisits.forEach(function(v){distinctParks[v.park]=1;});
+  if(Object.keys(distinctParks).length>=2) out.push('Park Hop');
+  if(parkResFor(date).filter(function(p){return vis(p.who);}).length) out.push('Park Reservation');
+  /* Early Entry / Evening Hours — only when the visit explicitly marks the
+     perk as planned (checkboxes on the park visit), not merely available. */
+  if(dayVisits.some(function(v){return v.earlyEntry;})) out.push('Early Entry');
+  if(dayVisits.some(function(v){return v.eveningHours;})) out.push('Evening Hours');
+  /* Single Pass / Multi Pass — only when the pass is confirmed (booked) */
   var lls=llFor(date).filter(function(l){return vis(l.who);});
-  if(lls.some(function(l){return l.tier==='sp';})) out.push('Single Pass Day');
-  if(lls.some(function(l){return l.tier==='mp1'||l.tier==='mp2';})) out.push('Multi Pass Day');
+  if(lls.some(function(l){return l.tier==='sp'&&l.status==='booked';})) out.push('Single Pass');
+  if(lls.some(function(l){return (l.tier==='mp1'||l.tier==='mp2')&&l.status==='booked';})) out.push('Multi Pass');
   var TD=tripDays();
   if(TD.length&&TD[TD.length-1].date===date) out.push('Last Day');
   if(d.tags&&d.tags.length) out=out.concat(d.tags);
+  /* honor per-day suppressions (any auto tag the user removed in Edit Day) */
+  if(d.hiddenTags&&d.hiddenTags.length) out=out.filter(function(t){return d.hiddenTags.indexOf(t)<0;});
   return out;
 }
 function renderAgenda(){
@@ -5132,43 +5128,57 @@ function crowdOptions(sel){
 function scrDayEdit(){
   var d=dayByDate(S.screen.day);if(!d)return scrGeneric();
   var body='<div class="hub-section-label" style="margin-left:0">'+monOf(d.date)+' '+d.d+' · '+d.dl+'</div>';
-  body+='<div class="field"><label class="field-label">Park visits <span class="opt">(assigned items — tap to edit)</span></label>';
-  var vis=visitsFor(d.date);
-  for(var vi=0;vi<vis.length;vi++){var vv=vis[vi],vpk=PARKS[vv.park];
-    body+='<div class="ov-card" style="margin:0 0 8px"><div class="din-row" style="padding:10px 12px"><span style="background:'+(vpk?vpk.color:'#999')+';width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name">'+(vpk?esc(vpk.name):esc(vv.park))+'</div><div class="din-time">'+timingLbl(vv.timing)+'</div>'+whoChips(vv.who)+'</div>'+(vi===0?'<span class="st-badge st-booked">Primary</span>':'<span class="st-badge st-todo">Hopper</span>')+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'visedit\',edit:\''+vv.id+'\',day:\''+d.date+'\'})">'+IC.pencil+'</button></div></div>';
-  }
-  if(!vis.length) body+='<div class="body-empty" style="text-align:left;padding:2px 2px 4px">No park visit — travel / rest day.</div>';
-  body+='<button class="add-link" style="margin-top:0" onclick="openScreen({type:\'visedit\',day:\''+d.date+'\'})">'+IC.plus+' Add park visit</button>';
-  body+='</div>';
-  body+='<div class="field"><label class="field-label">Park reservations <span class="opt">(assigned items — tap to edit)</span></label>';
-  var prs=parkResFor(d.date);
-  for(var pi=0;pi<prs.length;pi++){var pr=prs[pi],ppk=PARKS[pr.park];
-    body+='<div class="ov-card'+(isPlanningStatus(pr.status)?' planning':'')+'" style="margin:0 0 8px"><div class="din-row" style="padding:10px 12px"><span style="background:'+(ppk?ppk.color:'#999')+';width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name">'+(ppk?esc(ppk.name):esc(pr.park))+'</div>'+whoChips(pr.who)+'</div>'+statusBadge(pr.status)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'predit\',edit:\''+pr.id+'\',day:\''+d.date+'\'})">'+IC.pencil+'</button></div></div>';
-  }
-  if(!prs.length) body+='<div class="body-empty" style="text-align:left;padding:2px 2px 4px">No park reservation — Hopper day.</div>';
-  body+='<button class="add-link" style="margin-top:0" onclick="openScreen({type:\'predit\',day:\''+d.date+'\'})">'+IC.plus+' Add park reservation</button>';
-  body+='</div>';
-  body+='<div class="field"><label class="field-label">Park hours & crowd <span class="opt">(per park — tap to edit)</span></label>';
-  var phl=parkHoursFor(d.date);
-  for(var hi=0;hi<phl.length;hi++){var hh=phl[hi],hpk=PARKS[hh.park];
-    body+='<div class="ov-card" style="margin:0 0 8px"><div class="din-row" style="padding:10px 12px"><span style="background:'+(hpk?hpk.color:'#999')+';width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name">'+(hpk?esc(hpk.name):esc(hh.park))+'</div><div class="din-time">'+esc((hh.open||'—')+' – '+(hh.close||'—'))+(hh.early?' · Early '+esc(hh.early):'')+(hh.late?' · Late '+esc(hh.late):'')+'</div></div>'+crowdPill(hh.crowd)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'hoursedit\',edit:\''+hh.id+'\',day:\''+d.date+'\'})">'+IC.pencil+'</button></div></div>';
-  }
-  if(!phl.length) body+='<div class="body-empty" style="text-align:left;padding:2px 2px 4px">No park hours set for this day.</div>';
-  body+='<button class="add-link" style="margin-top:0" onclick="openScreen({type:\'hoursedit\',day:\''+d.date+'\'})">'+IC.plus+' Add park hours</button>';
-  body+='</div>';
   body+='<div class="field"><label class="field-label">Day headline <span class="opt">(big text on the day — defaults to the park name)</span></label><input class="field-input" id="dy-visit" placeholder="'+esc(pkOf(d.date).name)+'" value="'+esc(d.visit||'')+'"></div>';
   body+='<div class="field"><label class="field-label">Short blurb <span class="opt">(small line under the headline)</span></label><input class="field-input" id="dy-blurb" placeholder="e.g. EPCOT all day" value="'+esc(d.blurb||'')+'"></div>';
-  body+='<div class="field"><label class="field-label">Custom tags <span class="opt">(comma-separated · most pills are auto from your items)</span></label><input class="field-input" id="dy-tags" placeholder="e.g. Activate APs" value="'+esc((d.tags||[]).join(', '))+'"></div>';
+  /* Tags — every pill (auto or custom) can be removed; add your own below */
+  body+='<div class="field"><label class="field-label">Tags <span class="opt">(auto from your plans · tap × to remove any)</span></label>';
+  var badges=dayBadges(d);
+  if(badges.length){
+    body+='<div class="tag-edit-wrap">';
+    for(var bi=0;bi<badges.length;bi++) body+='<span class="tag-edit">'+esc(badges[bi])+'<button type="button" onclick="dayTagRemove('+bi+')" aria-label="Remove tag">&times;</button></span>';
+    body+='</div>';
+  }else body+='<div class="body-empty" style="text-align:left;padding:2px">No tags yet.</div>';
+  if(d.hiddenTags&&d.hiddenTags.length){
+    body+='<div class="tag-restore-wrap">Hidden: ';
+    for(var hri=0;hri<d.hiddenTags.length;hri++) body+='<button type="button" class="tag-restore" onclick="dayTagRestore('+hri+')">+ '+esc(d.hiddenTags[hri])+'</button>';
+    body+='</div>';
+  }
+  body+='<div class="tag-add-row"><input class="field-input" id="dy-newtag" placeholder="Add a custom tag" onkeydown="if(event.key===\'Enter\'){event.preventDefault();dayTagAdd();}"><button class="ri-btn" type="button" onclick="dayTagAdd()">Add</button></div>';
+  body+='</div>';
   body+='<div class="field"><label class="field-label">Alert / heads-up <span class="opt">(optional)</span></label><textarea class="field-input" id="dy-alert" rows="3" placeholder="e.g. Storms likely 2–4 PM">'+esc(d.alert||'')+'</textarea></div>';
+  body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0">Park visits, reservations, hours &amp; tickets are now managed in <strong>Park Plan</strong> and <strong>Park Hours &amp; Crowds</strong> on the day (Daily Planning view).</div>';
   return screenShell('Edit Day',body,'Save','saveDay()');
 }
 function saveDay(){
   var d=dayByDate(S.screen.day);if(!d){closeScreen();return;}
   d.visit=val('dy-visit');
   d.blurb=val('dy-blurb');
-  d.tags=val('dy-tags').split(',').map(function(s){return s.trim();}).filter(function(s){return s;});
   d.alert=val('dy-alert')||null;
   saveDays();toast('Day updated');closeScreen();render();
+}
+/* tag editing — tags live as auto-badges (suppressed via d.hiddenTags) plus
+   custom entries in d.tags. Changes persist immediately and re-render in place. */
+function dayTagRemove(i){
+  var d=dayByDate(S.screen.day);if(!d)return;
+  var label=dayBadges(d)[i];if(label==null)return;
+  var ix=(d.tags||[]).indexOf(label);
+  if(ix>=0){d.tags.splice(ix,1);}
+  else{d.hiddenTags=d.hiddenTags||[];if(d.hiddenTags.indexOf(label)<0)d.hiddenTags.push(label);}
+  saveDays();renderScreen_inplace2();
+}
+function dayTagRestore(i){
+  var d=dayByDate(S.screen.day);if(!d||!d.hiddenTags)return;
+  if(d.hiddenTags[i]==null)return;
+  d.hiddenTags.splice(i,1);
+  saveDays();renderScreen_inplace2();
+}
+function dayTagAdd(){
+  var d=dayByDate(S.screen.day);if(!d)return;
+  var v=val('dy-newtag');if(!v)return;
+  d.tags=d.tags||[];
+  if(dayBadges(d).indexOf(v)<0&&d.tags.indexOf(v)<0)d.tags.push(v);
+  var inp=document.getElementById('dy-newtag');if(inp)inp.value='';
+  saveDays();renderScreen_inplace2();
 }
 /* small reusable ticket indicator: green check+Tickets when a valid associated
    ticket exists for the visit, else a red question mark */
