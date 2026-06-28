@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='276';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='277';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2186,8 +2186,8 @@ function renderChat(){
     h+='<div class="msg-av" style="background:'+p.color+'">'+p.name[0]+'</div>';
     h+='<div class="msg-col">';
     if(!mine) h+='<div class="msg-name">'+esc(p.name)+'</div>';
-    h+='<div class="msg-bubble" onclick="chatTapMsg(\''+m.id+'\')">';
-    if(m.ref) h+='<div class="msg-ref" onclick="event.stopPropagation();toast(\'Jumps to: '+esc(m.ref.label)+'\')">'+refIcon(m.ref.type)+esc(m.ref.label)+'</div>';
+    h+='<div class="msg-bubble" ontouchstart="chatPressStart(event,\''+m.id+'\')" ontouchend="chatPressEnd()" ontouchmove="chatPressEnd()" onclick="chatTapMsg(\''+m.id+'\')">';
+    if(m.ref) h+='<div class="msg-ref" onclick="event.stopPropagation();chatJumpRef(\''+m.id+'\')">'+refIcon(m.ref.type)+esc(m.ref.label)+'</div>';
     h+=(m.text?esc(m.text):'')+'</div>';
     h+='<div class="msg-time">'+esc(m.time)+'</div>';
     h+=chatReactions(m);
@@ -2243,10 +2243,31 @@ function chatToggleReactPicker(id){
   S._reactFor=(S._reactFor===id?null:id);
   var y=window.scrollY;render();window.scrollTo(0,y);
 }
-/* tap a bubble to reveal its react button (hidden until then) */
+/* tap a bubble to reveal its react button; long-press opens the emoji bar
+   directly (iOS-style). A fired long-press suppresses the trailing click. */
 function chatTapMsg(id){
+  if(S._lpFired){S._lpFired=false;return;}
   S._msgActive=(S._msgActive===id?null:id);S._reactFor=null;
   var y=window.scrollY;render();window.scrollTo(0,y);
+}
+function chatPressStart(ev,id){
+  S._lpFired=false;
+  try{if(S._lpTimer)clearTimeout(S._lpTimer);}catch(e){}
+  S._lpTimer=setTimeout(function(){S._lpFired=true;chatLongPress(id);},420);
+}
+function chatPressEnd(){try{if(S._lpTimer){clearTimeout(S._lpTimer);S._lpTimer=null;}}catch(e){}}
+function chatLongPress(id){
+  S._msgActive=id;S._reactFor=id;
+  try{if(navigator.vibrate)navigator.vibrate(8);}catch(e){}
+  var y=window.scrollY;render();window.scrollTo(0,y);
+}
+/* tapping an attached planned-item card jumps to that day's plan */
+function chatJumpRef(id){
+  var m=CHAT.filter(function(x){return x.id===id;})[0];if(!m||!m.ref)return;
+  var TD=tripDays();
+  if(m.ref.day){for(var i=0;i<TD.length;i++)if(TD[i].date===m.ref.day){S.dayIdx=i;break;}}
+  S.tab='home';S.planView='dayplan';
+  render();toast('Jumped to '+m.ref.label);
 }
 /* attach a planned item to the next message (the "reminder / focus" card) */
 function chatAttach(){openSheet({type:'chatref'});}
