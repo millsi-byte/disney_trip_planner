@@ -72,7 +72,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='246';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='247';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -5028,20 +5028,16 @@ function saveDay(){
 }
 function scrStrategyEdit(){
   var d=dayByDate(S.screen.day);if(!d)return scrGeneric();
-  var sub=esc(monOf(d.date)+' '+d.d+' · '+d.dl);
-  var fmtBtn=function(fn,lbl,title){return '<button onclick=”stratFmt(\''+fn+'\')” title=”'+title+'” style=”font-size:15px;min-width:38px;height:36px;border:1px solid var(--border);border-radius:8px;background:var(--cream);cursor:pointer;font-family:inherit;color:var(--ink)”>'+lbl+'</button>';};
-  var h='<div class=”screen”>';
-  h+='<div class=”screen-hd”><button class=”sh-btn” onclick=”closeScreen()”>Cancel</button><div class=”sh-title”>Day Strategy</div><button class=”sh-btn right save” onclick=”saveStrategy()”>Save</button></div>';
-  h+='<div style=”display:flex;align-items:center;gap:4px;padding:8px 12px;background:var(--card);border-bottom:1px solid var(--border);flex-shrink:0”>';
-  h+=fmtBtn('bold','<strong>B</strong>','Bold');
-  h+=fmtBtn('italic','<em>I</em>','Italic');
-  h+=fmtBtn('bullet','•','Bullet list');
-  h+='<div style=”width:1px;height:24px;background:var(--border);margin:0 4px”></div>';
-  h+='<span style=”font-size:12px;color:var(--muted)”>'+sub+'</span>';
-  h+='</div>';
-  h+='<textarea id=”strat-text” style=”flex:1;width:100%;border:none;outline:none;resize:none;font-size:16px;line-height:1.65;padding:14px 12px calc(14px + env(safe-area-inset-bottom));background:var(--cream);color:var(--ink);font-family:inherit;min-height:0;display:block” placeholder=”The plan for the day…&#10;&#10;Blank lines = new paragraph&#10;Start lines with -  for bullets&#10;Use **bold** or *italics*”>'+esc(d.strategy||'')+'</textarea>';
-  h+='</div>';
-  return h;
+  var sub=monOf(d.date)+' '+d.d+' · '+d.dl;
+  function fmtBtn(fn,lbl){return '<button onclick=”stratFmt(\''+fn+'\')” style=”font-weight:700;font-size:15px;min-width:40px;height:36px;border:1px solid var(--border);border-radius:8px;background:var(--card);cursor:pointer;font-family:inherit;color:var(--ink)”>'+lbl+'</button>';}
+  var toolbar='<div style=”display:flex;align-items:center;gap:6px;padding:0 0 12px”>';
+  toolbar+=fmtBtn('bold','B');
+  toolbar+='<button onclick=”stratFmt(\'italic\')” style=”font-style:italic;font-size:15px;min-width:40px;height:36px;border:1px solid var(--border);border-radius:8px;background:var(--card);cursor:pointer;font-family:inherit;color:var(--ink)”>I</button>';
+  toolbar+=fmtBtn('bullet','•');
+  toolbar+='<span style=”font-size:12px;color:var(--muted);margin-left:6px”>'+esc(sub)+'</span>';
+  toolbar+='</div>';
+  var body=toolbar+'<textarea id=”strat-text” style=”width:100%;height:60vh;min-height:320px;border:1px solid var(--border);border-radius:10px;padding:12px;font-size:16px;line-height:1.65;background:var(--card);color:var(--ink);font-family:inherit;resize:vertical;outline:none” placeholder=”The plan for the day…&#10;&#10;Blank lines start a new paragraph.&#10;Start lines with -  for bullets.&#10;Use **bold** or *italics*.”>'+esc(d.strategy||'')+'</textarea>';
+  return screenShell('Day Strategy',body,'Save','saveStrategy()');
 }
 function saveStrategy(){
   var d=dayByDate(S.screen.day);if(!d){closeScreen();return;}
