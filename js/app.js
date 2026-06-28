@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='282';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='283';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -913,11 +913,12 @@ function rsvpFormSection(rec){
   var att=base.filter(function(id){return person(id);});
   if(!att.length)return '';
   function chip(id,decl){var p=person(id);return '<span class="att-chip'+(decl?' declined':'')+'"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+'</span>';}
+  function grp(label,ids,isDecl){return '<div class="att-grp"><div class="att-h">'+label+' · '+ids.length+'</div><div class="att-list">'+(ids.length?ids.map(function(id){return chip(id,isDecl);}).join(''):'<span class="att-none">—</span>')+'</div></div>';}
   var conf=att.filter(function(id){return rsvp[id]==='in';});
-  var notc=att.filter(function(id){return rsvp[id]!=='in';});
+  var pend=att.filter(function(id){return rsvp[id]==null;});
+  var decl=att.filter(function(id){return rsvp[id]==='out';});
   var h='<div class="field"><label class="field-label">Attendance <span class="opt">(separate from who it\'s for · set from the agenda)</span></label>';
-  h+='<div class="att-grp"><div class="att-h">Will attend · '+conf.length+'</div><div class="att-list">'+(conf.length?conf.map(function(id){return chip(id,false);}).join(''):'<span class="att-none">No one yet</span>')+'</div></div>';
-  h+='<div class="att-grp"><div class="att-h">Not confirmed · '+notc.length+'</div><div class="att-list">'+(notc.length?notc.map(function(id){return chip(id,rsvp[id]==='out');}).join(''):'<span class="att-none">—</span>')+'</div></div>';
+  h+=grp('Will attend',conf,false)+grp('Not confirmed',pend,false)+grp('Won\'t attend',decl,true);
   return h+'</div>';
 }
 function notifyRsvp(rec,cat,joined){
