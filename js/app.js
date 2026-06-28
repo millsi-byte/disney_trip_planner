@@ -72,7 +72,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='248';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='249';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -5030,7 +5030,7 @@ function scrStrategyEdit(){
   var d=dayByDate(S.screen.day);if(!d)return scrGeneric();
   var sub=monOf(d.date)+' '+d.d+' · '+d.dl;
   function fmtBtn(fn,lbl){return '<button onclick=”stratFmt(\''+fn+'\')” style=”font-weight:700;font-size:15px;min-width:40px;height:36px;border:1px solid var(--border);border-radius:8px;background:var(--card);cursor:pointer;font-family:inherit;color:var(--ink)”>'+lbl+'</button>';}
-  var toolbar='<div style=”display:flex;align-items:center;gap:6px;padding:0 0 12px”>';
+  var toolbar='<div style=”display:flex;align-items:center;gap:6px;padding:0 0 12px;width:100%”>';
   toolbar+=fmtBtn('bold','B');
   toolbar+='<button onclick=”stratFmt(\'italic\')” style=”font-style:italic;font-size:15px;min-width:40px;height:36px;border:1px solid var(--border);border-radius:8px;background:var(--card);cursor:pointer;font-family:inherit;color:var(--ink)”>I</button>';
   toolbar+=fmtBtn('bullet','•');
