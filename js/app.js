@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='275';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='276';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2186,21 +2186,28 @@ function renderChat(){
     h+='<div class="msg-av" style="background:'+p.color+'">'+p.name[0]+'</div>';
     h+='<div class="msg-col">';
     if(!mine) h+='<div class="msg-name">'+esc(p.name)+'</div>';
-    h+='<div class="msg-bubble">';
-    if(m.ref) h+='<div class="msg-ref" onclick="toast(\'Jumps to: '+esc(m.ref.label)+'\')">'+refIcon(m.ref.type)+esc(m.ref.label)+'</div>';
-    h+=esc(m.text)+'</div>';
+    h+='<div class="msg-bubble" onclick="chatTapMsg(\''+m.id+'\')">';
+    if(m.ref) h+='<div class="msg-ref" onclick="event.stopPropagation();toast(\'Jumps to: '+esc(m.ref.label)+'\')">'+refIcon(m.ref.type)+esc(m.ref.label)+'</div>';
+    h+=(m.text?esc(m.text):'')+'</div>';
     h+='<div class="msg-time">'+esc(m.time)+'</div>';
     h+=chatReactions(m);
     h+='</div></div>';
   }
   h+='</div>';
-  h+='<div class="chat-bar"><input class="chat-input" id="chat-inp" placeholder="Message the group…" onkeydown="if(event.key===\'Enter\')sendChat()">';
-  h+='<button class="chat-send" onclick="sendChat()">'+IC.send+'</button></div>';
+  h+='<div class="chat-bar">';
+  if(S._chatRef) h+='<div class="chat-refpill">'+refIcon(S._chatRef.type)+'<span>'+esc(S._chatRef.label)+'</span><button onclick="chatClearRef()" aria-label="Remove attachment">&times;</button></div>';
+  h+='<div class="chat-bar-row">';
+  h+='<button class="chat-attach" onclick="chatAttach()" aria-label="Attach a planned item">'+IC.route+'</button>';
+  h+='<input class="chat-input" id="chat-inp" placeholder="Message the group…" onkeydown="if(event.key===\'Enter\')sendChat()">';
+  h+='<button class="chat-send" onclick="sendChat()">'+IC.send+'</button></div></div>';
   return h;
 }
 function refIcon(t){var i=t==='dining'?IC.fork:t==='flight'?IC.planexs:t==='show'?IC.star:IC.route;return '<span style="display:flex">'+i+'</span>';}
-function sendChat(){var e=document.getElementById('chat-inp');if(!e||!e.value.trim())return;
-  CHAT.push({id:'c'+Date.now()+'_'+Math.random().toString(36).slice(2,6),from:S.persona,text:e.value.trim(),time:'Now',ts:Date.now(),trip:S.tripId});
+function sendChat(){var e=document.getElementById('chat-inp');var txt=e?e.value.trim():'';
+  if(!txt&&!S._chatRef)return;
+  var msg={id:'c'+Date.now()+'_'+Math.random().toString(36).slice(2,6),from:S.persona,text:txt,time:'Now',ts:Date.now(),trip:S.tripId};
+  if(S._chatRef)msg.ref=S._chatRef;
+  CHAT.push(msg);S._chatRef=null;
   saveChat();render();
   setTimeout(function(){var w=document.getElementById('chatwrap');if(w)window.scrollTo(0,document.body.scrollHeight);},30);
 }
@@ -2213,7 +2220,8 @@ function chatReactions(m){
     var names=arr.map(function(id){return person(id)?person(id).name:'?';}).join(', ');
     o+='<button class="rxn-chip'+(on?' on':'')+'" title="'+esc(names)+'" onclick="chatReact(\''+m.id+'\',\''+e+'\')">'+e+' '+arr.length+'</button>';
   }
-  o+='<button class="rxn-add" title="Add reaction" onclick="chatToggleReactPicker(\''+m.id+'\')">'+(S._reactFor===m.id?'×':'＋')+'</button>';
+  if(S._msgActive===m.id||S._reactFor===m.id)
+    o+='<button class="rxn-add" title="Add reaction" onclick="chatToggleReactPicker(\''+m.id+'\')">'+(S._reactFor===m.id?'×':'＋')+'</button>';
   o+='</div>';
   if(S._reactFor===m.id){
     o+='<div class="rxn-bar">';
@@ -2228,12 +2236,40 @@ function chatReact(id,emoji){
   var arr=m.reactions[emoji]||[],ix=arr.indexOf(S.persona);
   if(ix>=0)arr.splice(ix,1);else arr.push(S.persona);
   if(arr.length)m.reactions[emoji]=arr;else delete m.reactions[emoji];
-  S._reactFor=null;saveChat();
+  S._reactFor=null;S._msgActive=null;saveChat();
   var y=window.scrollY;render();window.scrollTo(0,y);
 }
 function chatToggleReactPicker(id){
   S._reactFor=(S._reactFor===id?null:id);
   var y=window.scrollY;render();window.scrollTo(0,y);
+}
+/* tap a bubble to reveal its react button (hidden until then) */
+function chatTapMsg(id){
+  S._msgActive=(S._msgActive===id?null:id);S._reactFor=null;
+  var y=window.scrollY;render();window.scrollTo(0,y);
+}
+/* attach a planned item to the next message (the "reminder / focus" card) */
+function chatAttach(){openSheet({type:'chatref'});}
+function chatClearRef(){S._chatRef=null;var y=window.scrollY;render();window.scrollTo(0,y);}
+function chatPickRef(i,j){
+  var d=tripDays()[i];if(!d)return;var e=dayPlanItems(d)[j];if(!e)return;
+  S._chatRef={type:e.type,label:e.x+(e.t?' · '+e.t:''),day:d.date};
+  closeSheet();if(S.tab==='chat')render();
+}
+function renderChatRefSheet(){
+  var h='<div class="sheet-backdrop" onclick="if(event.target===this)closeSheet()"><div class="sheet">';
+  h+='<div class="sheet-grip"></div><div class="sheet-title">Attach a planned item</div>';
+  h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px">Pick something from the plan to share as a reminder or focus.</div>';
+  var TD=tripDays(),any=false;
+  for(var i=0;i<TD.length;i++){var d=TD[i],items=dayPlanItems(d);if(!items.length)continue;any=true;
+    h+='<div class="sheet-seclabel">'+monOf(d.date)+' '+d.d+' · '+d.dl+'</div>';
+    for(var j=0;j<items.length;j++){var e=items[j];
+      h+='<button class="chatref-opt" onclick="chatPickRef('+i+','+j+')">'+refIcon(e.type)+'<span>'+esc(e.x)+(e.t?' · '+esc(e.t):'')+'</span></button>';
+    }
+  }
+  if(!any)h+='<div class="body-empty">Nothing planned yet to attach.</div>';
+  h+='</div></div>';
+  return h;
 }
 
 /* ============================================================
@@ -2595,6 +2631,7 @@ function renderPfilterSheet(){
 /* trip switcher */
 function renderSheet(){
   if(S.sheet.type==='pfilter')return renderPfilterSheet();
+  if(S.sheet.type==='chatref')return renderChatRefSheet();
   if(S.sheet.type!=='trips')return '';
   var today=new Date().toISOString().slice(0,10);
   var h='<div class="sheet-backdrop" onclick="if(event.target===this)closeSheet()"><div class="sheet">';
