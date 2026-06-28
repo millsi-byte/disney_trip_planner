@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='268';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='269';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1650,10 +1650,15 @@ function dayBadges(d){
   if(d.hiddenTags&&d.hiddenTags.length) out=out.filter(function(t){return d.hiddenTags.indexOf(t)<0;});
   return out;
 }
-/* Layout toggle: true = hero first, then the Daily Agenda/Daily Planning view
-   switch below it; false = view switch up top (above the hero). Flip this one
-   value to move it. */
-var HERO_FIRST=false;
+/* Daily Agenda / Daily Planning shown as a segmented pill on the hero, with the
+   collapse-all chevron on the right of the strip */
+function heroTabs(){
+  function tab(m,label){var on=(S.planView||'dayplan')===m;
+    return '<button class="hero-seg-btn'+(on?' on':'')+'" onclick="setPlanView(\''+m+'\')">'+label+'</button>';}
+  var anyOpen=agendaCardKeys().some(function(k){return S.open[k];});
+  return '<div class="hero-tabs"><div class="hero-seg">'+tab('dayplan','Daily Agenda')+tab('all','Daily Planning')+'</div>'
+    +'<button class="hero-collapse" onclick="toggleAllCards()" title="'+(anyOpen?'Collapse all':'Expand all')+'" aria-label="Collapse or expand all sections">'+(anyOpen?IC.chevUp:IC.chevd)+'</button></div>';
+}
 function renderAgenda(){
   var d=day();
   if(!d) return '<div class="body-empty" style="margin-top:30px">No days for this trip yet.<br><br>Set the trip\'s start and end dates (tap the trip name in the header → edit) and days will be generated automatically.</div>';
@@ -1675,13 +1680,13 @@ function renderAgenda(){
   var bdg=dayBadges(d);
   o+='<div class="h-badges">';
   for(var b=0;b<bdg.length;b++) o+='<span class="badge">'+esc(bdg[b])+'</span>';
-  o+='</div></div>';
+  o+='</div>';
+  o+=heroTabs();   /* Daily Agenda / Daily Planning as underline tabs on the hero */
+  o+='</div>';
   if(d.alert) o+='<div class="hero-alert">'+IC.warn+'<div class="hero-alert-txt">'+esc(d.alert)+'</div></div>';
   o+='</div>';
 
-  /* When HERO_FIRST, the view switch sits just under the hero (otherwise it's
-     up top in filter-host). The people filter always sits under the hero. */
-  if(HERO_FIRST) o+=renderPlanView();
+  /* Only the people filter sits below the hero now (the view switch is in the hero) */
   o+=renderFilter();
 
   if(S.planView==='dayplan'){
@@ -5923,7 +5928,7 @@ function render(){
     return;
   }
   document.getElementById('strip-host').innerHTML=renderStrip();
-  document.getElementById('filter-host').innerHTML=(S.tab==='home'&&!HERO_FIRST)?renderPlanView():'';
+  document.getElementById('filter-host').innerHTML='';
   var o='';
   if(S.tab==='home') o=renderAgenda();
   else if(S.tab==='plan') o=renderPlanHub();
