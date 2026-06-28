@@ -52,7 +52,7 @@ var S = {
   dayIdx:1,            // default to first real park day
   fmode:"all",         // primary person filter: all | mine | notme
   filter:new Set(),    // specific-person filter (rare); non-empty overrides fmode
-  planView:"all",      // agenda view: all (everything) | dayplan (strategy + day plan only)
+  planView:"dayplan",  // agenda view: dayplan (Daily Agenda: strategy + day plan) | all (Daily Planning: everything)
   open:{},             // collapsible card state per key
   plan:"packing",      // packing | todo
   persona:"scott",     // current persona (who am I)
@@ -1495,12 +1495,27 @@ function renderFilter(){
 /* Day-view switch: All Plan Details vs Day Plan Only — same segmented look as
    renderFilter, two segments, no people icon */
 function renderPlanView(){
-  function seg(m,label){var on=(S.planView||'all')===m;
+  function seg(m,label){var on=(S.planView||'dayplan')===m;
     return '<button class="fseg'+(on?' on':'')+'" onclick="setPlanView(\''+m+'\')">'+label+'</button>';}
-  return '<div class="pfilter-wrap"><div class="pfilter"><div class="fseg-group">'
-    +seg('all','All Plan Details')+seg('dayplan','Day Plan Only')+'</div></div></div>';
+  var anyOpen=agendaCardKeys().some(function(k){return S.open[k];});
+  var h='<div class="pfilter-wrap"><div class="pfilter"><div class="fseg-group">'
+    +seg('dayplan','Daily Agenda')+seg('all','Daily Planning')+'</div>';
+  h+='<button class="fbyperson" onclick="toggleAllCards()" aria-label="Collapse or expand all sections" title="'+(anyOpen?'Collapse all':'Expand all')+'">'+(anyOpen?IC.chevUp:IC.chevd)+'</button>';
+  return h+'</div></div>';
 }
 function setPlanView(m){S.planView=m;render();}
+/* every collapsible card key on the agenda (fixed sections + dynamic resort cards) */
+function agendaCardKeys(){
+  var keys=['strat','itin','flight','hours','parkplan','din','ll','shows'];
+  Object.keys(S.open).forEach(function(k){if(k.indexOf('resort_')===0)keys.push(k);});
+  return keys;
+}
+/* single toggle: if anything is open, collapse everything; otherwise expand everything */
+function toggleAllCards(){
+  var keys=agendaCardKeys(),anyOpen=keys.some(function(k){return S.open[k];});
+  keys.forEach(function(k){S.open[k]=!anyOpen;});
+  render();
+}
 
 /* ============================================================
    AGENDA (Home)
@@ -1594,9 +1609,9 @@ function renderAgenda(){
   if(d.alert) o+='<div class="hero-alert">'+IC.warn+'<div class="hero-alert-txt">'+esc(d.alert)+'</div></div>';
   o+='</div>';
 
-  /* View switch: All Plan Details vs Day Plan Only (sits above the conditions
-     strip since it governs whether conditions/cards render) */
-  o+=renderPlanView();
+  /* People filter (Mine / Everyone / Not mine) sits under the hero; the
+     Daily Agenda / Daily Planning view switch lives up top in filter-host */
+  o+=renderFilter();
   var dpOnly=(S.planView==='dayplan');
 
   /* Per-park conditions (hours + crowd + reservation per park visited) */
@@ -5714,7 +5729,7 @@ function render(){
     return;
   }
   document.getElementById('strip-host').innerHTML=renderStrip();
-  document.getElementById('filter-host').innerHTML=(S.tab==='home')?renderFilter():'';
+  document.getElementById('filter-host').innerHTML=(S.tab==='home')?renderPlanView():'';
   var o='';
   if(S.tab==='home') o=renderAgenda();
   else if(S.tab==='plan') o=renderPlanHub();
