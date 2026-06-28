@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='271';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='272';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2453,8 +2453,10 @@ function todoRow(t,expanded,drag){
   var o='<div class="pk-row'+(expanded?' expanded':'')+(dg?' dgrow':'')+'"'+(dg?' data-dg="'+drag.group+'" data-di="'+drag.idx+'"':'')+'>';
   if(dg)o+=dgHandle();
   o+='<div class="chkbox'+(t.done?' on':'')+'" onclick="tdToggle(\''+t.id+'\')">'+(t.done?IC.checkw:'')+'</div>';
-  o+='<div class="pk-name'+(t.done?' done':'')+'" onclick="tdToggle(\''+t.id+'\')">'+esc(t.n)+(sub.length?'<div class="pk-by">'+sub.join(' · ')+'</div>':'')+'</div>';
-  if(t.when)o+='<div class="td-when">'+esc(t.when)+'</div>';
+  var meta='';
+  if(t.when)meta+='<span class="td-when">'+esc(t.when)+'</span>';
+  if(sub.length)meta+='<span class="pk-by">'+sub.join(' · ')+'</span>';
+  o+='<div class="pk-name'+(t.done?' done':'')+'" onclick="tdToggle(\''+t.id+'\')">'+esc(t.n)+(meta?'<div class="td-meta">'+meta+'</div>':'')+'</div>';
   if(expanded){
     o+='<button class="hdr-icon pk-edit-on" style="width:30px;height:30px;flex-shrink:0" title="Close" onclick="tdCancelForm()">'+IC.chevUp+'</button>';
   }else if(canEdit){
