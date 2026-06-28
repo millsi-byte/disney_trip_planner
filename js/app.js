@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='273';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='274';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -683,6 +683,7 @@ function notifForRecipient(id,o){
   var b=(S._notifById||{})[id];if(b)return b;
   /* someone the actor chose to also tell — a plain heads-up */
   var who=pname(o.actor),text,kind='change';
+  if(o.bought){ return {to:id,from:o.actor,trip:o.trip,cat:o.cat,label:o.label,kind:'added',text:who+' bought “'+o.label+'”'}; }
   if(o.deleted){ text=who+' deleted “'+o.label+'” ('+o.cat+')'; kind='removed'; }
   else{
     var oldA=whoArrFor(o.oldWho,o.trip),newA=whoArrFor(o.newWho,o.trip);
@@ -846,12 +847,17 @@ function afterWhoSave(cat,rec,oldWho){
 function notifyBought(owner,it){
   if(!it||it.priv)return;
   var actor=S.persona,tid=S.tripId,who=pname(actor),label=it.n,recips=[];
-  ((it.who&&it.who.length)?it.who:[owner]).forEach(function(id){if(id!==actor&&person(id)&&recips.indexOf(id)<0)recips.push(id);});
+  /* pre-select the people it's for, plus the owner (minus whoever ticked it) */
+  ((it.who&&it.who.length)?it.who:[]).forEach(function(id){if(id!==actor&&person(id)&&recips.indexOf(id)<0)recips.push(id);});
   if(owner!==actor&&person(owner)&&recips.indexOf(owner)<0)recips.push(owner);
-  if(!recips.length){bumpBell();return;}
+  /* still open the picker even with no default recipients, as long as there's
+     someone on the trip to tell — that's the whole point of the opportunity */
+  var hasOthers=tripMembersFor(tid).some(function(id){return id!==actor&&person(id);});
+  if(!hasOthers){bumpBell();return;}
+  var ctx={actor:actor,trip:tid,cat:'Need to Buy',label:label,oldWho:it.who,newWho:it.who,bought:true};
   var plan={forced:[],optional:[]};
   recips.forEach(function(id){plan.optional.push({to:id,from:actor,trip:tid,cat:'Need to Buy',label:label,kind:'added',text:who+' bought “'+label+'”'});});
-  openNotifConfirm({actor:actor,trip:tid,cat:'Need to Buy',label:label,oldWho:it.who,newWho:it.who},plan);
+  openNotifConfirm(ctx,plan);
 }
 
 /* queries — all scoped to the current trip */
