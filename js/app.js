@@ -1553,6 +1553,63 @@ function dayConditions(d){
   }
   return o;
 }
+/* Park Plan card — park visits with reservation status, ticket indicator and
+   the early-entry / evening perks the group plans to use */
+function parkPlanCard(d,pk){
+  var key='parkplan';
+  if(!(key in S.open)) S.open[key]=true;
+  var vs=visitsFor(d.date).filter(function(v){return visible(v.who);});
+  var o='<div class="card">';
+  o+=cardHead(key,'#0F766E',pk.color,IC.map,'Park Plan',vs.length?(vs.length+' park'+(vs.length>1?'s':'')):'No park visit');
+  if(S.open[key]){
+    o+='<div class="card-body">';
+    o+='<button class="add-link solo" onclick="openScreen({type:\'parksplan\',day:\''+d.date+'\'})">'+IC.pencil+' Edit Parks Plan</button>';
+    if(!vs.length){
+      o+='<div class="body-empty">Travel / rest day — no park visit.</div>';
+    }else{
+      for(var i=0;i<vs.length;i++){var v=vs[i],vpk=PARKS[v.park]||PARKS.trv;
+        var pr=null,prl=parkResFor(d.date);
+        for(var j=0;j<prl.length;j++){if(prl[j].park===v.park&&visible(prl[j].who)){pr=prl[j];break;}}
+        o+='<div class="cond"><span class="cond-dot" style="background:'+vpk.color+'"></span>';
+        o+='<div style="flex:1;min-width:0"><div class="cond-top"><span class="cond-pk">'+esc(vpk.name)+'</span><span class="cond-time">'+timingLbl(v.timing)+'</span>';
+        if(pr) o+='<span class="cond-res">'+(pr.status==='booked'?'<span style="display:flex">'+IC.check+'</span> Reserved':'Res · planning')+'</span>';
+        o+=visitTicketTag(v);
+        o+='</div>';
+        var perks=[];if(v.earlyEntry)perks.push('Early Entry');if(v.eveningHours)perks.push('Evening Hours');
+        if(perks.length) o+='<div class="cond-hours" style="color:var(--muted)">'+esc(perks.join(' · '))+'</div>';
+        o+='</div></div>';
+      }
+    }
+    o+='</div>';
+  }
+  return o+'</div>';
+}
+/* Park Hours & Crowds card — per-park hours + crowd for the day */
+function hoursCard(d,pk){
+  var key='hours';
+  if(!(key in S.open)) S.open[key]=true;
+  var phl=parkHoursFor(d.date);
+  var o='<div class="card">';
+  o+=cardHead(key,'#475569',pk.color,IC.clock,'Park Hours & Crowds',phl.length?(phl.length+' park'+(phl.length>1?'s':'')):'Not set');
+  if(S.open[key]){
+    o+='<div class="card-body">';
+    o+='<button class="add-link solo" onclick="openScreen({type:\'hoursplan\',day:\''+d.date+'\'})">'+IC.pencil+' Edit park hours &amp; crowds</button>';
+    if(!phl.length){
+      o+='<div class="body-empty">No park hours set for this day.</div>';
+    }else{
+      for(var i=0;i<phl.length;i++){var h=phl[i],hpk=PARKS[h.park]||PARKS.trv;
+        o+='<div class="cond"><span class="cond-dot" style="background:'+hpk.color+'"></span>';
+        o+='<div style="flex:1;min-width:0"><div class="cond-top"><span class="cond-pk">'+esc(hpk.name)+'</span></div>';
+        o+='<div class="cond-hours">'+esc((h.open||'—')+' – '+(h.close||'—'));
+        if(h.early) o+=' <span class="cond-chip">Early '+esc(h.early)+'</span>';
+        if(h.late) o+=' <span class="cond-chip">Late '+esc(h.late)+'</span>';
+        o+='</div></div><div class="cond-meta">'+crowdPill(h.crowd)+'</div></div>';
+      }
+    }
+    o+='</div>';
+  }
+  return o+'</div>';
+}
 /* badges derived from the day\'s items (+ any custom one-off tags) */
 function dayBadges(d){
   var date=d.date,out=[],vis=function(w){return visible(w);};
@@ -1613,37 +1670,34 @@ function renderAgenda(){
   /* People filter (Mine / Everyone / Not mine) sits under the hero; the
      Daily Agenda / Daily Planning view switch lives up top in filter-host */
   o+=renderFilter();
-  var dpOnly=(S.planView==='dayplan');
 
-  /* Per-park conditions (hours + crowd + reservation per park visited) */
-  if(!dpOnly) o+=dayConditions(d);
-
-  /* Order: Strategy · Flights · Resort · Day Plan · Dining · Night Shows · Lightning Lanes */
-  o+=stratCard(d,pk);
-
-  if(!dpOnly){
-    var tks=ticketsFor(d.date).filter(function(t){return visible(t.who);});
-    if(tks.length) o+=ticketCard(tks,pk,d.date);
-
-    var flts=flightsFor(d.date).filter(function(f){return visible(f.who);});
-    if(flts.length) o+=flightCard(flts,d);
-
-    var stays=resortsFor(d.date).filter(function(r){return visible(r.who)&&(r.checkin===d.date||r.checkout===d.date);});
-    for(var s=0;s<stays.length;s++) o+=resortCard(stays[s],d.date);
+  if(S.planView==='dayplan'){
+    /* Daily Agenda: hero + strategy + the timed day plan only */
+    o+=stratCard(d,pk);
+    o+=dayPlanCard(d,pk);
+    return o;
   }
 
-  o+=dayPlanCard(d,pk);
+  /* Daily Planning order: Flight Reservations · Hotel Reservations ·
+     Park Hours & Crowds · Park Plan · Dining Plan · Lightning Lane Plan ·
+     Night Show Schedule */
+  var flts=flightsFor(d.date).filter(function(f){return visible(f.who);});
+  if(flts.length) o+=flightCard(flts,d);
 
-  if(!dpOnly){
-    var din=diningFor(d.date).filter(function(x){return visible(x.who);});
-    o+=diningCard(din,pk,d.date);
+  var stays=resortsFor(d.date).filter(function(r){return visible(r.who)&&(r.checkin===d.date||r.checkout===d.date);});
+  for(var s=0;s<stays.length;s++) o+=resortCard(stays[s],d.date);
 
-    var sh=showsFor(d.date).filter(function(x){return visible(x.who);});
-    o+=showsCard(sh,pk,d.date);
+  o+=hoursCard(d,pk);
+  o+=parkPlanCard(d,pk);
 
-    var lls=llFor(d.date).filter(function(l){return visible(l.who);});
-    if(lls.length) o+=llCard(lls,d,pk);
-  }
+  var din=diningFor(d.date).filter(function(x){return visible(x.who);});
+  o+=diningCard(din,pk,d.date);
+
+  var lls=llFor(d.date).filter(function(l){return visible(l.who);});
+  if(lls.length) o+=llCard(lls,d,pk);
+
+  var sh=showsFor(d.date).filter(function(x){return visible(x.who);});
+  o+=showsCard(sh,pk,d.date);
 
   return o;
 }
@@ -1654,7 +1708,7 @@ function resortCard(r,date){
   var flag = date===r.checkin?'<span class="resort-flag flag-in">'+IC.check+' Check-in today</span>'
            : date===r.checkout?'<span class="resort-flag flag-out">'+IC.warn+' Check-out today</span>':'';
   var o='<div class="card'+(isPlanningStatus(r.status)?' planning':'')+'">';
-  o+=cardHead(key,'var(--hd-resort)',pkOf(date).color,IC.bed,'Resort',r.name,isPlanningStatus(r.status));
+  o+=cardHead(key,'var(--hd-resort)',pkOf(date).color,IC.bed,'Hotel Reservations',r.name,isPlanningStatus(r.status));
   if(S.open[key]){
     o+='<div class="card-body"><div class="resort-body">';
     o+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">';
@@ -1676,7 +1730,7 @@ function flightCard(flts,d){
   var allPlanning=flts.length>0&&flts.every(function(f){return isPlanningStatus(f.status);});
   var sub=flts.length?(flts.length+' journey'+(flts.length>1?'s':'')):'None yet';
   var o='<div class="card'+(allPlanning?' planning':'')+'">';
-  o+=cardHead(key,'var(--hd-flight)',pk.color,IC.plane,'Flights',sub,allPlanning);
+  o+=cardHead(key,'var(--hd-flight)',pk.color,IC.plane,'Flight Reservations',sub,allPlanning);
   if(S.open[key]){
     o+='<div class="card-body">';
     if(!flts.length){
@@ -1749,7 +1803,7 @@ function dayPlanCard(d,pk){
   var summary=d.strategy?firstSentence(d.strategy):null;
   var items=dayPlanItems(d);
   var o='<div class="card">';
-  o+=cardHead(key,'var(--hd-plan)',pk.color,IC.route,'Day Plan',items.length+' stops');
+  o+=cardHead(key,'var(--hd-plan)',pk.color,IC.route,'Daily Agenda',items.length+' stops');
   if(S.open[key]){
     o+='<div class="card-body">';
     if(summary) o+='<div class="plan-summary"><strong>The plan:</strong> '+esc(summary)+'</div>';
@@ -1789,7 +1843,7 @@ function llCard(lls,d,pk){
   var roll=rebooksFor(d.date).filter(function(r){return visible(r.who);});
   var anyPlan=planning>0;
   var o='<div class="card'+(anyPlan?' planning':'')+'">';
-  o+=cardHead(key,'var(--hd-ll)',pk.color,IC.bolt,'Lightning Lanes',booked+' booked · '+planning+' planning'+(roll.length?' · '+roll.length+' rolling':''),anyPlan);
+  o+=cardHead(key,'var(--hd-ll)',pk.color,IC.bolt,'Lightning Lane Plan',booked+' booked · '+planning+' planning'+(roll.length?' · '+roll.length+' rolling':''),anyPlan);
   if(S.open[key]){
     o+='<div class="card-body">';
     o+='<div class="ll-legend"><div class="ll-legend-item"><span class="ll-tag sp">SP</span> Single Pass</div>'
@@ -1850,7 +1904,7 @@ function diningCard(din,pk,date){
   var key='din';
   var anyPlan=din.some(function(x){return isPlanningStatus(x.status);});
   var o='<div class="card'+(anyPlan?' planning':'')+'">';
-  o+=cardHead(key,'var(--hd-din)',pk.color,IC.fork,'Dining',din.length?(din.length+' in plan'):'Nothing yet',anyPlan);
+  o+=cardHead(key,'var(--hd-din)',pk.color,IC.fork,'Dining Plan',din.length?(din.length+' in plan'):'Nothing yet',anyPlan);
   if(S.open[key]){
     o+='<div class="card-body">';
     if(!din.length) o+='<div class="body-empty">No dining'+(filterActive()?' for the current filter':'')+' on this day.</div>';
@@ -1877,7 +1931,7 @@ function diningRow(dn){
 function showsCard(sh,pk,date){
   var key='shows';
   var o='<div class="card">';
-  o+=cardHead(key,'var(--hd-show)',pk.color,IC.star,'Night Shows',sh.length?(sh.length+' show'+(sh.length>1?'s':'')):'Nothing yet');
+  o+=cardHead(key,'var(--hd-show)',pk.color,IC.star,'Night Show Schedule',sh.length?(sh.length+' show'+(sh.length>1?'s':'')):'Nothing yet');
   if(S.open[key]){
     o+='<div class="card-body">';
     if(!sh.length) o+='<div class="body-empty">No shows'+(filterActive()?' for the current filter':'')+' on this day.</div>';
