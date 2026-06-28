@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='280';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='281';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -614,6 +614,7 @@ function notifLabel(cat,it){
   if(cat==='Resort')return it.name||'a resort stay';
   if(cat==='Park visit')return (it.park&&PARKS[it.park]?PARKS[it.park].name:'a park')+' visit';
   if(cat==='Park ticket')return ticketLabel(it);
+  if(cat==='Plan')return it.x||it.n||'a plan';
   if(cat==='To Do')return it.n||'a to-do';
   if(cat==='Packing')return it.n||'a packing item';
   return 'this item';
@@ -867,6 +868,7 @@ function rsvpRecord(type,id){
   if(type==='dining'){var d=DINING.filter(function(x){return x.id===id;})[0];return d?{rec:d,cat:'Dining',save:function(){save('dtp_dining',DINING);}}:null;}
   if(type==='ll'){var l=LLS.filter(function(x){return x.id===id;})[0];return l?{rec:l,cat:'Lightning Lane',save:function(){save('dtp_lls',LLS);}}:null;}
   if(type==='show'){var s=SHOWS.filter(function(x){return x.id===id;})[0];return s?{rec:s,cat:'Show',save:function(){save('dtp_shows',SHOWS);}}:null;}
+  if(type==='manual'){var pp=String(id).split('|'),dd=dayByDate(pp[0]),it=dd&&dd.itin&&dd.itin[parseInt(pp[1],10)];return it?{rec:it,cat:'Plan',save:function(){saveDays();}}:null;}
   return null;
 }
 function rsvpBtn(type,id,who){
@@ -877,7 +879,7 @@ function rsvpBtn(type,id,who){
 function rsvpToggle(type,id){
   var info=rsvpRecord(type,id);if(!info)return;
   var rec=info.rec,me=S.persona,tid=rec.trip||S.tripId,oldWho=rec.who;
-  var arr=whoArrFor(rec.who,tid).slice(),present=arr.indexOf(me)>=0;
+  var arr=whoArrFor(rec.who==null?'all':rec.who,tid).slice(),present=arr.indexOf(me)>=0;
   if(present)arr=arr.filter(function(x){return x!==me;});else arr.push(me);
   rec.who=collapseWho(arr);
   info.save();
@@ -1905,6 +1907,7 @@ function dayPlanCard(d,pk){
       if(e.crit) tags.push('<span class="t-tag t-tag-crit">'+esc(e.crit)+'</span>');
       if(tags.length) o+='<div class="t-tags">'+tags.join('')+'</div>';
       if(e.ref&&(e.type==='dining'||e.type==='ll'||e.type==='show')) o+=rsvpBtn(e.type,e.ref,e.who);
+      else if(e.type==='manual'&&!e.priv) o+=rsvpBtn('manual',d.date+'|'+e.idx,e.who);
       o+='</div>';
       if(e.type==='manual') o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;align-self:flex-start" onclick="openScreen({type:\'stopedit\',day:\''+d.date+'\',idx:'+e.idx+'})">'+IC.pencil+'</button>';
       o+='</div>';
