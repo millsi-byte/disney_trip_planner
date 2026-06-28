@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='265';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='266';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1872,6 +1872,16 @@ function llBookInfo(l){
   else{bd=shiftDate(l.day,-3);note='3 days before · off-property';}
   return {date:bd,label:fmtBookDate(bd)+' @ 7:00 AM',note:note};
 }
+/* yellow banner of when to book — one line per distinct date/rule across the
+   given (planning) items, so identical timing collapses to a single message */
+function llBookBanner(items){
+  var planning=(items||[]).filter(function(l){return l.status!=='booked';});
+  if(!planning.length) return '';
+  var seen={},o='';
+  planning.forEach(function(l){var bi=llBookInfo(l),k=bi.label+'|'+bi.note;if(!seen[k]){seen[k]=1;
+    o+='<div class="ll-bookdate">'+IC.bolt+' Book '+esc(bi.label)+' <span class="ll-book-note">'+esc(bi.note)+'</span></div>';}});
+  return o;
+}
 function llCard(lls,d,pk){
   var key='ll';
   var planning=lls.filter(function(l){return l.status==='planning';}).length;
@@ -1887,6 +1897,7 @@ function llCard(lls,d,pk){
     o+='<div class="ll-legend"><div class="ll-legend-item"><span class="ll-tag sp">SP</span> Single Pass</div>'
       +'<div class="ll-legend-item"><span class="ll-tag mp1">T1</span> Multi Pass T1</div>'
       +'<div class="ll-legend-item"><span class="ll-tag mp2">T2</span> Multi Pass T2</div></div>';
+    o+=llBookBanner(lls);
     for(var i=0;i<lls.length;i++){
       var l=lls[i];
       o+='<div class="ll-row">';
@@ -1897,8 +1908,6 @@ function llCard(lls,d,pk){
         if(l.conf) o+='<div class="ll-conf">Confirmation '+esc(l.conf)+'</div>';
       }else{
         o+='<div class="ll-win">Planned window: '+esc(l.window)+'</div>';
-        var bi=llBookInfo(l);
-        o+='<div class="ll-book">'+IC.bolt+' Book '+esc(bi.label)+'<span class="ll-book-note">'+esc(bi.note)+'</span></div>';
       }
       o+=whoStack(l.who);
       if(l.status!=='booked'){
@@ -5039,13 +5048,15 @@ function scrSection(){
     if(!body)body=fnote('flights');
     add='<button class="sec-add" onclick="openScreen({type:\'addflight\',day:\''+((TD[0]||{date:''}).date)+'\'})">Add flight</button>';
   }else if(sec==='ll'){
+    var llbody='';
     for(var il=0;il<TD.length;il++){var lld=llFor(TD[il].date).filter(function(x){return visible(x.who);});if(!lld.length)continue;
-      body+=dayHd(TD[il].date);
+      llbody+=dayHd(TD[il].date);
       for(var lj=0;lj<lld.length;lj++){var l=lld[lj];
-        body+='<div class="ov-card'+(isPlanningStatus(l.status)?' planning':'')+'"><div class="din-row"><div style="flex:1;min-width:0"><div class="din-name">'+esc(l.ride)+' <span class="ll-tag '+tagCls(l.tier)+'">'+tagShort(l.tier)+'</span></div><div class="din-time">'+(l.status==='booked'?('Booked '+esc(l.bookedTime||'')):('Window '+esc(l.window)))+'</div>'+whoChips(l.who)+'</div>'+statusBadge(l.status)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'addll\',edit:\''+l.id+'\',day:\''+l.day+'\'})">'+IC.pencil+'</button></div></div>';
+        llbody+='<div class="ov-card'+(isPlanningStatus(l.status)?' planning':'')+'"><div class="din-row"><div style="flex:1;min-width:0"><div class="din-name">'+esc(l.ride)+' <span class="ll-tag '+tagCls(l.tier)+'">'+tagShort(l.tier)+'</span></div><div class="din-time">'+(l.status==='booked'?('Booked '+esc(l.bookedTime||'')):('Window '+esc(l.window)))+'</div>'+whoChips(l.who)+'</div>'+statusBadge(l.status)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'addll\',edit:\''+l.id+'\',day:\''+l.day+'\'})">'+IC.pencil+'</button></div></div>';
       }
     }
-    if(!body)body=fnote('Lightning Lanes');
+    var allLL=LLS.filter(function(x){return x.trip===S.tripId&&visible(x.who);});
+    body=llBookBanner(allLL)+(llbody||fnote('Lightning Lanes'));
     add='<button class="sec-add" onclick="openScreen({type:\'addll\',day:\''+dft+'\'})">Add ride</button>';
   }else if(sec==='resort'){
     var rsl=RESORTS.filter(function(r){return r.trip===S.tripId&&visible(r.who);});
