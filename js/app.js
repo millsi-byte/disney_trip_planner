@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='262';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='263';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1923,17 +1923,18 @@ function diningCard(din,pk,date){
   return o+'</div>';
 }
 function diningRow(dn){
-  var o='<div class="din-row">';
-  o+='<div class="meal">'+esc(dn.meal)+'</div>';
-  o+='<div style="flex:1;min-width:0"><div class="din-name">'+esc(dn.name)+'</div><div class="din-time">'+esc(dn.time)+'</div>';
-  if(dn.status==='reserved'&&dn.conf&&dn.conf!=='walk-up') o+='<div class="din-conf">Confirmation '+esc(dn.conf)+'</div>';
+  var dpk=(dn.loc==='in'&&dn.park&&PARKS[dn.park])?PARKS[dn.park]:null;
+  var o='<div class="show-row"><div style="flex:1;min-width:0"><div class="show-name">'+esc(dn.name)+'</div>';
+  o+='<div style="display:flex;align-items:center;gap:6px;margin-top:4px;flex-wrap:wrap">';
+  o+=statusBadge(dn.status);
+  o+='<span class="meal-tag">'+esc(dn.meal)+'</span>';
+  o+=dpk?'<span class="inpark-badge" style="background:'+dpk.color+'">'+esc(dpk.short)+'</span>':(dn.loc==='in'?'<span class="inpark-badge" style="background:#8C9BAA">In-Park</span>':'<span class="nonpark-badge">Non-Park</span>');
   o+=whoChips(dn.who);
   o+='</div>';
-  o+='<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">';
-  o+=statusBadge(dn.status);
-  o+=(dn.loc==='in'&&dn.park&&PARKS[dn.park])?'<span class="inpark-badge" style="background:'+PARKS[dn.park].color+'">'+esc(PARKS[dn.park].short)+'</span>':(dn.loc==='in'?'<span class="inpark-badge" style="background:#8C9BAA">In-Park</span>':'<span class="nonpark-badge">Non-Park</span>');
-  o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280" onclick="openScreen({type:\'adddining\',edit:\''+dn.id+'\',day:\''+dn.day+'\'})">'+IC.pencil+'</button>';
-  o+='</div></div>';
+  if(dn.status==='reserved'&&dn.conf&&dn.conf!=='walk-up') o+='<div class="din-conf">Confirmation '+esc(dn.conf)+'</div>';
+  o+='</div><div class="show-time">'+esc(dn.time)+'</div>';
+  o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;margin-left:8px" onclick="openScreen({type:\'adddining\',edit:\''+dn.id+'\',day:\''+dn.day+'\'})">'+IC.pencil+'</button>';
+  o+='</div>';
   return o;
 }
 function showsCard(sh,pk,date){
