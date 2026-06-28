@@ -207,7 +207,7 @@ button{font-family:inherit}
 /* ── Itinerary ───────────────────────────────────────────── */
 .plan-summary{padding:10px 14px;border-bottom:1px solid var(--border);font-size:15px;color:var(--muted);line-height:1.5}
 .plan-summary strong{color:var(--ink);font-weight:700}
-.t-row{display:flex;gap:12px;padding:10px 14px;border-bottom:1px solid var(--border);align-items:flex-start}
+.t-row{display:flex;gap:12px;padding:10px 14px;border-bottom:1px solid var(--border);align-items:flex-start;flex-wrap:wrap}
 .t-row.t-soft .t-text{color:var(--muted)}
 .t-row:last-child{border-bottom:none}
 .t-row.nextup{border-left:3px solid var(--gold);padding-left:11px;background:#FFFBEB}
@@ -255,7 +255,7 @@ button{font-family:inherit}
 .inpark-badge{font-size:11px;font-weight:700;color:#fff;padding:3px 7px;border-radius:6px;white-space:nowrap;flex-shrink:0}
 
 /* ── Shows ───────────────────────────────────────────────── */
-.show-row{display:flex;align-items:flex-start;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--border);gap:10px}
+.show-row{display:flex;align-items:flex-start;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--border);gap:10px;flex-wrap:wrap}
 .show-row:last-child{border-bottom:none}
 .show-name{font-size:18px;font-weight:600}
 .show-time{font-size:16px;color:var(--muted);white-space:nowrap}
@@ -389,11 +389,18 @@ button{font-family:inherit}
 .msg-time{font-size:11px;color:var(--muted);margin:3px 5px 0}
 .msg-rxns{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
 .msgwrap.me .msg-rxns{justify-content:flex-end}
-.rsvp-row{margin-top:6px}
-.rsvp-btn{font-size:12px;font-weight:700;border-radius:14px;padding:4px 12px;cursor:pointer;font-family:inherit;line-height:1.3}
-.rsvp-btn.out{background:#EEF2FF;border:1px solid #C7D2FE;color:#3730A3}
-.rsvp-btn.in{background:none;border:1px solid var(--border);color:var(--muted)}
-.t-tags+.rsvp-btn,.t-text~.rsvp-btn{margin-top:6px}
+.rsvp-row{width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)}
+.rsvp-btn{font-size:12px;font-weight:700;border-radius:14px;padding:5px 12px;cursor:pointer;font-family:inherit;line-height:1.3;background:var(--card);border:1px solid var(--border);color:var(--muted)}
+.rsvp-btn.going.on{background:#DCFCE7;border-color:#15803D;color:#15803D}
+.rsvp-btn.cant.on{background:#FEE2E2;border-color:#DC2626;color:#B91C1C}
+.rsvp-count{font-size:11px;font-weight:700;color:var(--muted);margin-left:auto}
+.att-grp{margin-top:6px}
+.att-h{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:5px}
+.att-list{display:flex;flex-wrap:wrap;gap:6px}
+.att-chip{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--ink);background:#F3F1EC;border:1px solid var(--border);border-radius:16px;padding:3px 10px 3px 4px}
+.att-chip .wdot{width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700}
+.att-chip.declined{color:#B91C1C;text-decoration:line-through;background:#FEF2F2;border-color:#FCA5A5}
+.att-none{font-size:13px;color:var(--muted)}
 .t-row.dp-flash{animation:dpflash 1.8s ease-out}
 @keyframes dpflash{0%,40%{background:#FEF3C7}100%{background:transparent}}
 .rxn-chip{display:inline-flex;align-items:center;gap:3px;font-size:13px;font-weight:600;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:2px 8px;cursor:pointer;color:var(--ink);font-family:inherit;line-height:1.4}

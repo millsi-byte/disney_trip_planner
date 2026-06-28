@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='281';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='282';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -871,21 +871,54 @@ function rsvpRecord(type,id){
   if(type==='manual'){var pp=String(id).split('|'),dd=dayByDate(pp[0]),it=dd&&dd.itin&&dd.itin[parseInt(pp[1],10)];return it?{rec:it,cat:'Plan',save:function(){saveDays();}}:null;}
   return null;
 }
-function rsvpBtn(type,id,who){
+/* Attendance: two mutually-exclusive buttons per item (Will attend / Won't
+   attend), neither active by default. The choice is recorded in rec.rsvp
+   {personaId:'in'|'out'} AND syncs who-it's-for: 'out' removes you, 'in' or
+   cleared keeps you in. Own row at the bottom of each item. */
+function rsvpRow(type,id){var b=rsvpBtn(type,id);return b?'<div class="rsvp-row">'+b+'</div>':'';}
+function rsvpBtn(type,id){
   if(!id)return '';
-  var inIt=(who==='all')||(Array.isArray(who)&&who.indexOf(S.persona)>=0);
-  return '<button class="rsvp-btn '+(inIt?'in':'out')+'" onclick="event.stopPropagation();rsvpToggle(\''+type+'\',\''+id+'\')">'+(inIt?'Can\'t make it':'Count me in')+'</button>';
+  var info=rsvpRecord(type,id);if(!info)return '';
+  var rec=info.rec,me=S.persona,rsvp=rec.rsvp||{},st=rsvp[me];
+  var going=Object.keys(rsvp).filter(function(x){return rsvp[x]==='in'&&person(x);}).length;
+  var h='<button class="rsvp-btn going'+(st==='in'?' on':'')+'" onclick="event.stopPropagation();rsvpSet(\''+type+'\',\''+id+'\',\'in\')">Will attend</button>';
+  h+='<button class="rsvp-btn cant'+(st==='out'?' on':'')+'" onclick="event.stopPropagation();rsvpSet(\''+type+'\',\''+id+'\',\'out\')">Won\'t attend</button>';
+  if(going)h+='<span class="rsvp-count">'+going+' confirmed</span>';
+  return h;
 }
-function rsvpToggle(type,id){
+function rsvpSet(type,id,val){
   var info=rsvpRecord(type,id);if(!info)return;
-  var rec=info.rec,me=S.persona,tid=rec.trip||S.tripId,oldWho=rec.who;
-  var arr=whoArrFor(rec.who==null?'all':rec.who,tid).slice(),present=arr.indexOf(me)>=0;
-  if(present)arr=arr.filter(function(x){return x!==me;});else arr.push(me);
+  var rec=info.rec,me=S.persona,tid=rec.trip||S.tripId;
+  rec.rsvp=rec.rsvp||{};
+  var now; if(rec.rsvp[me]===val){delete rec.rsvp[me];now=null;}else{rec.rsvp[me]=val;now=val;}
+  /* sync who-it's-for: 'out' removes me; 'in' or cleared ensures I'm included */
+  var arr=whoArrFor(rec.who==null?'all':rec.who,tid).slice();
+  if(now==='out')arr=arr.filter(function(x){return x!==me;});
+  else if(arr.indexOf(me)<0)arr.push(me);
   rec.who=collapseWho(arr);
+  if(!Object.keys(rec.rsvp).length)delete rec.rsvp;
   info.save();
-  notifyRsvp(rec,info.cat,!present);
-  toast(present?'Marked you as out':'Added you in');
+  if(now)notifyRsvp(rec,info.cat,now==='in');
+  toast(now==='in'?'Marked: will attend':now==='out'?"Marked: won't attend":'Cleared your RSVP');
   render();
+}
+/* attendance breakdown for an item's edit form — Will attend vs Not confirmed.
+   Audience = who-it's-for plus anyone who explicitly responded (so declines,
+   who were removed from who, still appear). */
+function rsvpFormSection(rec){
+  if(!rec)return '';
+  var tid=rec.trip||S.tripId,rsvp=rec.rsvp||{};
+  var base=whoArrFor(rec.who==null?'all':rec.who,tid).slice();
+  Object.keys(rsvp).forEach(function(id){if(base.indexOf(id)<0)base.push(id);});
+  var att=base.filter(function(id){return person(id);});
+  if(!att.length)return '';
+  function chip(id,decl){var p=person(id);return '<span class="att-chip'+(decl?' declined':'')+'"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+'</span>';}
+  var conf=att.filter(function(id){return rsvp[id]==='in';});
+  var notc=att.filter(function(id){return rsvp[id]!=='in';});
+  var h='<div class="field"><label class="field-label">Attendance <span class="opt">(separate from who it\'s for · set from the agenda)</span></label>';
+  h+='<div class="att-grp"><div class="att-h">Will attend · '+conf.length+'</div><div class="att-list">'+(conf.length?conf.map(function(id){return chip(id,false);}).join(''):'<span class="att-none">No one yet</span>')+'</div></div>';
+  h+='<div class="att-grp"><div class="att-h">Not confirmed · '+notc.length+'</div><div class="att-list">'+(notc.length?notc.map(function(id){return chip(id,rsvp[id]==='out');}).join(''):'<span class="att-none">—</span>')+'</div></div>';
+  return h+'</div>';
 }
 function notifyRsvp(rec,cat,joined){
   var actor=S.persona,tid=rec.trip||S.tripId,who=pname(actor),label=notifLabel(cat,rec),recips=[];
@@ -1906,10 +1939,10 @@ function dayPlanCard(d,pk){
       if(e.type==='ll'&&!e.soft) tags.push('<span class="t-tag" style="background:#DCFCE7;color:#15803D">Booked</span>');
       if(e.crit) tags.push('<span class="t-tag t-tag-crit">'+esc(e.crit)+'</span>');
       if(tags.length) o+='<div class="t-tags">'+tags.join('')+'</div>';
-      if(e.ref&&(e.type==='dining'||e.type==='ll'||e.type==='show')) o+=rsvpBtn(e.type,e.ref,e.who);
-      else if(e.type==='manual'&&!e.priv) o+=rsvpBtn('manual',d.date+'|'+e.idx,e.who);
       o+='</div>';
       if(e.type==='manual') o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;align-self:flex-start" onclick="openScreen({type:\'stopedit\',day:\''+d.date+'\',idx:'+e.idx+'})">'+IC.pencil+'</button>';
+      if(e.ref&&(e.type==='dining'||e.type==='ll'||e.type==='show')) o+=rsvpRow(e.type,e.ref);
+      else if(e.type==='manual'&&!e.priv) o+=rsvpRow('manual',d.date+'|'+e.idx);
       o+='</div>';
     }
     o+='</div>';
@@ -1988,7 +2021,7 @@ function llCard(lls,d,pk){
         o+='<button class="ri-btn" style="margin-left:auto" onclick="openScreen({type:\'llbook\',id:\''+l.id+'\'})">Mark as booked</button>';
         o+='</div>';
       }
-      o+='<div class="rsvp-row">'+rsvpBtn('ll',l.id,l.who)+'</div>';
+      o+=rsvpRow('ll',l.id);
       o+='</div>';
     }
     o+='<div class="roll-hd">Rolling Re-books</div>';
@@ -2044,9 +2077,9 @@ function diningRow(dn){
   o+=whoChips(dn.who);
   o+='</div>';
   if(dn.status==='reserved'&&dn.conf&&dn.conf!=='walk-up') o+='<div class="din-conf">Confirmation '+esc(dn.conf)+'</div>';
-  o+='<div class="rsvp-row">'+rsvpBtn('dining',dn.id,dn.who)+'</div>';
   o+='</div><div class="show-time">'+esc(dn.time)+'</div>';
   o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;margin-left:8px" onclick="openScreen({type:\'adddining\',edit:\''+dn.id+'\',day:\''+dn.day+'\'})">'+IC.pencil+'</button>';
+  o+=rsvpRow('dining',dn.id);
   o+='</div>';
   return o;
 }
@@ -2059,8 +2092,8 @@ function showsCard(sh,pk,date){
     o+='<button class="add-link solo" onclick="openScreen({type:\'showedit\',day:\''+date+'\'})">'+IC.plus+' Add show</button>';
     if(!sh.length) o+='<div class="body-empty">No shows'+(filterActive()?' for the current filter':'')+' on this day.</div>';
     for(var i=0;i<sh.length;i++){var x=sh[i];var xpk=x.park&&PARKS[x.park];
-      o+='<div class="show-row"><div style="flex:1"><div class="show-name">'+esc(x.name)+'</div><div style="display:flex;align-items:center;gap:6px;margin-top:4px">'+statusBadge(x.status||'attend')+(xpk?'<span class="inpark-badge" style="background:'+xpk.color+'">'+esc(xpk.short)+'</span>':'')+whoChips(x.who)+'</div><div class="rsvp-row">'+rsvpBtn('show',x.id,x.who)+'</div></div><div class="show-time">'+esc(x.time)+'</div>';
-      o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;margin-left:8px" onclick="openScreen({type:\'showedit\',edit:\''+x.id+'\',day:\''+x.day+'\'})">'+IC.pencil+'</button></div>';
+      o+='<div class="show-row"><div style="flex:1"><div class="show-name">'+esc(x.name)+'</div><div style="display:flex;align-items:center;gap:6px;margin-top:4px">'+statusBadge(x.status||'attend')+(xpk?'<span class="inpark-badge" style="background:'+xpk.color+'">'+esc(xpk.short)+'</span>':'')+whoChips(x.who)+'</div></div><div class="show-time">'+esc(x.time)+'</div>';
+      o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;margin-left:8px" onclick="openScreen({type:\'showedit\',edit:\''+x.id+'\',day:\''+x.day+'\'})">'+IC.pencil+'</button>'+rsvpRow('show',x.id)+'</div>';
     }
     o+='</div>';
   }
@@ -3072,6 +3105,7 @@ function scrAddDining(){
   body+=notifyField('Dining');
   body+='<div class="field"><label class="field-label">Appears on day</label><select class="field-select" id="dd-day">'+dayOptions((edit&&edit.day)||S.screen.day||'2026-07-15')+'</select></div>';
   if(edit) body+='<button class="btn-danger-link" onclick="delDining(\''+edit.id+'\')">Delete this reservation</button>';
+  if(edit)body+=rsvpFormSection(edit);
   return screenShell(edit?'Edit Dining':'Add Dining',body,'Save','saveDining()');
 }
 function saveDining(){
@@ -3139,6 +3173,7 @@ function scrAddLL(){
   body+=notifyField('Lightning Lane');
   body+='<div class="field"><label class="field-label">Day</label><select class="field-select" id="ll-day">'+dayOptions((edit&&edit.day)||S.screen.day)+'</select></div>';
   if(edit) body+='<button class="btn-danger-link" onclick="delLL(\''+edit.id+'\')">Delete this ride</button>';
+  if(edit)body+=rsvpFormSection(edit);
   return screenShell(edit?'Edit Ride':'Add Ride',body,'Save','saveLL()');
 }
 function pickTier(v){S._formTier=v;renderScreen_inplace2();}
@@ -5927,6 +5962,7 @@ function scrShowEdit(){
   body+=notifyField('Show');
   body+='<div class="field"><label class="field-label">Day</label><select class="field-select" id="sh-day">'+dayOptions((edit&&edit.day)||S.screen.day)+'</select></div>';
   if(edit) body+='<button class="btn-danger-link" onclick="delShow(\''+edit.id+'\')">Delete this show</button>';
+  if(edit)body+=rsvpFormSection(edit);
   return screenShell(edit?'Edit Show':'Add Show',body,'Save','saveShow()');
 }
 function saveShow(){
