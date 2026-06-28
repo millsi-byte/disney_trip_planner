@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='274';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='275';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2190,6 +2190,7 @@ function renderChat(){
     if(m.ref) h+='<div class="msg-ref" onclick="toast(\'Jumps to: '+esc(m.ref.label)+'\')">'+refIcon(m.ref.type)+esc(m.ref.label)+'</div>';
     h+=esc(m.text)+'</div>';
     h+='<div class="msg-time">'+esc(m.time)+'</div>';
+    h+=chatReactions(m);
     h+='</div></div>';
   }
   h+='</div>';
@@ -2202,6 +2203,37 @@ function sendChat(){var e=document.getElementById('chat-inp');if(!e||!e.value.tr
   CHAT.push({id:'c'+Date.now()+'_'+Math.random().toString(36).slice(2,6),from:S.persona,text:e.value.trim(),time:'Now',ts:Date.now(),trip:S.tripId});
   saveChat();render();
   setTimeout(function(){var w=document.getElementById('chatwrap');if(w)window.scrollTo(0,document.body.scrollHeight);},30);
+}
+/* ── Chat reactions (thumbs + emojis) ───────────────────────── */
+var CHAT_RXNS=['👍','👎','❤️','😂','🎉','😮'];
+function chatReactions(m){
+  var me=S.persona,rx=m.reactions||{},o='<div class="msg-rxns">';
+  var keys=Object.keys(rx).filter(function(e){return rx[e]&&rx[e].length;});
+  for(var i=0;i<keys.length;i++){var e=keys[i],arr=rx[e],on=arr.indexOf(me)>=0;
+    var names=arr.map(function(id){return person(id)?person(id).name:'?';}).join(', ');
+    o+='<button class="rxn-chip'+(on?' on':'')+'" title="'+esc(names)+'" onclick="chatReact(\''+m.id+'\',\''+e+'\')">'+e+' '+arr.length+'</button>';
+  }
+  o+='<button class="rxn-add" title="Add reaction" onclick="chatToggleReactPicker(\''+m.id+'\')">'+(S._reactFor===m.id?'×':'＋')+'</button>';
+  o+='</div>';
+  if(S._reactFor===m.id){
+    o+='<div class="rxn-bar">';
+    for(var k=0;k<CHAT_RXNS.length;k++)o+='<button onclick="chatReact(\''+m.id+'\',\''+CHAT_RXNS[k]+'\')">'+CHAT_RXNS[k]+'</button>';
+    o+='</div>';
+  }
+  return o;
+}
+function chatReact(id,emoji){
+  var m=CHAT.filter(function(x){return x.id===id;})[0];if(!m)return;
+  m.reactions=m.reactions||{};
+  var arr=m.reactions[emoji]||[],ix=arr.indexOf(S.persona);
+  if(ix>=0)arr.splice(ix,1);else arr.push(S.persona);
+  if(arr.length)m.reactions[emoji]=arr;else delete m.reactions[emoji];
+  S._reactFor=null;saveChat();
+  var y=window.scrollY;render();window.scrollTo(0,y);
+}
+function chatToggleReactPicker(id){
+  S._reactFor=(S._reactFor===id?null:id);
+  var y=window.scrollY;render();window.scrollTo(0,y);
 }
 
 /* ============================================================
