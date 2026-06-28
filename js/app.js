@@ -72,7 +72,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='243';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='244';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2449,6 +2449,7 @@ function renderScreen(){
   if(t==='persondetails') return scrPersonDetails();
   if(t==='alltrips')  return scrAllTrips();
   if(t==='dayedit')   return scrDayEdit();
+  if(t==='strategyedit') return scrStrategyEdit();
   if(t==='predit')    return scrPREdit();
   if(t==='ticketedit')return scrTicketEdit();
   if(t==='visedit')   return scrVisitEdit();
@@ -5010,7 +5011,10 @@ function scrDayEdit(){
   body+='<div class="field"><label class="field-label">Short blurb <span class="opt">(small line under the headline)</span></label><input class="field-input" id="dy-blurb" placeholder="e.g. EPCOT all day" value="'+esc(d.blurb||'')+'"></div>';
   body+='<div class="field"><label class="field-label">Custom tags <span class="opt">(comma-separated · most pills are auto from your items)</span></label><input class="field-input" id="dy-tags" placeholder="e.g. Activate APs" value="'+esc((d.tags||[]).join(', '))+'"></div>';
   body+='<div class="field"><label class="field-label">Alert / heads-up <span class="opt">(optional)</span></label><textarea class="field-input" id="dy-alert" rows="3" placeholder="e.g. Storms likely 2–4 PM">'+esc(d.alert||'')+'</textarea></div>';
-  body+='<div class="field"><label class="field-label">Strategy & notes <span class="opt">(first sentence shows as “The plan” on the Day Plan)</span></label><textarea class="field-input" id="dy-strat" rows="6" placeholder="The plan for the day… (blank lines start a new paragraph)">'+esc(d.strategy||'')+'</textarea></div>';
+  var stratPreview=d.strategy?(d.strategy.split('\n')[0].slice(0,120)+(d.strategy.split('\n')[0].length>120?'…':'')):'No strategy yet — tap to add.';
+  body+='<div class=”field”><label class=”field-label”>Strategy & notes</label>';
+  body+='<div class=”ov-card” style=”margin:0;cursor:pointer” onclick=”openScreen({type:\'strategyedit\',day:\''+d.date+'\'})”><div class=”din-row” style=”padding:10px 12px;align-items:flex-start”><div style=”flex:1;min-width:0;font-size:15px;color:'+(d.strategy?'var(--ink)':'var(--muted)')+';line-height:1.45”>'+esc(stratPreview)+'</div><button class=”hdr-icon” style=”width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;margin-left:8px”>'+IC.pencil+'</button></div></div>';
+  body+='</div>';
   return screenShell('Edit Day',body,'Save','saveDay()');
 }
 function saveDay(){
@@ -5019,8 +5023,20 @@ function saveDay(){
   d.blurb=val('dy-blurb');
   d.tags=val('dy-tags').split(',').map(function(s){return s.trim();}).filter(function(s){return s;});
   d.alert=val('dy-alert')||null;
-  d.strategy=val('dy-strat');
   saveDays();toast('Day updated');closeScreen();render();
+}
+function scrStrategyEdit(){
+  var d=dayByDate(S.screen.day);if(!d)return scrGeneric();
+  var title=monOf(d.date)+' '+d.d+' · '+d.dl;
+  var body='<div class=”hub-section-label” style=”margin-left:0”>'+esc(title)+'</div>';
+  body+='<div class=”field”><label class=”field-label”>Strategy & notes <span class=”opt”>(first sentence shows as “The plan” on the Day Plan · blank lines start a new paragraph)</span></label>';
+  body+='<textarea class=”field-input” id=”strat-text” rows=”18” style=”resize:vertical” placeholder=”The plan for the day…”>'+esc(d.strategy||'')+'</textarea></div>';
+  return screenShell('Day Strategy',body,'Save','saveStrategy()');
+}
+function saveStrategy(){
+  var d=dayByDate(S.screen.day);if(!d){closeScreen();return;}
+  d.strategy=val('strat-text');
+  saveDays();toast('Strategy saved');closeScreen();
 }
 
 /* ── Park reservation (first-class item: park + day + people) ─ */
