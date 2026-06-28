@@ -72,7 +72,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='254';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='255';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -5034,15 +5034,15 @@ function scrStrategyEdit(){
   var fullDay=WDFULL[d.dl]||d.dl;
   var heading=fullDay+', '+fullMonth+' '+d.d+', '+d.date.slice(0,4)+' — Strategy & Notes';
   /* ontouchstart saves selection before iOS blurs the textarea; onmousedown prevents focus steal on desktop */
-  function fmtBtn(fn,lbl,xtra){return '<button ontouchstart=”stratSaveSel()” onmousedown=”event.preventDefault()” onclick=”stratFmt(\''+fn+'\')” style=”'+(xtra||'font-weight:700')+';font-size:18px;min-width:50px;height:44px;border:1px solid var(--border);border-radius:8px;background:var(--card);cursor:pointer;font-family:inherit;color:var(--ink)”>'+lbl+'</button>';}
-  var body='<div style=”display:block;width:100%”>';
-  body+='<div style=”font-size:17px;font-weight:700;color:var(--ink);margin-bottom:14px”>'+esc(heading)+'</div>';
-  body+='<div style=”display:flex;align-items:center;gap:8px;margin-bottom:14px”>';
+  function fmtBtn(fn,lbl,xtra){return '<button ontouchstart="stratSaveSel()" onmousedown="event.preventDefault()" onclick="stratFmt(\''+fn+'\')" style="'+(xtra||'font-weight:700')+';font-size:18px;min-width:50px;height:44px;border:1px solid var(--border);border-radius:8px;background:var(--card);cursor:pointer;font-family:inherit;color:var(--ink)">'+lbl+'</button>';}
+  var body='<div style="display:block;width:100%">';
+  body+='<div style="font-size:17px;font-weight:700;color:var(--ink);margin-bottom:14px">'+esc(heading)+'</div>';
+  body+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">';
   body+=fmtBtn('bold','B');
   body+=fmtBtn('italic','I','font-style:italic;font-weight:700');
   body+=fmtBtn('bullet','•');
   body+='</div>';
-  body+='<textarea id=”strat-text” oninput=”stratSaveSel()” onkeyup=”stratSaveSel()” onclick=”stratSaveSel()” style=”display:block;width:100%;box-sizing:border-box;height:55vh;min-height:280px;border:1px solid var(--border);border-radius:10px;padding:14px;font-size:20px;line-height:1.75;font-family:inherit;background:var(--card);color:var(--ink);outline:none” placeholder=”The plan for the day…”>'+esc(d.strategy||'')+'</textarea>';
+  body+='<textarea id="strat-text" oninput="stratSaveSel()" onkeyup="stratSaveSel()" onclick="stratSaveSel()" style="display:block;width:100%;box-sizing:border-box;height:55vh;min-height:280px;border:1px solid var(--border);border-radius:10px;padding:14px;font-size:20px;line-height:1.75;font-family:inherit;background:var(--card);color:var(--ink);outline:none" placeholder="The plan for the day…">'+esc(d.strategy||'')+'</textarea>';
   body+='</div>';
   return screenShell('Day Strategy',body,'Save','saveStrategy()');
 }
@@ -5053,7 +5053,10 @@ function stratSaveSel(){
 function saveStrategy(){
   var d=dayByDate(S.screen.day);if(!d){closeScreen();return;}
   var ta=document.getElementById('strat-text');
-  d.strategy=ta?ta.value:val('strat-text');
+  /* data-loss guard: never let a missing textarea blank an existing strategy.
+     If the field can't be read for any reason, bail without overwriting. */
+  if(!ta){toast('Could not read the editor — nothing saved');closeScreen();return;}
+  d.strategy=ta.value;
   saveDays();
   S.open.strat=true;
   toast('Strategy saved');closeScreen();render();
@@ -5089,7 +5092,7 @@ function renderStrat(text){
     var hasBullet=lines.some(function(l){return /^- /.test(l);});
     var allBullet=hasBullet&&lines.every(function(l){return l===''||/^- /.test(l);});
     if(allBullet){
-      out+='<ul style=”margin:0 0 10px;padding-left:20px”>';
+      out+='<ul style="margin:0 0 10px;padding-left:20px">';
       for(var j=0;j<lines.length;j++){if(/^- /.test(lines[j]))out+='<li>'+fmtInlineStrat(esc(lines[j].slice(2)))+'</li>';}
       out+='</ul>';
     }else{
