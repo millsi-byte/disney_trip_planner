@@ -72,7 +72,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='253';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='254';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -5033,28 +5033,38 @@ function scrStrategyEdit(){
   var fullMonth=MONFULL[parseInt(d.date.slice(5,7),10)-1]||monOf(d.date);
   var fullDay=WDFULL[d.dl]||d.dl;
   var heading=fullDay+', '+fullMonth+' '+d.d+', '+d.date.slice(0,4)+' — Strategy & Notes';
-  /* onmousedown preventDefault keeps focus on the textarea so selectionStart/End survive on iOS */
-  function fmtBtn(fn,lbl,xtra){return '<button onmousedown=”event.preventDefault()” onclick=”stratFmt(\''+fn+'\')” style=”'+(xtra||'font-weight:700')+';font-size:16px;min-width:44px;height:40px;border:1px solid var(--border);border-radius:8px;background:var(--card);cursor:pointer;font-family:inherit;color:var(--ink)”>'+lbl+'</button>';}
+  /* ontouchstart saves selection before iOS blurs the textarea; onmousedown prevents focus steal on desktop */
+  function fmtBtn(fn,lbl,xtra){return '<button ontouchstart=”stratSaveSel()” onmousedown=”event.preventDefault()” onclick=”stratFmt(\''+fn+'\')” style=”'+(xtra||'font-weight:700')+';font-size:18px;min-width:50px;height:44px;border:1px solid var(--border);border-radius:8px;background:var(--card);cursor:pointer;font-family:inherit;color:var(--ink)”>'+lbl+'</button>';}
   var body='<div style=”display:block;width:100%”>';
-  body+='<div style=”font-size:16px;font-weight:700;color:var(--ink);margin-bottom:14px”>'+esc(heading)+'</div>';
-  body+='<div style=”display:flex;align-items:center;gap:8px;margin-bottom:12px”>';
+  body+='<div style=”font-size:17px;font-weight:700;color:var(--ink);margin-bottom:14px”>'+esc(heading)+'</div>';
+  body+='<div style=”display:flex;align-items:center;gap:8px;margin-bottom:14px”>';
   body+=fmtBtn('bold','B');
-  body+=fmtBtn('italic','I','font-style:italic');
+  body+=fmtBtn('italic','I','font-style:italic;font-weight:700');
   body+=fmtBtn('bullet','•');
   body+='</div>';
-  body+='<textarea id=”strat-text” style=”display:block;width:100%;box-sizing:border-box;height:60vh;min-height:300px;border:1px solid var(--border);border-radius:10px;padding:14px;font-size:22px;line-height:1.7;font-family:inherit;background:var(--card);color:var(--ink);outline:none” placeholder=”The plan for the day…”>'+esc(d.strategy||'')+'</textarea>';
+  body+='<textarea id=”strat-text” oninput=”stratSaveSel()” onkeyup=”stratSaveSel()” onclick=”stratSaveSel()” style=”display:block;width:100%;box-sizing:border-box;height:55vh;min-height:280px;border:1px solid var(--border);border-radius:10px;padding:14px;font-size:20px;line-height:1.75;font-family:inherit;background:var(--card);color:var(--ink);outline:none” placeholder=”The plan for the day…”>'+esc(d.strategy||'')+'</textarea>';
   body+='</div>';
   return screenShell('Day Strategy',body,'Save','saveStrategy()');
+}
+function stratSaveSel(){
+  var ta=document.getElementById('strat-text');
+  if(ta)S._stratSel={s:ta.selectionStart,e:ta.selectionEnd};
 }
 function saveStrategy(){
   var d=dayByDate(S.screen.day);if(!d){closeScreen();return;}
   var ta=document.getElementById('strat-text');
   d.strategy=ta?ta.value:val('strat-text');
-  saveDays();toast('Strategy saved');closeScreen();render();
+  saveDays();
+  S.open.strat=true;
+  toast('Strategy saved');closeScreen();render();
 }
 function stratFmt(type){
   var ta=document.getElementById('strat-text');if(!ta)return;
-  var s=ta.selectionStart,e=ta.selectionEnd,v=ta.value,sel=v.substring(s,e);
+  /* use saved selection — iOS blurs the textarea before onclick fires, resetting selectionStart to 0 */
+  var saved=S._stratSel||{s:0,e:0};
+  var s=(ta===document.activeElement)?ta.selectionStart:saved.s;
+  var e=(ta===document.activeElement)?ta.selectionEnd:saved.e;
+  var v=ta.value,sel=v.substring(s,e);
   var before=v.substring(0,s),after=v.substring(e);
   if(type==='bold'){
     if(sel){ta.value=before+'**'+sel+'**'+after;ta.selectionStart=s+2;ta.selectionEnd=e+2;}
@@ -5068,6 +5078,7 @@ function stratFmt(type){
     if(linePrefix==='- '){ta.value=v.substring(0,lineStart)+v.substring(lineStart+2);ta.selectionStart=ta.selectionEnd=Math.max(lineStart,s-2);}
     else{ta.value=v.substring(0,lineStart)+'- '+v.substring(lineStart);ta.selectionStart=ta.selectionEnd=s+2;}
   }
+  S._stratSel={s:ta.selectionStart,e:ta.selectionEnd};
   ta.focus();
 }
 function renderStrat(text){
