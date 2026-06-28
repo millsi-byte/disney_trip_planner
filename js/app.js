@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='277';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='278';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2186,11 +2186,16 @@ function renderChat(){
     h+='<div class="msg-av" style="background:'+p.color+'">'+p.name[0]+'</div>';
     h+='<div class="msg-col">';
     if(!mine) h+='<div class="msg-name">'+esc(p.name)+'</div>';
-    h+='<div class="msg-bubble" ontouchstart="chatPressStart(event,\''+m.id+'\')" ontouchend="chatPressEnd()" ontouchmove="chatPressEnd()" onclick="chatTapMsg(\''+m.id+'\')">';
-    if(m.ref) h+='<div class="msg-ref" onclick="event.stopPropagation();chatJumpRef(\''+m.id+'\')">'+refIcon(m.ref.type)+esc(m.ref.label)+'</div>';
-    h+=(m.text?esc(m.text):'')+'</div>';
-    h+='<div class="msg-time">'+esc(m.time)+'</div>';
-    h+=chatReactions(m);
+    if(S._editMsg===m.id){
+      h+='<div class="msg-editbox"><textarea class="msg-editta" id="edit-'+m.id+'">'+esc(m.text)+'</textarea>';
+      h+='<div class="msg-edit-btns"><button class="rxn-act" onclick="chatEditCancel()">Cancel</button><button class="rxn-act save" onclick="chatEditSave(\''+m.id+'\')">Save</button></div></div>';
+    }else{
+      h+='<div class="msg-bubble" ontouchstart="chatPressStart(event,\''+m.id+'\')" ontouchend="chatPressEnd()" ontouchmove="chatPressEnd()" onclick="chatTapMsg(\''+m.id+'\')">';
+      if(m.ref) h+='<div class="msg-ref" onclick="event.stopPropagation();chatJumpRef(\''+m.id+'\')">'+refIcon(m.ref.type)+esc(m.ref.label)+'</div>';
+      h+=(m.text?esc(m.text):'')+'</div>';
+      h+='<div class="msg-time">'+esc(m.time)+(m.edited?' · edited':'')+'</div>';
+      h+=chatReactions(m);
+    }
     h+='</div></div>';
   }
   h+='</div>';
@@ -2218,10 +2223,18 @@ function chatReactions(m){
   var keys=Object.keys(rx).filter(function(e){return rx[e]&&rx[e].length;});
   for(var i=0;i<keys.length;i++){var e=keys[i],arr=rx[e],on=arr.indexOf(me)>=0;
     var names=arr.map(function(id){return person(id)?person(id).name:'?';}).join(', ');
-    o+='<button class="rxn-chip'+(on?' on':'')+'" title="'+esc(names)+'" onclick="chatReact(\''+m.id+'\',\''+e+'\')">'+e+' '+arr.length+'</button>';
+    var dots='';
+    for(var di=0;di<arr.length&&di<4;di++){var pp=person(arr[di]);if(pp)dots+='<span class="rxn-dot" style="background:'+pp.color+'">'+esc(pp.name[0])+'</span>';}
+    if(arr.length>4)dots+='<span class="rxn-more">+'+(arr.length-4)+'</span>';
+    o+='<button class="rxn-chip'+(on?' on':'')+'" title="'+esc(names)+'" onclick="chatReact(\''+m.id+'\',\''+e+'\')">'+e+'<span class="rxn-who">'+dots+'</span></button>';
   }
-  if(S._msgActive===m.id||S._reactFor===m.id)
+  if(S._msgActive===m.id||S._reactFor===m.id){
     o+='<button class="rxn-add" title="Add reaction" onclick="chatToggleReactPicker(\''+m.id+'\')">'+(S._reactFor===m.id?'×':'＋')+'</button>';
+    if(m.from===me){
+      o+='<button class="rxn-act" onclick="chatEditStart(\''+m.id+'\')">Edit</button>';
+      o+='<button class="rxn-act del" onclick="chatDelete(\''+m.id+'\')">Delete</button>';
+    }
+  }
   o+='</div>';
   if(S._reactFor===m.id){
     o+='<div class="rxn-bar">';
@@ -2269,8 +2282,38 @@ function chatJumpRef(id){
   S.tab='home';S.planView='dayplan';
   render();toast('Jumped to '+m.ref.label);
 }
+/* edit / delete your own messages */
+function chatEditStart(id){
+  var m=CHAT.filter(function(x){return x.id===id;})[0];if(!m||m.from!==S.persona)return;
+  S._editMsg=id;S._msgActive=null;S._reactFor=null;
+  render();
+  setTimeout(function(){var e=document.getElementById('edit-'+id);if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},40);
+}
+function chatEditCancel(){S._editMsg=null;render();}
+function chatEditSave(id){
+  var m=CHAT.filter(function(x){return x.id===id;})[0];if(!m||m.from!==S.persona){S._editMsg=null;render();return;}
+  var e=document.getElementById('edit-'+id);var v=e?e.value.trim():'';
+  if(!v&&!m.ref){chatDelete(id);return;}   /* cleared to empty (and no card) → treat as delete */
+  if(v!==m.text){m.text=v;m.edited=true;saveChat();}
+  S._editMsg=null;render();toast('Message updated');
+}
+function chatDelete(id){
+  var m=CHAT.filter(function(x){return x.id===id;})[0];if(!m||m.from!==S.persona)return;
+  if(!confirm('Delete this message?'))return;
+  CHAT=CHAT.filter(function(x){return x.id!==id;});
+  S._editMsg=null;S._msgActive=null;S._reactFor=null;saveChat();render();toast('Message deleted');
+}
 /* attach a planned item to the next message (the "reminder / focus" card) */
-function chatAttach(){openSheet({type:'chatref'});}
+function chatAttach(){
+  /* start with every day collapsed except the one currently being viewed */
+  S._chatRefOpen={};var cur=tripDays()[S.dayIdx];if(cur)S._chatRefOpen[cur.date]=true;
+  openSheet({type:'chatref'});
+}
+function chatRefDay(date){
+  S._chatRefOpen=S._chatRefOpen||{};S._chatRefOpen[date]=!S._chatRefOpen[date];
+  var host=document.getElementById('sheet-host');
+  if(host&&S.sheet){host.innerHTML=renderSheet();var b=host.firstChild;if(b)b.classList.add('in');}
+}
 function chatClearRef(){S._chatRef=null;var y=window.scrollY;render();window.scrollTo(0,y);}
 function chatPickRef(i,j){
   var d=tripDays()[i];if(!d)return;var e=dayPlanItems(d)[j];if(!e)return;
@@ -2281,10 +2324,11 @@ function renderChatRefSheet(){
   var h='<div class="sheet-backdrop" onclick="if(event.target===this)closeSheet()"><div class="sheet">';
   h+='<div class="sheet-grip"></div><div class="sheet-title">Attach a planned item</div>';
   h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px">Pick something from the plan to share as a reminder or focus.</div>';
-  var TD=tripDays(),any=false;
+  var TD=tripDays(),any=false,open=S._chatRefOpen||{};
   for(var i=0;i<TD.length;i++){var d=TD[i],items=dayPlanItems(d);if(!items.length)continue;any=true;
-    h+='<div class="sheet-seclabel">'+monOf(d.date)+' '+d.d+' · '+d.dl+'</div>';
-    for(var j=0;j<items.length;j++){var e=items[j];
+    var isOpen=!!open[d.date];
+    h+='<button class="chatref-day'+(isOpen?' open':'')+'" onclick="chatRefDay(\''+d.date+'\')"><span>'+monOf(d.date)+' '+d.d+' · '+d.dl+'</span><span class="chatref-day-r">'+items.length+' <span class="chatref-chev">'+(isOpen?IC.chevUp:IC.chevd)+'</span></span></button>';
+    if(isOpen)for(var j=0;j<items.length;j++){var e=items[j];
       h+='<button class="chatref-opt" onclick="chatPickRef('+i+','+j+')">'+refIcon(e.type)+'<span>'+esc(e.x)+(e.t?' · '+esc(e.t):'')+'</span></button>';
     }
   }

@@ -388,11 +388,20 @@ button{font-family:inherit}
 .msg.me .msg-rxns{justify-content:flex-end}
 .rxn-chip{display:inline-flex;align-items:center;gap:3px;font-size:13px;font-weight:600;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:2px 8px;cursor:pointer;color:var(--ink);font-family:inherit;line-height:1.4}
 .rxn-chip.on{background:#E0E7FF;border-color:#6366F1;color:#3730A3}
+.rxn-who{display:inline-flex;align-items:center;gap:2px}
+.rxn-dot{width:16px;height:16px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:700}
+.rxn-more{font-size:11px;font-weight:700;color:var(--muted);margin-left:2px}
 .rxn-add{font-size:13px;font-weight:700;background:none;border:1px solid var(--border);border-radius:12px;padding:2px 8px;cursor:pointer;color:var(--muted);font-family:inherit;line-height:1.4}
 .rxn-bar{display:flex;gap:2px;margin:4px 2px 0;background:var(--card);border:1px solid var(--border);border-radius:18px;padding:4px 6px;width:max-content;box-shadow:0 2px 8px rgba(0,0,0,.1)}
 .msg.me .rxn-bar{align-self:flex-end}
 .rxn-bar button{font-size:20px;background:none;border:none;cursor:pointer;padding:3px 5px;border-radius:8px;line-height:1}
 .rxn-bar button:active{background:var(--border)}
+.rxn-act{font-size:13px;font-weight:700;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:2px 10px;cursor:pointer;color:var(--ink);font-family:inherit;line-height:1.4}
+.rxn-act.del{color:#DC2626;border-color:#FCA5A5}
+.rxn-act.save{color:#fff;background:#15803D;border-color:#15803D}
+.msg-editbox{display:flex;flex-direction:column;gap:6px;max-width:100%}
+.msg-editta{border:1px solid var(--ink);border-radius:14px;padding:9px 13px;font-size:16px;line-height:1.4;font-family:inherit;background:var(--card);color:var(--ink);outline:none;resize:vertical;min-height:46px;width:240px;max-width:100%}
+.msg-edit-btns{display:flex;gap:6px;justify-content:flex-end}
 .msg-ref{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;background:#F3F1EC;border:1px solid var(--border);border-radius:10px;padding:7px 10px;margin-bottom:6px;color:var(--ink);cursor:pointer}
 .msg.me .msg-ref{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.25);color:#fff}
 .chat-bar{position:fixed;bottom:calc(60px + env(safe-area-inset-bottom));left:0;right:0;max-width:430px;margin:0 auto;background:var(--cream);border-top:1px solid var(--border);padding:10px 12px;display:flex;flex-direction:column;gap:8px;z-index:80}
@@ -402,7 +411,11 @@ button{font-family:inherit}
 .chat-refpill{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--ink);background:#EEF2FF;border:1px solid #C7D2FE;border-radius:12px;padding:6px 8px 6px 12px}
 .chat-refpill span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chat-refpill button{flex-shrink:0;border:none;background:#C7D2FE;color:#3730A3;width:22px;height:22px;border-radius:50%;font-size:15px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
-.chatref-opt{display:flex;align-items:center;gap:10px;width:calc(100% - 36px);margin:0 18px;padding:11px 12px;border:1px solid var(--border);border-radius:10px;background:var(--card);color:var(--ink);font-size:15px;font-weight:600;font-family:inherit;cursor:pointer;text-align:left;margin-bottom:6px}
+.chatref-day{display:flex;align-items:center;justify-content:space-between;width:calc(100% - 36px);margin:0 18px 6px;padding:11px 14px;border:1px solid var(--border);border-radius:10px;background:#F3F1EC;color:var(--ink);font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;font-family:inherit;cursor:pointer}
+.chatref-day.open{background:var(--ink);color:#fff}
+.chatref-day-r{display:flex;align-items:center;gap:6px;font-weight:700}
+.chatref-chev{display:flex}
+.chatref-opt{display:flex;align-items:center;gap:10px;width:calc(100% - 52px);margin:0 18px 6px 34px;padding:11px 12px;border:1px solid var(--border);border-radius:10px;background:var(--card);color:var(--ink);font-size:15px;font-weight:600;font-family:inherit;cursor:pointer;text-align:left}
 .chatref-opt span{flex:1;min-width:0}
 .chat-input{flex:1;border:1px solid var(--border);border-radius:22px;padding:11px 16px;font-size:16px;background:var(--card);outline:none;font-family:inherit;min-height:44px}
 .chat-input:focus{border-color:var(--ink)}
