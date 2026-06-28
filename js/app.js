@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='259';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='260';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -580,6 +580,16 @@ var CAT_OF={adddining:'Dining',llbook:'Lightning Lane',addll:'Lightning Lane',pr
   showedit:'Show',addflight:'Flight',resortedit:'Resort',visedit:'Park visit'};
 
 function pname(id){var p=person(id);return p?p.name:'Someone';}
+/* readable list of who an item applies to: "Everyone" / "Nancy" / "Scott & Cian" */
+function whoNames(who){
+  who=collapseWho(who);
+  if(who==='all'||!who) return 'Everyone';
+  if(!who.length) return '';
+  var names=[];for(var i=0;i<who.length;i++){var p=person(who[i]);if(p)names.push(p.name);}
+  if(!names.length) return '';
+  if(names.length===1) return names[0];
+  return names.slice(0,-1).join(', ')+' & '+names[names.length-1];
+}
 /* display full name: first + last when a last name is set, else just first */
 function pfullname(p){if(!p)return '';return (p.lastName?(p.name+' '+p.lastName):p.name)||'';}
 /* a who-bearing item\'s responsible person: its creator, else the trip owner */
@@ -5510,7 +5520,7 @@ function scrVisitEdit(){
   if(validTks.length){
     var assoc=(edit&&edit.tickets)||[];
     for(var ti=0;ti<validTks.length;ti++){var tk=validTks[ti];
-      body+='<label class="chk-row"><input type="checkbox" class="vs-tk" value="'+tk.id+'"'+(assoc.indexOf(tk.id)>=0?' checked':'')+'> '+esc(ticketLabel(tk))+'</label>';
+      body+='<label class="chk-row"><input type="checkbox" class="vs-tk" value="'+tk.id+'"'+(assoc.indexOf(tk.id)>=0?' checked':'')+'><span style="flex:1;min-width:0">'+esc(ticketLabel(tk))+'</span><span class="chk-who">'+esc(whoNames(tk.who))+'</span></label>';
     }
   }else{
     body+='<div class="body-empty" style="text-align:left;padding:2px">No tickets valid on this date yet — add one in Park Hours &amp; Tickets first.</div>';
