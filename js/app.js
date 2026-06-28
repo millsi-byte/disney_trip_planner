@@ -72,7 +72,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='252';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='253';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -5042,7 +5042,7 @@ function scrStrategyEdit(){
   body+=fmtBtn('italic','I','font-style:italic');
   body+=fmtBtn('bullet','•');
   body+='</div>';
-  body+='<textarea id=”strat-text” style=”display:block;width:100%;box-sizing:border-box;height:60vh;min-height:300px;border:1px solid var(--border);border-radius:10px;padding:14px;font-size:18px;line-height:1.7;font-family:inherit;background:var(--card);color:var(--ink);outline:none” placeholder=”The plan for the day…”>'+esc(d.strategy||'')+'</textarea>';
+  body+='<textarea id=”strat-text” style=”display:block;width:100%;box-sizing:border-box;height:60vh;min-height:300px;border:1px solid var(--border);border-radius:10px;padding:14px;font-size:22px;line-height:1.7;font-family:inherit;background:var(--card);color:var(--ink);outline:none” placeholder=”The plan for the day…”>'+esc(d.strategy||'')+'</textarea>';
   body+='</div>';
   return screenShell('Day Strategy',body,'Save','saveStrategy()');
 }
