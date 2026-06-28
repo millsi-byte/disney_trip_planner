@@ -72,7 +72,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='251';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='252';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -5028,17 +5028,22 @@ function saveDay(){
 }
 function scrStrategyEdit(){
   var d=dayByDate(S.screen.day);if(!d)return scrGeneric();
-  var sub=monOf(d.date)+' '+d.d+' · '+d.dl;
-  function fmtBtn(fn,lbl){return '<button onclick=”stratFmt(\''+fn+'\')” style=”font-weight:700;font-size:15px;min-width:40px;height:36px;border:1px solid var(--border);border-radius:8px;background:var(--card);cursor:pointer;font-family:inherit;color:var(--ink)”>'+lbl+'</button>';}
-  var ta='<textarea id=”strat-text” style=”display:block;width:100%;box-sizing:border-box;height:60vh;min-height:320px;border:1px solid var(--border);border-radius:10px;padding:12px;font-size:16px;line-height:1.65;font-family:inherit;background:var(--card);color:var(--ink);outline:none;resize:vertical” placeholder=”The plan for the day…”>'+esc(d.strategy||'')+'</textarea>';
+  var MONFULL=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var WDFULL={Sun:'Sunday',Mon:'Monday',Tue:'Tuesday',Wed:'Wednesday',Thu:'Thursday',Fri:'Friday',Sat:'Saturday'};
+  var fullMonth=MONFULL[parseInt(d.date.slice(5,7),10)-1]||monOf(d.date);
+  var fullDay=WDFULL[d.dl]||d.dl;
+  var heading=fullDay+', '+fullMonth+' '+d.d+', '+d.date.slice(0,4)+' — Strategy & Notes';
+  /* onmousedown preventDefault keeps focus on the textarea so selectionStart/End survive on iOS */
+  function fmtBtn(fn,lbl,xtra){return '<button onmousedown=”event.preventDefault()” onclick=”stratFmt(\''+fn+'\')” style=”'+(xtra||'font-weight:700')+';font-size:16px;min-width:44px;height:40px;border:1px solid var(--border);border-radius:8px;background:var(--card);cursor:pointer;font-family:inherit;color:var(--ink)”>'+lbl+'</button>';}
   var body='<div style=”display:block;width:100%”>';
-  body+='<div style=”display:flex;align-items:center;gap:6px;margin-bottom:12px”>';
+  body+='<div style=”font-size:16px;font-weight:700;color:var(--ink);margin-bottom:14px”>'+esc(heading)+'</div>';
+  body+='<div style=”display:flex;align-items:center;gap:8px;margin-bottom:12px”>';
   body+=fmtBtn('bold','B');
-  body+='<button onclick=”stratFmt(\'italic\')” style=”font-style:italic;font-size:15px;min-width:40px;height:36px;border:1px solid var(--border);border-radius:8px;background:var(--card);cursor:pointer;font-family:inherit;color:var(--ink)”>I</button>';
+  body+=fmtBtn('italic','I','font-style:italic');
   body+=fmtBtn('bullet','•');
-  body+='<span style=”font-size:12px;color:var(--muted);margin-left:6px”>'+esc(sub)+'</span>';
   body+='</div>';
-  body+=ta+'</div>';
+  body+='<textarea id=”strat-text” style=”display:block;width:100%;box-sizing:border-box;height:60vh;min-height:300px;border:1px solid var(--border);border-radius:10px;padding:14px;font-size:18px;line-height:1.7;font-family:inherit;background:var(--card);color:var(--ink);outline:none” placeholder=”The plan for the day…”>'+esc(d.strategy||'')+'</textarea>';
+  body+='</div>';
   return screenShell('Day Strategy',body,'Save','saveStrategy()');
 }
 function saveStrategy(){
