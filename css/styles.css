@@ -394,6 +394,8 @@ button{font-family:inherit}
 .rsvp-btn.going.on{background:#DCFCE7;border-color:#15803D;color:#15803D}
 .rsvp-btn.cant.on{background:#FEE2E2;border-color:#DC2626;color:#B91C1C}
 .rsvp-count{font-size:11px;font-weight:700;color:var(--muted);margin-left:auto}
+.rsvp-check{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;border-radius:14px;padding:5px 12px;cursor:pointer;font-family:inherit;background:var(--card);border:1px solid var(--border);color:var(--muted)}
+.rsvp-check svg{width:15px;height:15px}
 .att-grp{margin-top:6px}
 .att-h{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:5px}
 .att-list{display:flex;flex-wrap:wrap;gap:6px}

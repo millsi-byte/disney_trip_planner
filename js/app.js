@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='283';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='284';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -883,9 +883,30 @@ function rsvpBtn(type,id){
   var going=Object.keys(rsvp).filter(function(x){return rsvp[x]==='in'&&person(x);}).length;
   var h='<button class="rsvp-btn going'+(st==='in'?' on':'')+'" onclick="event.stopPropagation();rsvpSet(\''+type+'\',\''+id+'\',\'in\')">Will attend</button>';
   h+='<button class="rsvp-btn cant'+(st==='out'?' on':'')+'" onclick="event.stopPropagation();rsvpSet(\''+type+'\',\''+id+'\',\'out\')">Won\'t attend</button>';
-  if(going)h+='<span class="rsvp-count">'+going+' confirmed</span>';
+  h+='<button class="rsvp-check" onclick="event.stopPropagation();openAttendance(\''+type+'\',\''+id+'\')">'+IC.users+(going?' '+going+' going':' Attendance')+'</button>';
   return h;
 }
+/* quick attendance popup — glance at who's confirmed / not / out while in the park */
+function openAttendance(type,id){
+  var info=rsvpRecord(type,id);if(!info)return;
+  var rec=info.rec,tid=rec.trip||S.tripId,rsvp=rec.rsvp||{};
+  var base=whoArrFor(rec.who==null?'all':rec.who,tid).slice();
+  Object.keys(rsvp).forEach(function(pid){if(base.indexOf(pid)<0)base.push(pid);});
+  var att=base.filter(function(pid){return person(pid);});
+  function chip(pid,decl){var p=person(pid);return '<span class="att-chip'+(decl?' declined':'')+'"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+'</span>';}
+  function grp(label,ids,decl){return '<div class="att-grp"><div class="att-h">'+label+' · '+ids.length+'</div><div class="att-list">'+(ids.length?ids.map(function(x){return chip(x,decl);}).join(''):'<span class="att-none">—</span>')+'</div></div>';}
+  var conf=att.filter(function(pid){return rsvp[pid]==='in';});
+  var pend=att.filter(function(pid){return rsvp[pid]==null;});
+  var decl=att.filter(function(pid){return rsvp[pid]==='out';});
+  var h='<div class="pin-backdrop" onclick="if(event.target===this)closeAttendance()"><div class="pin-modal" style="max-width:340px;text-align:left">';
+  h+='<div class="pin-title">Attendance</div><div class="pin-sub">'+esc(notifLabel(info.cat,rec))+'</div>';
+  h+=grp('Will attend',conf,false)+grp('Not confirmed',pend,false)+grp('Won\'t attend',decl,true);
+  h+='<button class="btn-secondary" style="margin:14px 0 0;width:100%" onclick="closeAttendance()">Close</button>';
+  h+='</div></div>';
+  var host=document.getElementById('att-host');if(!host){host=document.createElement('div');host.id='att-host';document.body.appendChild(host);}
+  host.innerHTML=h;
+}
+function closeAttendance(){var h=document.getElementById('att-host');if(h)h.innerHTML='';}
 function rsvpSet(type,id,val){
   var info=rsvpRecord(type,id);if(!info)return;
   var rec=info.rec,me=S.persona,tid=rec.trip||S.tripId;
