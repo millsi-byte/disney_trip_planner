@@ -31,6 +31,7 @@ var IC = {
   sparkles:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z"/><path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8z"/></svg>',
   warn:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
   check:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+  qmark:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
   checkw:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
   arr:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>',
   lock:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
@@ -2489,6 +2490,8 @@ function renderScreen(){
   if(t==='persondetails') return scrPersonDetails();
   if(t==='alltrips')  return scrAllTrips();
   if(t==='dayedit')   return scrDayEdit();
+  if(t==='parksplan') return scrParksPlan();
+  if(t==='hoursplan') return scrHoursPlan();
   if(t==='strategyedit') return scrStrategyEdit();
   if(t==='predit')    return scrPREdit();
   if(t==='ticketedit')return scrTicketEdit();
@@ -5113,6 +5116,51 @@ function saveDay(){
   d.alert=val('dy-alert')||null;
   saveDays();toast('Day updated');closeScreen();render();
 }
+/* small reusable ticket indicator: green check+Tickets when a valid associated
+   ticket exists for the visit, else a red question mark */
+function visitTicketTag(v){
+  var assoc=(v&&v.tickets)||[];
+  var validIds={};ticketsFor(v.day).forEach(function(t){validIds[t.id]=1;});
+  var hasValid=assoc.some(function(id){return validIds[id];});
+  if(hasValid) return '<span class="cond-res"><span style="display:flex">'+IC.check+'</span> Tickets</span>';
+  return '<span class="cond-noticket" title="No valid ticket linked to this visit">'+IC.qmark+'</span>';
+}
+/* Edit Parks Plan — park visits + park reservations (moved out of Edit Day) */
+function scrParksPlan(){
+  var d=dayByDate(S.screen.day);if(!d)return scrGeneric();
+  var body='<div class="hub-section-label" style="margin-left:0">'+monOf(d.date)+' '+d.d+' · '+d.dl+'</div>';
+  body+='<div class="field"><label class="field-label">Park visits <span class="opt">(tap to edit)</span></label>';
+  body+='<button class="add-link solo" style="margin:0 0 6px" onclick="openScreen({type:\'visedit\',day:\''+d.date+'\'})">'+IC.plus+' Add park visit</button>';
+  var vis=visitsFor(d.date);
+  for(var vi=0;vi<vis.length;vi++){var vv=vis[vi],vpk=PARKS[vv.park];
+    body+='<div class="ov-card" style="margin:0 0 8px"><div class="din-row" style="padding:10px 12px"><span style="background:'+(vpk?vpk.color:'#999')+';width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name">'+(vpk?esc(vpk.name):esc(vv.park))+'</div><div class="din-time">'+timingLbl(vv.timing)+(vv.earlyEntry?' · Early Entry':'')+(vv.eveningHours?' · Evening':'')+'</div>'+whoChips(vv.who)+'</div>'+visitTicketTag(vv)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'visedit\',edit:\''+vv.id+'\',day:\''+d.date+'\'})">'+IC.pencil+'</button></div></div>';
+  }
+  if(!vis.length) body+='<div class="body-empty" style="text-align:left;padding:2px 2px 4px">No park visit — travel / rest day.</div>';
+  body+='</div>';
+  body+='<div class="field"><label class="field-label">Park reservations <span class="opt">(tap to edit)</span></label>';
+  body+='<button class="add-link solo" style="margin:0 0 6px" onclick="openScreen({type:\'predit\',day:\''+d.date+'\'})">'+IC.plus+' Add park reservation</button>';
+  var prs=parkResFor(d.date);
+  for(var pi=0;pi<prs.length;pi++){var pr=prs[pi],ppk=PARKS[pr.park];
+    body+='<div class="ov-card'+(isPlanningStatus(pr.status)?' planning':'')+'" style="margin:0 0 8px"><div class="din-row" style="padding:10px 12px"><span style="background:'+(ppk?ppk.color:'#999')+';width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name">'+(ppk?esc(ppk.name):esc(pr.park))+'</div>'+whoChips(pr.who)+'</div>'+statusBadge(pr.status)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'predit\',edit:\''+pr.id+'\',day:\''+d.date+'\'})">'+IC.pencil+'</button></div></div>';
+  }
+  if(!prs.length) body+='<div class="body-empty" style="text-align:left;padding:2px 2px 4px">No park reservation — Hopper day.</div>';
+  body+='</div>';
+  return screenShell('Edit Parks Plan',body,null,null,'Done');
+}
+/* Edit Park Hours & Crowds — per-park hours list (moved out of Edit Day) */
+function scrHoursPlan(){
+  var d=dayByDate(S.screen.day);if(!d)return scrGeneric();
+  var body='<div class="hub-section-label" style="margin-left:0">'+monOf(d.date)+' '+d.d+' · '+d.dl+'</div>';
+  body+='<div class="field"><label class="field-label">Park hours & crowd <span class="opt">(per park — tap to edit)</span></label>';
+  body+='<button class="add-link solo" style="margin:0 0 6px" onclick="openScreen({type:\'hoursedit\',day:\''+d.date+'\'})">'+IC.plus+' Add park hours</button>';
+  var phl=parkHoursFor(d.date);
+  for(var hi=0;hi<phl.length;hi++){var hh=phl[hi],hpk=PARKS[hh.park];
+    body+='<div class="ov-card" style="margin:0 0 8px"><div class="din-row" style="padding:10px 12px"><span style="background:'+(hpk?hpk.color:'#999')+';width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="din-name">'+(hpk?esc(hpk.name):esc(hh.park))+'</div><div class="din-time">'+esc((hh.open||'—')+' – '+(hh.close||'—'))+(hh.early?' · Early '+esc(hh.early):'')+(hh.late?' · Late '+esc(hh.late):'')+'</div></div>'+crowdPill(hh.crowd)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'hoursedit\',edit:\''+hh.id+'\',day:\''+d.date+'\'})">'+IC.pencil+'</button></div></div>';
+  }
+  if(!phl.length) body+='<div class="body-empty" style="text-align:left;padding:2px 2px 4px">No park hours set for this day.</div>';
+  body+='</div>';
+  return screenShell('Edit Park Hours & Crowds',body,null,null,'Done');
+}
 function scrStrategyEdit(){
   var d=dayByDate(S.screen.day);if(!d)return scrGeneric();
   var MONFULL=['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -5385,6 +5433,24 @@ function scrVisitEdit(){
   body+='<div class="field-row"><div class="field"><label class="field-label">Early Entry</label>'+timeField('vh-early',eh.early||'')+'</div>';
   body+='<div class="field"><label class="field-label">Extended / Late</label>'+timeField('vh-late',eh.late||'')+'</div></div>';
   body+='<div class="field"><label class="field-label">Expected crowd</label><select class="field-select" id="vh-crowd">'+crowdOptions(eh.crowd!=null?eh.crowd:null)+'</select></div></div>';
+  /* extra-hours perks you actually plan to use — these drive the day's tags */
+  body+='<div class="field"><label class="field-label">Extra hours you plan to use</label>';
+  body+='<label class="chk-row"><input type="checkbox" id="vs-early"'+((edit&&edit.earlyEntry)?' checked':'')+'> Early Entry</label>';
+  body+='<label class="chk-row"><input type="checkbox" id="vs-evening"'+((edit&&edit.eveningHours)?' checked':'')+'> Evening / Extended Hours</label>';
+  body+='</div>';
+  /* associate the park tickets that admit this visit — only tickets valid on the visit date */
+  var vday=(edit&&edit.day)||S.screen.day;
+  var validTks=ticketsFor(vday);
+  body+='<div class="field"><label class="field-label">Park tickets for this visit <span class="opt">(tickets valid on '+esc(monOf(vday)+' '+(+vday.slice(8)))+')</span></label>';
+  if(validTks.length){
+    var assoc=(edit&&edit.tickets)||[];
+    for(var ti=0;ti<validTks.length;ti++){var tk=validTks[ti];
+      body+='<label class="chk-row"><input type="checkbox" class="vs-tk" value="'+tk.id+'"'+(assoc.indexOf(tk.id)>=0?' checked':'')+'> '+esc(ticketLabel(tk))+'</label>';
+    }
+  }else{
+    body+='<div class="body-empty" style="text-align:left;padding:2px">No tickets valid on this date yet — add one in Park Hours &amp; Tickets first.</div>';
+  }
+  body+='</div>';
   body+='<div class="body-empty" style="text-align:left;padding:2px 2px 0">The first visit on a day is the primary park (sets the day\'s color and hero); add a second visit for a hopper / two-park day.</div>';
   if(edit) body+='<button class="btn-danger-link" onclick="delVisit(\''+edit.id+'\')">Delete this visit</button>';
   return screenShell(edit?'Edit Park Visit':'Add Park Visit',body,'Save','saveVisit()');
@@ -5402,6 +5468,10 @@ function saveVisit(){
   var oldWho=edit?edit.who:[];
   var rec=edit||{id:'v'+Date.now(),trip:S.tripId,by:S.persona};
   rec.park=val('vs-park')||'mk';rec.day=val('vs-day')||S.screen.day;rec.timing=val('vs-timing')||'day';rec.who=whoVal();
+  var _e=document.getElementById('vs-early'),_v=document.getElementById('vs-evening');
+  rec.earlyEntry=!!(_e&&_e.checked);rec.eveningHours=!!(_v&&_v.checked);
+  var _tks=[],_cbs=document.querySelectorAll('.vs-tk');for(var _i=0;_i<_cbs.length;_i++){if(_cbs[_i].checked)_tks.push(_cbs[_i].value);}
+  rec.tickets=_tks;
   if(!edit)VISITS.push(rec);
   save('dtp_visits',VISITS);afterWhoSave('Park visit',rec,oldWho);
   var c=val('vh-crowd');
