@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='278';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='279';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1853,7 +1853,7 @@ function dayPlanCard(d,pk){
     if(summary) o+='<div class="plan-summary"><strong>The plan:</strong> '+esc(summary)+'</div>';
     for(var j=0;j<items.length;j++){
       var e=items[j];
-      o+='<div class="t-row'+(e.soft?' t-soft':'')+'">';
+      o+='<div class="t-row'+(e.soft?' t-soft':'')+'" data-dpkey="'+encodeURIComponent(e.x+(e.t?' · '+e.t:''))+'">';
       o+='<div class="t-time">'+esc(e.t)+'</div>';
       o+='<div style="flex:1"><div class="t-text">'+pillify(esc(e.x))+(e.type==='ll'&&e.tier?' <span class="ll-tag '+tagCls(e.tier)+'">'+tagShort(e.tier)+'</span>':'')+'</div>';
       o+=whoStack(e.who);
@@ -2182,6 +2182,7 @@ function renderChat(){
     var m=msgs[i],p=person(m.from),mine=m.from===me;
     if(!p)p={color:'#94A3B8',name:'?'};   /* sender was deleted — render a placeholder */
     if(m.day&&m.day!==lastDay){lastDay=m.day;h+='<div class="chat-day"><span>'+fmtDay(m.day)+'</span></div>';}
+    h+='<div class="msgwrap'+(mine?' me':'')+'">';
     h+='<div class="msg'+(mine?' me':'')+'">';
     h+='<div class="msg-av" style="background:'+p.color+'">'+p.name[0]+'</div>';
     h+='<div class="msg-col">';
@@ -2194,9 +2195,10 @@ function renderChat(){
       if(m.ref) h+='<div class="msg-ref" onclick="event.stopPropagation();chatJumpRef(\''+m.id+'\')">'+refIcon(m.ref.type)+esc(m.ref.label)+'</div>';
       h+=(m.text?esc(m.text):'')+'</div>';
       h+='<div class="msg-time">'+esc(m.time)+(m.edited?' · edited':'')+'</div>';
-      h+=chatReactions(m);
     }
-    h+='</div></div>';
+    h+='</div></div>';   /* close msg-col, msg — avatar now bottom-aligns to the bubble */
+    if(S._editMsg!==m.id) h+='<div class="rxnrow">'+chatReactions(m)+'</div>';
+    h+='</div>';   /* close msgwrap */
   }
   h+='</div>';
   h+='<div class="chat-bar">';
@@ -2279,8 +2281,16 @@ function chatJumpRef(id){
   var m=CHAT.filter(function(x){return x.id===id;})[0];if(!m||!m.ref)return;
   var TD=tripDays();
   if(m.ref.day){for(var i=0;i<TD.length;i++)if(TD[i].date===m.ref.day){S.dayIdx=i;break;}}
-  S.tab='home';S.planView='dayplan';
-  render();toast('Jumped to '+m.ref.label);
+  S.tab='home';S.planView='dayplan';S.open.itin=true;   /* ensure the Day Plan is expanded */
+  render();
+  /* scroll to and flash the exact item in the Day Plan */
+  var key=encodeURIComponent(m.ref.label||'');
+  setTimeout(function(){
+    var row=document.querySelector('.t-row[data-dpkey="'+key+'"]');
+    if(row){try{row.scrollIntoView({block:'center',behavior:'smooth'});}catch(e){row.scrollIntoView();}
+      row.classList.add('dp-flash');setTimeout(function(){row.classList.remove('dp-flash');},1800);}
+    else{toast('Jumped to '+m.ref.label);}
+  },80);
 }
 /* edit / delete your own messages */
 function chatEditStart(id){
