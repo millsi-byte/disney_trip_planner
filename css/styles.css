@@ -272,7 +272,7 @@ button{font-family:inherit}
 .sh-btn{background:none;border:none;color:#fff;font-size:16px;font-weight:600;cursor:pointer;padding:8px 6px;min-width:60px;min-height:44px;display:flex;align-items:center}
 .sh-btn.right{justify-content:flex-end}
 .sh-btn.save{font-weight:700;color:#FBE8B8}
-.screen-body{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;padding:14px 12px calc(28px + env(safe-area-inset-bottom))}
+.screen-body{flex:1;min-height:0;width:100%;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;padding:14px 12px calc(28px + env(safe-area-inset-bottom))}
 
 /* ── Form fields ─────────────────────────────────────────── */
 .field{margin-bottom:14px}

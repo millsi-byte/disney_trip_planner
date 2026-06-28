@@ -72,7 +72,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='249';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='250';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -5030,13 +5030,13 @@ function scrStrategyEdit(){
   var d=dayByDate(S.screen.day);if(!d)return scrGeneric();
   var sub=monOf(d.date)+' '+d.d+' · '+d.dl;
   function fmtBtn(fn,lbl){return '<button onclick=”stratFmt(\''+fn+'\')” style=”font-weight:700;font-size:15px;min-width:40px;height:36px;border:1px solid var(--border);border-radius:8px;background:var(--card);cursor:pointer;font-family:inherit;color:var(--ink)”>'+lbl+'</button>';}
-  var toolbar='<div style=”display:flex;align-items:center;gap:6px;padding:0 0 12px;width:100%”>';
-  toolbar+=fmtBtn('bold','B');
-  toolbar+='<button onclick=”stratFmt(\'italic\')” style=”font-style:italic;font-size:15px;min-width:40px;height:36px;border:1px solid var(--border);border-radius:8px;background:var(--card);cursor:pointer;font-family:inherit;color:var(--ink)”>I</button>';
-  toolbar+=fmtBtn('bullet','•');
-  toolbar+='<span style=”font-size:12px;color:var(--muted);margin-left:6px”>'+esc(sub)+'</span>';
-  toolbar+='</div>';
-  var body=toolbar+'<textarea id=”strat-text” class=”field-input” style=”height:60vh;min-height:320px;resize:vertical;font-size:16px;line-height:1.65” placeholder=”The plan for the day…&#10;&#10;Blank lines start a new paragraph.&#10;Start lines with -  for bullets.&#10;Use **bold** or *italics*.”>'+esc(d.strategy||'')+'</textarea>';
+  var body='<div class=”field” style=”margin-bottom:12px”><div style=”display:flex;align-items:center;gap:6px”>';
+  body+=fmtBtn('bold','B');
+  body+='<button onclick=”stratFmt(\'italic\')” style=”font-style:italic;font-size:15px;min-width:40px;height:36px;border:1px solid var(--border);border-radius:8px;background:var(--card);cursor:pointer;font-family:inherit;color:var(--ink)”>I</button>';
+  body+=fmtBtn('bullet','•');
+  body+='<span style=”font-size:12px;color:var(--muted);margin-left:6px”>'+esc(sub)+'</span>';
+  body+='</div></div>';
+  body+='<div class=”field” style=”margin:0”><textarea id=”strat-text” class=”field-input” style=”display:block;height:60vh;min-height:320px;resize:vertical;font-size:16px;line-height:1.65” placeholder=”The plan for the day…”>'+esc(d.strategy||'')+'</textarea></div>';
   return screenShell('Day Strategy',body,'Save','saveStrategy()');
 }
 function saveStrategy(){
