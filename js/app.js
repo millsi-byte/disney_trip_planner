@@ -72,7 +72,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='244';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='245';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1587,7 +1587,7 @@ function renderAgenda(){
   o+='<button class="add-link" style="margin:2px 0 6px" onclick="openScreen({type:\'dayedit\',day:\''+d.date+'\'})">'+IC.pencil+' Edit day details</button>';
 
   /* Order: Strategy · Flights · Resort · Day Plan · Dining · Night Shows · Lightning Lanes */
-  if(d.strategy) o+=stratCard(d,pk);
+  o+=stratCard(d,pk);
 
   var tks=ticketsFor(d.date).filter(function(t){return visible(t.who);});
   if(tks.length) o+=ticketCard(tks,pk,d.date);
@@ -1794,13 +1794,21 @@ function llCard(lls,d,pk){
 
 function stratCard(d,pk){
   var key='strat';
+  var sub=d.strategy?'Tap to read':'No strategy yet';
   var o='<div class="card">';
-  o+=cardHead(key,'var(--hd-strat)',pk.color,IC.book,'Strategy & Notes','Tap to read');
+  o+=cardHead(key,'var(--hd-strat)',pk.color,IC.book,'Strategy & Notes',sub);
   if(S.open[key]){
-    var ps=d.strategy.split('\n\n');
-    o+='<div class="card-body"><div class="strategy-body">';
-    for(var p=0;p<ps.length;p++) o+='<p>'+esc(ps[p])+'</p>';
-    o+='</div></div>';
+    o+='<div class="card-body">';
+    if(d.strategy){
+      var ps=d.strategy.split('\n\n');
+      o+='<div class="strategy-body">';
+      for(var p=0;p<ps.length;p++) o+='<p>'+esc(ps[p])+'</p>';
+      o+='</div>';
+    }else{
+      o+='<div class="body-empty">No strategy written for this day yet.</div>';
+    }
+    o+='<button class="add-link" onclick="openScreen({type:\'strategyedit\',day:\''+d.date+'\'})">'+IC.pencil+(d.strategy?' Edit strategy':' Add strategy')+'</button>';
+    o+='</div>';
   }
   return o+'</div>';
 }
@@ -5011,10 +5019,6 @@ function scrDayEdit(){
   body+='<div class="field"><label class="field-label">Short blurb <span class="opt">(small line under the headline)</span></label><input class="field-input" id="dy-blurb" placeholder="e.g. EPCOT all day" value="'+esc(d.blurb||'')+'"></div>';
   body+='<div class="field"><label class="field-label">Custom tags <span class="opt">(comma-separated · most pills are auto from your items)</span></label><input class="field-input" id="dy-tags" placeholder="e.g. Activate APs" value="'+esc((d.tags||[]).join(', '))+'"></div>';
   body+='<div class="field"><label class="field-label">Alert / heads-up <span class="opt">(optional)</span></label><textarea class="field-input" id="dy-alert" rows="3" placeholder="e.g. Storms likely 2–4 PM">'+esc(d.alert||'')+'</textarea></div>';
-  var stratPreview=d.strategy?(d.strategy.split('\n')[0].slice(0,120)+(d.strategy.split('\n')[0].length>120?'…':'')):'No strategy yet — tap to add.';
-  body+='<div class=”field”><label class=”field-label”>Strategy & notes</label>';
-  body+='<div class=”ov-card” style=”margin:0;cursor:pointer” onclick=”openScreen({type:\'strategyedit\',day:\''+d.date+'\'})”><div class=”din-row” style=”padding:10px 12px;align-items:flex-start”><div style=”flex:1;min-width:0;font-size:15px;color:'+(d.strategy?'var(--ink)':'var(--muted)')+';line-height:1.45”>'+esc(stratPreview)+'</div><button class=”hdr-icon” style=”width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;margin-left:8px”>'+IC.pencil+'</button></div></div>';
-  body+='</div>';
   return screenShell('Edit Day',body,'Save','saveDay()');
 }
 function saveDay(){
