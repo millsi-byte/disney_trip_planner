@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='284';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='285';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -5918,6 +5918,7 @@ function scrStopEdit(){
   body+=whoSelectField(it?it.who:'all');
   body+='<div class="field" style="margin:0"><label class="field-label">Privacy</label><div class="seg"><button class="seg-btn'+(!S._stPriv?' on':'')+'" onclick="stFormPriv(false)">Shared</button><button class="seg-btn'+(S._stPriv?' on book':'')+'" onclick="stFormPriv(true)">'+IC.lock+' Keep private</button></div></div>';
   if(S._stPriv)body+='<div class="priv-note">Only you see this stop on your Day Plan — no one else on the trip, not even admins.</div>';
+  if(has&&it&&!it.priv) body+=rsvpFormSection(it);
   if(has) body+='<button class="btn-danger-link" onclick="delStop()">Delete this stop</button>';
   return screenShell(has?'Edit Stop':'Add Stop',body,'Save','saveStop()');
 }
@@ -5925,10 +5926,12 @@ function stFormPriv(v){S._stPriv=v;renderScreen_inplace2();}
 function saveStop(){
   var d=dayByDate(S.screen.day);if(!d){closeScreen();return;}
   var tx=val('st-text');if(!tx){toast('Add a description');return;}
+  var prev=(S.screen.idx!=null)?d.itin[S.screen.idx]:null;
   var rec={t:val('st-time')||'TBD',x:tx,who:whoVal()};
   var cr=val('st-crit');if(cr)rec.crit=cr;
-  rec.by=(S.screen.idx!=null&&d.itin[S.screen.idx]&&d.itin[S.screen.idx].by)||S.persona;
+  rec.by=(prev&&prev.by)||S.persona;
   rec.priv=!!S._stPriv;
+  if(prev&&prev.rsvp)rec.rsvp=prev.rsvp;   /* preserve attendance across edits */
   if(S.screen.idx!=null)d.itin[S.screen.idx]=rec; else d.itin.push(rec);
   saveDays();S._who=null;toast('Stop saved');closeScreen();render();
 }
