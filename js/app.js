@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='258';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='259';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1571,7 +1571,8 @@ function parkPlanCard(d,pk){
         var pr=null,prl=parkResFor(d.date);
         for(var j=0;j<prl.length;j++){if(prl[j].park===v.park&&visible(prl[j].who)){pr=prl[j];break;}}
         o+='<div class="cond"><span class="cond-dot" style="background:'+vpk.color+'"></span>';
-        o+='<div style="flex:1;min-width:0"><div class="cond-top"><span class="cond-pk">'+esc(vpk.name)+'</span><span class="cond-time">'+timingLbl(v.timing)+'</span>';
+        o+='<div style="flex:1;min-width:0"><div class="cond-top"><span class="cond-pk">'+esc(vpk.name)+'</span><span class="cond-time">'+timingLbl(v.timing)+'</span></div>';
+        o+='<div class="cond-status">';
         if(pr) o+='<span class="cond-res">'+(pr.status==='booked'?'<span style="display:flex">'+IC.check+'</span> Reserved':'Res · planning')+'</span>';
         o+=visitTicketTag(v);
         o+='</div>';
@@ -5187,7 +5188,7 @@ function visitTicketTag(v){
   var validIds={};ticketsFor(v.day).forEach(function(t){validIds[t.id]=1;});
   var hasValid=assoc.some(function(id){return validIds[id];});
   if(hasValid) return '<span class="cond-res"><span style="display:flex">'+IC.check+'</span> Tickets</span>';
-  return '<span class="cond-noticket" title="No valid ticket linked to this visit">'+IC.qmark+'</span>';
+  return '<span class="cond-noticket" title="No valid ticket linked to this visit"><span style="display:flex">'+IC.qmark+'</span> Tickets</span>';
 }
 /* Edit Parks Plan — park visits + park reservations (moved out of Edit Day) */
 function scrParksPlan(){
