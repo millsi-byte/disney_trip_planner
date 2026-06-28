@@ -80,9 +80,11 @@ button{font-family:inherit}
 
 /* ── Hero ────────────────────────────────────────────────── */
 .hero{border-radius:var(--r);overflow:hidden;margin-bottom:10px;box-shadow:0 2px 8px rgba(0,0,0,.12)}
-.hero-body{padding:16px 18px 14px}
-.h-date{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.75)}
-.h-park{font-family:'Fraunces',Georgia,serif;font-size:27px;font-weight:700;color:#fff;margin:4px 0 2px;letter-spacing:-.02em;line-height:1.1}
+.hero-body{padding:16px 18px 14px;position:relative}
+.hero-edit{position:absolute;top:12px;right:14px;background:rgba(255,255,255,.22);color:#fff;font-size:13px;font-weight:700;border:none;border-radius:20px;padding:6px 12px;display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-family:inherit}
+.hero-edit svg{width:14px;height:14px;color:#fff}
+.h-date{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.75);padding-right:96px}
+.h-park{font-family:'Fraunces',Georgia,serif;font-size:27px;font-weight:700;color:#fff;margin:4px 0 2px;letter-spacing:-.02em;line-height:1.1;padding-right:96px}
 .h-park2{display:flex;align-items:center;gap:7px;margin-top:6px;font-size:13px;color:rgba(255,255,255,.9);font-weight:600}
 .h-park2 .p2dot{width:12px;height:12px;border-radius:3px;flex-shrink:0;box-shadow:0 0 0 2px rgba(255,255,255,.35)}
 .h-resort{font-size:14px;color:rgba(255,255,255,.78)}

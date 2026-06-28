@@ -52,6 +52,7 @@ var S = {
   dayIdx:1,            // default to first real park day
   fmode:"all",         // primary person filter: all | mine | notme
   filter:new Set(),    // specific-person filter (rare); non-empty overrides fmode
+  planView:"all",      // agenda view: all (everything) | dayplan (strategy + day plan only)
   open:{},             // collapsible card state per key
   plan:"packing",      // packing | todo
   persona:"scott",     // current persona (who am I)
@@ -72,7 +73,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='256';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='257';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1491,6 +1492,16 @@ function renderFilter(){
   return h+'</div></div>';
 }
 
+/* Day-view switch: All Plan Details vs Day Plan Only — same segmented look as
+   renderFilter, two segments, no people icon */
+function renderPlanView(){
+  function seg(m,label){var on=(S.planView||'all')===m;
+    return '<button class="fseg'+(on?' on':'')+'" onclick="setPlanView(\''+m+'\')">'+label+'</button>';}
+  return '<div class="pfilter-wrap"><div class="pfilter"><div class="fseg-group">'
+    +seg('all','All Plan Details')+seg('dayplan','Day Plan Only')+'</div></div></div>';
+}
+function setPlanView(m){S.planView=m;render();}
+
 /* ============================================================
    AGENDA (Home)
    ============================================================ */
@@ -1571,6 +1582,7 @@ function renderAgenda(){
   /* Hero */
   o+='<div class="hero fadein">';
   o+='<div class="hero-body" style="background:'+pk.color+'">';
+  o+='<button class="hero-edit" onclick="openScreen({type:\'dayedit\',day:\''+d.date+'\'})">'+IC.pencil+' Edit Day</button>';
   o+='<div class="h-date">'+monOf(d.date)+' '+d.d+' · '+(WDF[d.dl]||d.dl)+'</div>';
   o+='<div class="h-park">'+esc(d.visit||pk.name)+'</div>';
   if(p2&&!d.visit) o+='<div class="h-park2"><span class="p2dot" style="background:'+p2.color+'"></span>then '+p2.name+' · '+timingLbl(sec.timing).toLowerCase()+'</div>';
@@ -1582,32 +1594,40 @@ function renderAgenda(){
   if(d.alert) o+='<div class="hero-alert">'+IC.warn+'<div class="hero-alert-txt">'+esc(d.alert)+'</div></div>';
   o+='</div>';
 
+  /* View switch: All Plan Details vs Day Plan Only (sits above the conditions
+     strip since it governs whether conditions/cards render) */
+  o+=renderPlanView();
+  var dpOnly=(S.planView==='dayplan');
+
   /* Per-park conditions (hours + crowd + reservation per park visited) */
-  o+=dayConditions(d);
-  o+='<button class="add-link" style="margin:2px 0 6px" onclick="openScreen({type:\'dayedit\',day:\''+d.date+'\'})">'+IC.pencil+' Edit day details</button>';
+  if(!dpOnly) o+=dayConditions(d);
 
   /* Order: Strategy · Flights · Resort · Day Plan · Dining · Night Shows · Lightning Lanes */
   o+=stratCard(d,pk);
 
-  var tks=ticketsFor(d.date).filter(function(t){return visible(t.who);});
-  if(tks.length) o+=ticketCard(tks,pk,d.date);
+  if(!dpOnly){
+    var tks=ticketsFor(d.date).filter(function(t){return visible(t.who);});
+    if(tks.length) o+=ticketCard(tks,pk,d.date);
 
-  var flts=flightsFor(d.date).filter(function(f){return visible(f.who);});
-  if(flts.length) o+=flightCard(flts,d);
+    var flts=flightsFor(d.date).filter(function(f){return visible(f.who);});
+    if(flts.length) o+=flightCard(flts,d);
 
-  var stays=resortsFor(d.date).filter(function(r){return visible(r.who)&&(r.checkin===d.date||r.checkout===d.date);});
-  for(var s=0;s<stays.length;s++) o+=resortCard(stays[s],d.date);
+    var stays=resortsFor(d.date).filter(function(r){return visible(r.who)&&(r.checkin===d.date||r.checkout===d.date);});
+    for(var s=0;s<stays.length;s++) o+=resortCard(stays[s],d.date);
+  }
 
   o+=dayPlanCard(d,pk);
 
-  var din=diningFor(d.date).filter(function(x){return visible(x.who);});
-  o+=diningCard(din,pk,d.date);
+  if(!dpOnly){
+    var din=diningFor(d.date).filter(function(x){return visible(x.who);});
+    o+=diningCard(din,pk,d.date);
 
-  var sh=showsFor(d.date).filter(function(x){return visible(x.who);});
-  o+=showsCard(sh,pk,d.date);
+    var sh=showsFor(d.date).filter(function(x){return visible(x.who);});
+    o+=showsCard(sh,pk,d.date);
 
-  var lls=llFor(d.date).filter(function(l){return visible(l.who);});
-  if(lls.length) o+=llCard(lls,d,pk);
+    var lls=llFor(d.date).filter(function(l){return visible(l.who);});
+    if(lls.length) o+=llCard(lls,d,pk);
+  }
 
   return o;
 }
