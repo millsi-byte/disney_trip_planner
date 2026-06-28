@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='264';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='265';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1844,6 +1844,34 @@ function dayPlanCard(d,pk){
   return o+'</div>';
 }
 
+/* shift a YYYY-MM-DD date by N days (UTC, no TZ drift) */
+function shiftDate(ds,days){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(ds||''))return ds;
+  var p=ds.split('-'),dt=new Date(Date.UTC(+p[0],+p[1]-1,+p[2]));
+  dt.setUTCDate(dt.getUTCDate()+days);
+  return dt.getUTCFullYear()+'-'+('0'+(dt.getUTCMonth()+1)).slice(-2)+'-'+('0'+dt.getUTCDate()).slice(-2);
+}
+function fmtBookDate(ds){return /^\d{4}-\d{2}-\d{2}$/.test(ds||'')?(monOf(ds)+' '+(+ds.slice(8))):ds;}
+/* earliest on-Disney-property check-in for this trip (the anchor for the resort
+   7-day booking window). On-property is the default; only an explicit unchecked
+   box (onProp===false) counts as off-property. Continuous split stays anchor to
+   the first check-in. Returns null when there's no on-property stay. */
+function earliestOnPropCheckin(){
+  var best=null;
+  for(var i=0;i<RESORTS.length;i++){var r=RESORTS[i];
+    if(r.trip===S.tripId&&r.onProp!==false&&r.checkin&&(!best||r.checkin<best))best=r.checkin;}
+  return best;
+}
+/* when to book a given Lightning Lane item:
+   - On-property: 7 days before the (first) resort check-in, 7 AM, whole trip (SP + MP)
+   - Off-property: Multi Pass = 3 days before the day; Single Pass = the morning of */
+function llBookInfo(l){
+  var onpIn=earliestOnPropCheckin(),bd,note;
+  if(onpIn){bd=shiftDate(onpIn,-7);note='7 days before check-in · Disney Resort';}
+  else if(l.tier==='sp'){bd=l.day;note='morning of · off-property';}
+  else{bd=shiftDate(l.day,-3);note='3 days before · off-property';}
+  return {date:bd,label:fmtBookDate(bd)+' @ 7:00 AM',note:note};
+}
 function llCard(lls,d,pk){
   var key='ll';
   var planning=lls.filter(function(l){return l.status==='planning';}).length;
@@ -1859,7 +1887,6 @@ function llCard(lls,d,pk){
     o+='<div class="ll-legend"><div class="ll-legend-item"><span class="ll-tag sp">SP</span> Single Pass</div>'
       +'<div class="ll-legend-item"><span class="ll-tag mp1">T1</span> Multi Pass T1</div>'
       +'<div class="ll-legend-item"><span class="ll-tag mp2">T2</span> Multi Pass T2</div></div>';
-    o+='<div class="ll-bookdate">'+IC.bolt+' Book '+esc(lls[0].bookDate)+'</div>';
     for(var i=0;i<lls.length;i++){
       var l=lls[i];
       o+='<div class="ll-row">';
@@ -1870,6 +1897,8 @@ function llCard(lls,d,pk){
         if(l.conf) o+='<div class="ll-conf">Confirmation '+esc(l.conf)+'</div>';
       }else{
         o+='<div class="ll-win">Planned window: '+esc(l.window)+'</div>';
+        var bi=llBookInfo(l);
+        o+='<div class="ll-book">'+IC.bolt+' Book '+esc(bi.label)+'<span class="ll-book-note">'+esc(bi.note)+'</span></div>';
       }
       o+=whoStack(l.who);
       if(l.status!=='booked'){
@@ -2897,7 +2926,6 @@ function saveLL(){
     rec.bookedTime=val('ll-btime')||(rec.window?rec.window.replace(/[~]/g,'').split('–')[0].trim():'');
     rec.conf=val('ll-conf')||rec.conf||'MP-'+Math.floor(10000+Math.random()*89999);
   }
-  if(!rec.bookDate)rec.bookDate=monOf(dy)+' '+(+dy.slice(8))+' @ 7:00 AM';
   if(!edit)LLS.push(rec);
   save('dtp_lls',LLS);afterWhoSave('Lightning Lane',rec,oldWho);S._who=null;toast('Ride saved');closeScreen();render();
 }
@@ -5697,6 +5725,8 @@ function scrResortEdit(){
   body+='<div class="field-row"><div class="field"><label class="field-label">Check-out day</label><select class="field-select" id="rs-out">'+dayOptions(edit?edit.checkout:_dN)+'</select></div>';
   body+='<div class="field"><label class="field-label">Check-out time</label>'+timeField('rs-outtime',edit&&edit.outTime?edit.outTime:'')+'</div></div>';
   body+='<div class="field"><label class="field-label">Confirmation #</label><input class="field-input" id="rs-conf" placeholder="A10293847" value="'+(edit&&edit.conf?esc(edit.conf):'')+'"></div>';
+  var onp=(!edit)||edit.onProp!==false;   /* on Disney property by default */
+  body+='<div class="field"><label class="chk-row"><input type="checkbox" id="rs-onprop"'+(onp?' checked':'')+'> On Disney property</label><div class="body-empty" style="text-align:left;padding:2px 2px 0">Drives Lightning Lane booking dates — resort guests book 7 days before check-in.</div></div>';
   body+='<div class="field"><label class="field-label">Status</label><div class="seg">';
   body+='<button class="seg-btn'+(st==='planning'?' on':'')+'" onclick="pickStatus(\'rs\',\'planning\')">Planning</button>';
   body+='<button class="seg-btn'+(st==='booked'?' on book':'')+'" onclick="pickStatus(\'rs\',\'booked\')">Booked</button></div></div>';
@@ -5712,6 +5742,7 @@ function saveResort(){
   var rec=edit||{id:'r'+Date.now(),trip:S.tripId,by:S.persona};
   rec.name=nm;rec.room=val('rs-room')||'Room';rec.checkin=val('rs-in');rec.checkout=val('rs-out');
   rec.inTime=val('rs-intime');rec.outTime=val('rs-outtime');
+  var _op=document.getElementById('rs-onprop');rec.onProp=!_op||_op.checked;
   rec.conf=val('rs-conf')||'';rec.status=S._formStatus.rs||'planning';rec.who=whoVal();
   if(!edit)RESORTS.push(rec);
   save('dtp_resorts',RESORTS);afterWhoSave('Resort',rec,oldWho);S._who=null;toast('Resort saved');closeScreen();render();
