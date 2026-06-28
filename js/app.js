@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='260';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='261';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1588,6 +1588,7 @@ function parkPlanCard(d,pk){
         o+='</div>';
         var perks=[];if(v.earlyEntry)perks.push('Early Entry');if(v.eveningHours)perks.push('Evening Hours');
         if(perks.length) o+='<div class="cond-hours" style="color:var(--muted)">'+esc(perks.join(' · '))+'</div>';
+        o+=whoChips(v.who);
         o+='</div></div>';
       }
     }
