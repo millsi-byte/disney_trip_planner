@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='285';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='286';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -943,16 +943,24 @@ function rsvpFormSection(rec){
   return h+'</div>';
 }
 function notifyRsvp(rec,cat,joined){
-  var actor=S.persona,tid=rec.trip||S.tripId,who=pname(actor),label=notifLabel(cat,rec),recips=[];
+  var actor=S.persona,tid=rec.trip||S.tripId,who=pname(actor),label=notifLabel(cat,rec);
   var creator=creatorOf(rec,tid);
-  if(creator&&creator!==actor&&person(creator))recips.push(creator);
-  whoArrFor(rec.who,tid).forEach(function(id){if(id!==actor&&person(id)&&recips.indexOf(id)<0)recips.push(id);});
-  var hasOthers=tripMembersFor(tid).some(function(id){return id!==actor&&person(id);});
-  if(!hasOthers){bumpBell();return;}
-  var ctx={actor:actor,trip:tid,cat:cat,label:label,oldWho:rec.who,newWho:rec.who,rsvp:joined?'in':'out'};
   var txt=who+(joined?' is in for ':' can\'t make ')+'“'+label+'”';
   var plan={forced:[],optional:[]};
+  /* Action items (Dining, Lightning Lane, Park reservation) NEED the booker to
+     know — a real reservation may have to change. Force it (locked, sent even on
+     Skip), matching the form-edit behaviour in buildNotifPlan. */
+  if(isActionCat(cat)&&creator&&creator!==actor&&person(creator)){
+    plan.forced.push({to:creator,from:actor,trip:tid,cat:cat,label:label,kind:joined?'action':'left',
+      text:who+(joined?' is now attending ':' can\'t make ')+'“'+label+'” — you may need to update the booking'});
+  }
+  /* optional heads-up to others on it (booker too, if it isn't an action item) */
+  var recips=[];
+  if(!isActionCat(cat)&&creator&&creator!==actor&&person(creator))recips.push(creator);
+  whoArrFor(rec.who,tid).forEach(function(id){if(id!==actor&&person(id)&&recips.indexOf(id)<0)recips.push(id);});
   recips.forEach(function(id){plan.optional.push({to:id,from:actor,trip:tid,cat:cat,label:label,kind:joined?'added':'removed',text:txt});});
+  if(!plan.forced.length&&!plan.optional.length){bumpBell();return;}
+  var ctx={actor:actor,trip:tid,cat:cat,label:label,oldWho:rec.who,newWho:rec.who,rsvp:joined?'in':'out'};
   openNotifConfirm(ctx,plan);
 }
 
