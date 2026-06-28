@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='257';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='258';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1729,11 +1729,11 @@ function flightCard(flts,d){
   o+=cardHead(key,'var(--hd-flight)',pk.color,IC.plane,'Flight Reservations',sub,allPlanning);
   if(S.open[key]){
     o+='<div class="card-body">';
+    o+='<button class="add-link solo" onclick="openScreen({type:\'addflight\',day:\''+d.date+'\'})">'+IC.plus+' Add flight</button>';
     if(!flts.length){
       o+='<div class="body-empty">No flights for this day'+(filterActive()?' for the current filter':'')+'.</div>';
     }
     for(var i=0;i<flts.length;i++) o+='<div class="flt-jbox'+(isPlanningStatus(flts[i].status)?' planning':'')+'">'+flightJourney(flts[i],d)+'</div>';
-    o+='<button class="add-link" onclick="openScreen({type:\'addflight\',day:\''+d.date+'\'})">'+IC.plus+' Add flight</button>';
     o+='</div>';
   }
   o+='</div>';
@@ -1772,7 +1772,7 @@ function dayPlanItems(d){
   });});
   diningFor(date).forEach(function(dn){if(dn.status==='reserved'||dn.status==='planned')out.push({t:dn.time,x:dn.meal+' — '+dn.name,type:'dining',who:dn.who,dstatus:dn.status,soft:dn.status==='planned'});});
   showsFor(date).forEach(function(s){if((s.status||'attend')==='attend')out.push({t:s.time,x:s.name,type:'show',who:s.who});});
-  llFor(date).forEach(function(l){var bk=l.status==='booked';out.push({t:bk?(l.bookedTime||l.window):l.window,x:l.ride+' ('+tagShort(l.tier)+')',type:'ll',who:l.who,ref:l.id,soft:!bk});});
+  llFor(date).forEach(function(l){var bk=l.status==='booked';out.push({t:bk?(l.bookedTime||l.window):l.window,x:l.ride,type:'ll',who:l.who,ref:l.id,soft:!bk,tier:l.tier});});
   (d.itin||[]).forEach(function(it,idx){
     if(it.priv&&it.by&&it.by!==S.persona)return;   /* private stop — only its author sees it */
     out.push({t:it.t,x:it.x,type:'manual',who:it.who||'all',crit:it.crit,idx:idx,priv:!!it.priv});
@@ -1791,8 +1791,8 @@ function dayPlanItems(d){
 }
 function rebookText(rb){var a=rb.after?(LLS.filter(function(l){return l.id===rb.after;})[0]):null;return (a?'After '+a.ride+' → ':'')+rb.text;}
 function planChip(t){
-  var map={flight:['Flight','#1B2B4A'],dining:['Dining','#7C2D12'],show:['Show','#4C1D95'],ll:['Lightning Lane','#92400E'],resort:['Resort','#1C3A5E'],rebook:['Re-book','#B45309']};
-  var m=map[t];return m?'<span class="t-tag" style="background:'+m[1]+';color:#fff">'+m[0]+'</span>':'';
+  var map={flight:['Flight','#1B2B4A','#fff'],dining:['Dining','#7C2D12','#fff'],show:['Show','#4C1D95','#fff'],ll:['Lightning Lane','#FACC15','#7C2D12'],resort:['Resort','#1C3A5E','#fff'],rebook:['Re-book','#B45309','#fff']};
+  var m=map[t];return m?'<span class="t-tag'+(t==='ll'?' t-tag-ll':'')+'" style="background:'+m[1]+';color:'+m[2]+'">'+m[0]+'</span>':'';
 }
 function dayPlanCard(d,pk){
   var key='itin';
@@ -1802,12 +1802,18 @@ function dayPlanCard(d,pk){
   o+=cardHead(key,'var(--hd-plan)',pk.color,IC.route,'Daily Agenda',items.length+' stops');
   if(S.open[key]){
     o+='<div class="card-body">';
+    o+='<button class="add-link solo" onclick="openScreen({type:\'stopedit\',day:\''+d.date+'\'})">'+IC.plus+' Add stop</button>';
+    if(llFor(d.date).length){
+      o+='<div class="ll-legend"><div class="ll-legend-item"><span class="ll-tag sp">SP</span> Single Pass</div>'
+        +'<div class="ll-legend-item"><span class="ll-tag mp1">T1</span> Multi Pass T1</div>'
+        +'<div class="ll-legend-item"><span class="ll-tag mp2">T2</span> Multi Pass T2</div></div>';
+    }
     if(summary) o+='<div class="plan-summary"><strong>The plan:</strong> '+esc(summary)+'</div>';
     for(var j=0;j<items.length;j++){
       var e=items[j];
       o+='<div class="t-row'+(e.soft?' t-soft':'')+'">';
       o+='<div class="t-time">'+esc(e.t)+'</div>';
-      o+='<div style="flex:1"><div class="t-text">'+pillify(esc(e.x))+'</div>';
+      o+='<div style="flex:1"><div class="t-text">'+pillify(esc(e.x))+(e.type==='ll'&&e.tier?' <span class="ll-tag '+tagCls(e.tier)+'">'+tagShort(e.tier)+'</span>':'')+'</div>';
       o+=whoStack(e.who);
       var tags=[];
       var chip=planChip(e.type);if(chip)tags.push(chip);
@@ -1821,12 +1827,6 @@ function dayPlanCard(d,pk){
       if(e.type==='manual') o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;align-self:flex-start" onclick="openScreen({type:\'stopedit\',day:\''+d.date+'\',idx:'+e.idx+'})">'+IC.pencil+'</button>';
       o+='</div>';
     }
-    if(llFor(d.date).length){
-      o+='<div class="ll-legend"><div class="ll-legend-item"><span class="ll-tag sp">SP</span> Single Pass</div>'
-        +'<div class="ll-legend-item"><span class="ll-tag mp1">T1</span> Multi Pass T1</div>'
-        +'<div class="ll-legend-item"><span class="ll-tag mp2">T2</span> Multi Pass T2</div></div>';
-    }
-    o+='<button class="add-link" onclick="openScreen({type:\'stopedit\',day:\''+d.date+'\'})">'+IC.plus+' Add stop</button>';
     o+='</div>';
   }
   return o+'</div>';
@@ -1842,6 +1842,8 @@ function llCard(lls,d,pk){
   o+=cardHead(key,'var(--hd-ll)',pk.color,IC.bolt,'Lightning Lane Plan',booked+' booked · '+planning+' planning'+(roll.length?' · '+roll.length+' rolling':''),anyPlan);
   if(S.open[key]){
     o+='<div class="card-body">';
+    o+='<button class="add-link solo" onclick="openScreen({type:\'addll\',day:\''+d.date+'\'})">'+IC.plus+' Add ride</button>';
+    o+='<button class="add-link" onclick="openScreen({type:\'rbedit\',day:\''+d.date+'\'})">'+IC.plus+' Add rolling re-book</button>';
     o+='<div class="ll-legend"><div class="ll-legend-item"><span class="ll-tag sp">SP</span> Single Pass</div>'
       +'<div class="ll-legend-item"><span class="ll-tag mp1">T1</span> Multi Pass T1</div>'
       +'<div class="ll-legend-item"><span class="ll-tag mp2">T2</span> Multi Pass T2</div></div>';
@@ -1871,8 +1873,6 @@ function llCard(lls,d,pk){
         +'<button class="hdr-icon" style="width:26px;height:26px;background:#F3F1EC;color:#6B7280;flex-shrink:0" onclick="openScreen({type:\'rbedit\',edit:\''+rb.id+'\',day:\''+d.date+'\'})">'+IC.pencil+'</button></div>';
     }
     if(!roll.length) o+='<div class="body-empty" style="text-align:left;padding:2px 2px 4px">No rolling re-books yet.</div>';
-    o+='<button class="add-link" onclick="openScreen({type:\'rbedit\',day:\''+d.date+'\'})">'+IC.plus+' Add rolling re-book</button>';
-    o+='<button class="add-link" onclick="openScreen({type:\'addll\',day:\''+d.date+'\'})">'+IC.plus+' Add ride</button>';
     o+='</div>';
   }
   return o+'</div>';
@@ -1885,12 +1885,12 @@ function stratCard(d,pk){
   o+=cardHead(key,'var(--hd-strat)',pk.color,IC.book,'Strategy & Notes',sub);
   if(S.open[key]){
     o+='<div class="card-body">';
+    o+='<button class="add-link solo" onclick="openScreen({type:\'strategyedit\',day:\''+d.date+'\'})">'+IC.pencil+(d.strategy?' Edit strategy':' Add strategy')+'</button>';
     if(d.strategy){
       o+='<div class="strategy-body">'+renderStrat(d.strategy)+'</div>';
     }else{
       o+='<div class="body-empty">No strategy written for this day yet.</div>';
     }
-    o+='<button class="add-link" onclick="openScreen({type:\'strategyedit\',day:\''+d.date+'\'})">'+IC.pencil+(d.strategy?' Edit strategy':' Add strategy')+'</button>';
     o+='</div>';
   }
   return o+'</div>';
@@ -1903,9 +1903,9 @@ function diningCard(din,pk,date){
   o+=cardHead(key,'var(--hd-din)',pk.color,IC.fork,'Dining Plan',din.length?(din.length+' in plan'):'Nothing yet',anyPlan);
   if(S.open[key]){
     o+='<div class="card-body">';
+    o+='<button class="add-link solo" onclick="openScreen({type:\'adddining\',day:\''+date+'\'})">'+IC.plus+' Add dining</button>';
     if(!din.length) o+='<div class="body-empty">No dining'+(filterActive()?' for the current filter':'')+' on this day.</div>';
     for(var i=0;i<din.length;i++) o+=diningRow(din[i]);
-    o+='<button class="add-link" onclick="openScreen({type:\'adddining\',day:\''+date+'\'})">'+IC.plus+' Add dining</button>';
     o+='</div>';
   }
   return o+'</div>';
@@ -1930,12 +1930,12 @@ function showsCard(sh,pk,date){
   o+=cardHead(key,'var(--hd-show)',pk.color,IC.star,'Night Show Schedule',sh.length?(sh.length+' show'+(sh.length>1?'s':'')):'Nothing yet');
   if(S.open[key]){
     o+='<div class="card-body">';
+    o+='<button class="add-link solo" onclick="openScreen({type:\'showedit\',day:\''+date+'\'})">'+IC.plus+' Add show</button>';
     if(!sh.length) o+='<div class="body-empty">No shows'+(filterActive()?' for the current filter':'')+' on this day.</div>';
     for(var i=0;i<sh.length;i++){var x=sh[i];var xpk=x.park&&PARKS[x.park];
       o+='<div class="show-row"><div style="flex:1"><div class="show-name">'+esc(x.name)+'</div><div style="display:flex;align-items:center;gap:6px;margin-top:4px">'+statusBadge(x.status||'attend')+(xpk?'<span class="inpark-badge" style="background:'+xpk.color+'">'+esc(xpk.short)+'</span>':'')+whoChips(x.who)+'</div></div><div class="show-time">'+esc(x.time)+'</div>';
       o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;margin-left:8px" onclick="openScreen({type:\'showedit\',edit:\''+x.id+'\',day:\''+x.day+'\'})">'+IC.pencil+'</button></div>';
     }
-    o+='<button class="add-link" onclick="openScreen({type:\'showedit\',day:\''+date+'\'})">'+IC.plus+' Add show</button>';
     o+='</div>';
   }
   return o+'</div>';
