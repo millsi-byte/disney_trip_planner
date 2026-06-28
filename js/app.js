@@ -72,7 +72,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='245';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='246';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1800,10 +1800,7 @@ function stratCard(d,pk){
   if(S.open[key]){
     o+='<div class="card-body">';
     if(d.strategy){
-      var ps=d.strategy.split('\n\n');
-      o+='<div class="strategy-body">';
-      for(var p=0;p<ps.length;p++) o+='<p>'+esc(ps[p])+'</p>';
-      o+='</div>';
+      o+='<div class="strategy-body">'+renderStrat(d.strategy)+'</div>';
     }else{
       o+='<div class="body-empty">No strategy written for this day yet.</div>';
     }
@@ -5031,16 +5028,64 @@ function saveDay(){
 }
 function scrStrategyEdit(){
   var d=dayByDate(S.screen.day);if(!d)return scrGeneric();
-  var title=monOf(d.date)+' '+d.d+' · '+d.dl;
-  var body='<div class=”hub-section-label” style=”margin-left:0”>'+esc(title)+'</div>';
-  body+='<div class=”field”><label class=”field-label”>Strategy & notes <span class=”opt”>(first sentence shows as “The plan” on the Day Plan · blank lines start a new paragraph)</span></label>';
-  body+='<textarea class=”field-input” id=”strat-text” rows=”18” style=”resize:vertical” placeholder=”The plan for the day…”>'+esc(d.strategy||'')+'</textarea></div>';
-  return screenShell('Day Strategy',body,'Save','saveStrategy()');
+  var sub=esc(monOf(d.date)+' '+d.d+' · '+d.dl);
+  var fmtBtn=function(fn,lbl,title){return '<button onclick=”stratFmt(\''+fn+'\')” title=”'+title+'” style=”font-size:15px;min-width:38px;height:36px;border:1px solid var(--border);border-radius:8px;background:var(--cream);cursor:pointer;font-family:inherit;color:var(--ink)”>'+lbl+'</button>';};
+  var h='<div class=”screen”>';
+  h+='<div class=”screen-hd”><button class=”sh-btn” onclick=”closeScreen()”>Cancel</button><div class=”sh-title”>Day Strategy</div><button class=”sh-btn right save” onclick=”saveStrategy()”>Save</button></div>';
+  h+='<div style=”display:flex;align-items:center;gap:4px;padding:8px 12px;background:var(--card);border-bottom:1px solid var(--border);flex-shrink:0”>';
+  h+=fmtBtn('bold','<strong>B</strong>','Bold');
+  h+=fmtBtn('italic','<em>I</em>','Italic');
+  h+=fmtBtn('bullet','•','Bullet list');
+  h+='<div style=”width:1px;height:24px;background:var(--border);margin:0 4px”></div>';
+  h+='<span style=”font-size:12px;color:var(--muted)”>'+sub+'</span>';
+  h+='</div>';
+  h+='<textarea id=”strat-text” style=”flex:1;width:100%;border:none;outline:none;resize:none;font-size:16px;line-height:1.65;padding:14px 12px calc(14px + env(safe-area-inset-bottom));background:var(--cream);color:var(--ink);font-family:inherit;min-height:0;display:block” placeholder=”The plan for the day…&#10;&#10;Blank lines = new paragraph&#10;Start lines with -  for bullets&#10;Use **bold** or *italics*”>'+esc(d.strategy||'')+'</textarea>';
+  h+='</div>';
+  return h;
 }
 function saveStrategy(){
   var d=dayByDate(S.screen.day);if(!d){closeScreen();return;}
-  d.strategy=val('strat-text');
+  var ta=document.getElementById('strat-text');
+  d.strategy=ta?ta.value:val('strat-text');
   saveDays();toast('Strategy saved');closeScreen();
+}
+function stratFmt(type){
+  var ta=document.getElementById('strat-text');if(!ta)return;
+  var s=ta.selectionStart,e=ta.selectionEnd,v=ta.value,sel=v.substring(s,e);
+  var before=v.substring(0,s),after=v.substring(e);
+  if(type==='bold'){
+    if(sel){ta.value=before+'**'+sel+'**'+after;ta.selectionStart=s+2;ta.selectionEnd=e+2;}
+    else{ta.value=before+'****'+after;ta.selectionStart=s+2;ta.selectionEnd=s+2;}
+  }else if(type==='italic'){
+    if(sel){ta.value=before+'*'+sel+'*'+after;ta.selectionStart=s+1;ta.selectionEnd=e+1;}
+    else{ta.value=before+'**'+after;ta.selectionStart=s+1;ta.selectionEnd=s+1;}
+  }else if(type==='bullet'){
+    var lineStart=v.lastIndexOf('\n',s-1)+1;
+    var linePrefix=v.substring(lineStart,lineStart+2);
+    if(linePrefix==='- '){ta.value=v.substring(0,lineStart)+v.substring(lineStart+2);ta.selectionStart=ta.selectionEnd=Math.max(lineStart,s-2);}
+    else{ta.value=v.substring(0,lineStart)+'- '+v.substring(lineStart);ta.selectionStart=ta.selectionEnd=s+2;}
+  }
+  ta.focus();
+}
+function renderStrat(text){
+  if(!text)return '';
+  var paras=text.split('\n\n'),out='';
+  for(var i=0;i<paras.length;i++){
+    var lines=paras[i].split('\n');
+    var hasBullet=lines.some(function(l){return /^- /.test(l);});
+    var allBullet=hasBullet&&lines.every(function(l){return l===''||/^- /.test(l);});
+    if(allBullet){
+      out+='<ul style=”margin:0 0 10px;padding-left:20px”>';
+      for(var j=0;j<lines.length;j++){if(/^- /.test(lines[j]))out+='<li>'+fmtInlineStrat(esc(lines[j].slice(2)))+'</li>';}
+      out+='</ul>';
+    }else{
+      out+='<p>'+fmtInlineStrat(esc(paras[i]).replace(/\n/g,'<br>'))+'</p>';
+    }
+  }
+  return out;
+}
+function fmtInlineStrat(s){
+  return s.replace(/\*\*([^*\n]+)\*\*/g,'<strong>$1</strong>').replace(/\*([^*\n]+)\*/g,'<em>$1</em>');
 }
 
 /* ── Park reservation (first-class item: park + day + people) ─ */
