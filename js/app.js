@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='272';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='273';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -840,6 +840,19 @@ function afterWhoSave(cat,rec,oldWho){
   }
   notifyChange({trip:tid,cat:cat,label:notifLabel(cat,rec),item:rec,oldWho:oldWho,newWho:rec.who,actor:S.persona,optIn:S._notify});
 }
+/* offer to notify when a Need-to-Buy item is marked bought. Recipients = the
+   people it's for, plus the list owner, minus whoever ticked it. Always offers
+   the picker (the point is the opportunity); private items never notify. */
+function notifyBought(owner,it){
+  if(!it||it.priv)return;
+  var actor=S.persona,tid=S.tripId,who=pname(actor),label=it.n,recips=[];
+  ((it.who&&it.who.length)?it.who:[owner]).forEach(function(id){if(id!==actor&&person(id)&&recips.indexOf(id)<0)recips.push(id);});
+  if(owner!==actor&&person(owner)&&recips.indexOf(owner)<0)recips.push(owner);
+  if(!recips.length){bumpBell();return;}
+  var plan={forced:[],optional:[]};
+  recips.forEach(function(id){plan.optional.push({to:id,from:actor,trip:tid,cat:'Need to Buy',label:label,kind:'added',text:who+' bought “'+label+'”'});});
+  openNotifConfirm({actor:actor,trip:tid,cat:'Need to Buy',label:label,oldWho:it.who,newWho:it.who},plan);
+}
 
 /* queries — all scoped to the current trip */
 function flightsFor(date){return FLIGHTS.filter(function(f){return f.trip===S.tripId&&f.day===date;});}
@@ -1312,6 +1325,7 @@ function pkGotIt(owner,ci,ii){var it=PACKING[owner]&&PACKING[owner][ci]&&PACKING
   if(!(buyers.indexOf(S.persona)>=0||owner===S.persona||listOversight())){toast('Only the buyer, the owner or an admin can do this');return;}
   it.bought=!it.bought;saveLists();toast(it.bought?'Marked as bought':'Back on the list');
   if(S.screen&&S.screen.type==='needbuy')renderScreenHard();else render();
+  if(it.bought)notifyBought(owner,it);
 }
 function nbHideDone(){try{return localStorage.getItem('bt_nbHideDone')==='1';}catch(e){return false;}}
 function nbToggleHideDone(){try{localStorage.setItem('bt_nbHideDone',nbHideDone()?'0':'1');}catch(e){}renderScreenHard();}
