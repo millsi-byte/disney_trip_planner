@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='279';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='280';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -684,6 +684,7 @@ function notifForRecipient(id,o){
   /* someone the actor chose to also tell — a plain heads-up */
   var who=pname(o.actor),text,kind='change';
   if(o.bought){ return {to:id,from:o.actor,trip:o.trip,cat:o.cat,label:o.label,kind:'added',text:who+' bought “'+o.label+'”'}; }
+  if(o.rsvp){ return {to:id,from:o.actor,trip:o.trip,cat:o.cat,label:o.label,kind:(o.rsvp==='in'?'added':'removed'),text:who+(o.rsvp==='in'?' is in for ':' can’t make ')+'“'+o.label+'”'}; }
   if(o.deleted){ text=who+' deleted “'+o.label+'” ('+o.cat+')'; kind='removed'; }
   else{
     var oldA=whoArrFor(o.oldWho,o.trip),newA=whoArrFor(o.newWho,o.trip);
@@ -857,6 +858,44 @@ function notifyBought(owner,it){
   var ctx={actor:actor,trip:tid,cat:'Need to Buy',label:label,oldWho:it.who,newWho:it.who,bought:true};
   var plan={forced:[],optional:[]};
   recips.forEach(function(id){plan.optional.push({to:id,from:actor,trip:tid,cat:'Need to Buy',label:label,kind:'added',text:who+' bought “'+label+'”'});});
+  openNotifConfirm(ctx,plan);
+}
+/* ── RSVP: one-tap "Count me in / Can't make it" on planned items ──────
+   Declining removes you from the item's who; opting in adds you. Reuses the
+   notification picker so the booker (and others on it) get a heads-up. */
+function rsvpRecord(type,id){
+  if(type==='dining'){var d=DINING.filter(function(x){return x.id===id;})[0];return d?{rec:d,cat:'Dining',save:function(){save('dtp_dining',DINING);}}:null;}
+  if(type==='ll'){var l=LLS.filter(function(x){return x.id===id;})[0];return l?{rec:l,cat:'Lightning Lane',save:function(){save('dtp_lls',LLS);}}:null;}
+  if(type==='show'){var s=SHOWS.filter(function(x){return x.id===id;})[0];return s?{rec:s,cat:'Show',save:function(){save('dtp_shows',SHOWS);}}:null;}
+  return null;
+}
+function rsvpBtn(type,id,who){
+  if(!id)return '';
+  var inIt=(who==='all')||(Array.isArray(who)&&who.indexOf(S.persona)>=0);
+  return '<button class="rsvp-btn '+(inIt?'in':'out')+'" onclick="event.stopPropagation();rsvpToggle(\''+type+'\',\''+id+'\')">'+(inIt?'Can\'t make it':'Count me in')+'</button>';
+}
+function rsvpToggle(type,id){
+  var info=rsvpRecord(type,id);if(!info)return;
+  var rec=info.rec,me=S.persona,tid=rec.trip||S.tripId,oldWho=rec.who;
+  var arr=whoArrFor(rec.who,tid).slice(),present=arr.indexOf(me)>=0;
+  if(present)arr=arr.filter(function(x){return x!==me;});else arr.push(me);
+  rec.who=collapseWho(arr);
+  info.save();
+  notifyRsvp(rec,info.cat,!present);
+  toast(present?'Marked you as out':'Added you in');
+  render();
+}
+function notifyRsvp(rec,cat,joined){
+  var actor=S.persona,tid=rec.trip||S.tripId,who=pname(actor),label=notifLabel(cat,rec),recips=[];
+  var creator=creatorOf(rec,tid);
+  if(creator&&creator!==actor&&person(creator))recips.push(creator);
+  whoArrFor(rec.who,tid).forEach(function(id){if(id!==actor&&person(id)&&recips.indexOf(id)<0)recips.push(id);});
+  var hasOthers=tripMembersFor(tid).some(function(id){return id!==actor&&person(id);});
+  if(!hasOthers){bumpBell();return;}
+  var ctx={actor:actor,trip:tid,cat:cat,label:label,oldWho:rec.who,newWho:rec.who,rsvp:joined?'in':'out'};
+  var txt=who+(joined?' is in for ':' can\'t make ')+'“'+label+'”';
+  var plan={forced:[],optional:[]};
+  recips.forEach(function(id){plan.optional.push({to:id,from:actor,trip:tid,cat:cat,label:label,kind:joined?'added':'removed',text:txt});});
   openNotifConfirm(ctx,plan);
 }
 
@@ -1812,8 +1851,8 @@ function dayPlanItems(d){
     if(lg.depDate===date) out.push({t:lg.depTime,x:'Depart '+lg.depApt+' — '+lg.airline+(lg.num?' '+lg.num:''),type:'flight',who:f.who});
     if(lg.arrDate===date) out.push({t:lg.arrTime,x:'Arrive '+lg.arrApt+(lg.arrCity&&lg.arrCity!==lg.arrApt?' ('+lg.arrCity+')':''),type:'flight',who:f.who});
   });});
-  diningFor(date).forEach(function(dn){if(dn.status==='reserved'||dn.status==='planned')out.push({t:dn.time,x:dn.meal+' — '+dn.name,type:'dining',who:dn.who,dstatus:dn.status,soft:dn.status==='planned'});});
-  showsFor(date).forEach(function(s){if((s.status||'attend')==='attend')out.push({t:s.time,x:s.name,type:'show',who:s.who});});
+  diningFor(date).forEach(function(dn){if(dn.status==='reserved'||dn.status==='planned')out.push({t:dn.time,x:dn.meal+' — '+dn.name,type:'dining',who:dn.who,ref:dn.id,dstatus:dn.status,soft:dn.status==='planned'});});
+  showsFor(date).forEach(function(s){if((s.status||'attend')==='attend')out.push({t:s.time,x:s.name,type:'show',who:s.who,ref:s.id});});
   llFor(date).forEach(function(l){var bk=l.status==='booked';out.push({t:bk?(l.bookedTime||l.window):l.window,x:l.ride,type:'ll',who:l.who,ref:l.id,soft:!bk,tier:l.tier});});
   (d.itin||[]).forEach(function(it,idx){
     if(it.priv&&it.by&&it.by!==S.persona)return;   /* private stop — only its author sees it */
@@ -1865,6 +1904,7 @@ function dayPlanCard(d,pk){
       if(e.type==='ll'&&!e.soft) tags.push('<span class="t-tag" style="background:#DCFCE7;color:#15803D">Booked</span>');
       if(e.crit) tags.push('<span class="t-tag t-tag-crit">'+esc(e.crit)+'</span>');
       if(tags.length) o+='<div class="t-tags">'+tags.join('')+'</div>';
+      if(e.ref&&(e.type==='dining'||e.type==='ll'||e.type==='show')) o+=rsvpBtn(e.type,e.ref,e.who);
       o+='</div>';
       if(e.type==='manual') o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;align-self:flex-start" onclick="openScreen({type:\'stopedit\',day:\''+d.date+'\',idx:'+e.idx+'})">'+IC.pencil+'</button>';
       o+='</div>';
@@ -1945,6 +1985,7 @@ function llCard(lls,d,pk){
         o+='<button class="ri-btn" style="margin-left:auto" onclick="openScreen({type:\'llbook\',id:\''+l.id+'\'})">Mark as booked</button>';
         o+='</div>';
       }
+      o+='<div class="rsvp-row">'+rsvpBtn('ll',l.id,l.who)+'</div>';
       o+='</div>';
     }
     o+='<div class="roll-hd">Rolling Re-books</div>';
@@ -2000,6 +2041,7 @@ function diningRow(dn){
   o+=whoChips(dn.who);
   o+='</div>';
   if(dn.status==='reserved'&&dn.conf&&dn.conf!=='walk-up') o+='<div class="din-conf">Confirmation '+esc(dn.conf)+'</div>';
+  o+='<div class="rsvp-row">'+rsvpBtn('dining',dn.id,dn.who)+'</div>';
   o+='</div><div class="show-time">'+esc(dn.time)+'</div>';
   o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;margin-left:8px" onclick="openScreen({type:\'adddining\',edit:\''+dn.id+'\',day:\''+dn.day+'\'})">'+IC.pencil+'</button>';
   o+='</div>';
@@ -2014,7 +2056,7 @@ function showsCard(sh,pk,date){
     o+='<button class="add-link solo" onclick="openScreen({type:\'showedit\',day:\''+date+'\'})">'+IC.plus+' Add show</button>';
     if(!sh.length) o+='<div class="body-empty">No shows'+(filterActive()?' for the current filter':'')+' on this day.</div>';
     for(var i=0;i<sh.length;i++){var x=sh[i];var xpk=x.park&&PARKS[x.park];
-      o+='<div class="show-row"><div style="flex:1"><div class="show-name">'+esc(x.name)+'</div><div style="display:flex;align-items:center;gap:6px;margin-top:4px">'+statusBadge(x.status||'attend')+(xpk?'<span class="inpark-badge" style="background:'+xpk.color+'">'+esc(xpk.short)+'</span>':'')+whoChips(x.who)+'</div></div><div class="show-time">'+esc(x.time)+'</div>';
+      o+='<div class="show-row"><div style="flex:1"><div class="show-name">'+esc(x.name)+'</div><div style="display:flex;align-items:center;gap:6px;margin-top:4px">'+statusBadge(x.status||'attend')+(xpk?'<span class="inpark-badge" style="background:'+xpk.color+'">'+esc(xpk.short)+'</span>':'')+whoChips(x.who)+'</div><div class="rsvp-row">'+rsvpBtn('show',x.id,x.who)+'</div></div><div class="show-time">'+esc(x.time)+'</div>';
       o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;margin-left:8px" onclick="openScreen({type:\'showedit\',edit:\''+x.id+'\',day:\''+x.day+'\'})">'+IC.pencil+'</button></div>';
     }
     o+='</div>';

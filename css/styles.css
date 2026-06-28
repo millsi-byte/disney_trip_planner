@@ -389,6 +389,11 @@ button{font-family:inherit}
 .msg-time{font-size:11px;color:var(--muted);margin:3px 5px 0}
 .msg-rxns{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
 .msgwrap.me .msg-rxns{justify-content:flex-end}
+.rsvp-row{margin-top:6px}
+.rsvp-btn{font-size:12px;font-weight:700;border-radius:14px;padding:4px 12px;cursor:pointer;font-family:inherit;line-height:1.3}
+.rsvp-btn.out{background:#EEF2FF;border:1px solid #C7D2FE;color:#3730A3}
+.rsvp-btn.in{background:none;border:1px solid var(--border);color:var(--muted)}
+.t-tags+.rsvp-btn,.t-text~.rsvp-btn{margin-top:6px}
 .t-row.dp-flash{animation:dpflash 1.8s ease-out}
 @keyframes dpflash{0%,40%{background:#FEF3C7}100%{background:transparent}}
 .rxn-chip{display:inline-flex;align-items:center;gap:3px;font-size:13px;font-weight:600;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:2px 8px;cursor:pointer;color:var(--ink);font-family:inherit;line-height:1.4}
