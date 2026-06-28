@@ -244,21 +244,18 @@ button{font-family:inherit}
 .roll-arr{color:var(--gold);flex-shrink:0;font-weight:700;margin-top:1px}
 
 /* ── Dining ──────────────────────────────────────────────── */
-.din-row{display:flex;gap:10px;align-items:flex-start;padding:11px 14px;border-bottom:1px solid var(--border)}
-.din-row:last-child{border-bottom:none}
+.item-row{display:flex;gap:10px;align-items:flex-start;padding:11px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.item-row:last-child{border-bottom:none}
 .meal{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;background:#EEF2FF;color:var(--ink);padding:4px 8px;border-radius:6px;width:74px;text-align:center;flex-shrink:0;margin-top:2px}
-.din-name{font-size:18px;font-weight:600;color:var(--ink)}
-.din-time{font-size:15px;color:var(--muted);margin-top:1px}
-.din-conf{font-size:13px;color:var(--gold);font-weight:700;margin-top:3px}
+.item-name{font-size:18px;font-weight:600;color:var(--ink)}
+.item-time{font-size:16px;color:var(--muted);white-space:nowrap;margin-top:1px}
+.item-conf{font-size:13px;color:var(--gold);font-weight:700;margin-top:3px}
 .meal-tag{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;background:#EEF2FF;color:var(--ink);padding:3px 7px;border-radius:6px;white-space:nowrap;flex-shrink:0}
 .nonpark-badge{font-size:11px;font-weight:700;color:#fff;background:#8C9BAA;padding:3px 7px;border-radius:6px;white-space:nowrap;flex-shrink:0}
 .inpark-badge{font-size:11px;font-weight:700;color:#fff;padding:3px 7px;border-radius:6px;white-space:nowrap;flex-shrink:0}
 
 /* ── Shows ───────────────────────────────────────────────── */
-.show-row{display:flex;align-items:flex-start;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--border);gap:10px;flex-wrap:wrap}
-.show-row:last-child{border-bottom:none}
-.show-name{font-size:18px;font-weight:600}
-.show-time{font-size:16px;color:var(--muted);white-space:nowrap}
+/* dining/show rows now use the canonical .item-row / .item-name / .item-time */
 
 /* ── Strategy ────────────────────────────────────────────── */
 .strategy-body{padding:14px;font-size:17px;line-height:1.75;color:#374151}
