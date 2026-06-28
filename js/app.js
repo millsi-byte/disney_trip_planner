@@ -72,7 +72,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='255';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='256';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2473,6 +2473,7 @@ function renderScreen(){
   if(t==='section')   return scrSection();
   if(t==='notifs')    return scrNotifs();
   if(t==='backups')   return scrBackups();
+  if(t==='backupview')return scrBackupView();
   return scrGeneric();
 }
 function scrNotifs(){
@@ -3215,12 +3216,63 @@ function scrBackups(){
       body+='<div class="ov-card" style="margin:0 0 8px"><div style="padding:12px 14px">'
         +'<div style="font-weight:700">'+esc(backupWhen(b))+'</div>'
         +'<div style="font-size:13px;color:var(--muted);margin-top:2px">'+esc(backupSummary(b))+' · Build '+esc(b.build||'?')+'</div>'
-        +'<button class="ri-btn" style="margin-top:8px" onclick="restoreBackup('+ri+')">Restore this snapshot</button>'
-        +'</div></div>';
+        +'<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'
+        +'<button class="btn-secondary" style="flex:1;min-width:130px" onclick="openScreen({type:\'backupview\',idx:'+ri+'})">View strategies</button>'
+        +'<button class="ri-btn" style="flex:1;min-width:130px" onclick="restoreBackup('+ri+')">Restore snapshot</button>'
+        +'</div></div></div>';
     }
   }
   body+='<button class="btn-secondary" onclick="snapshotNow()">Snapshot now</button>';
   return screenShell('Backups',body,null,null,'Close');
+}
+/* Non-destructive recovery: list every day strategy stored in one snapshot so a
+   single lost day can be copied back without overwriting current data. */
+function backupDays(b){
+  var out=[];
+  try{var ks=(b&&b.keys)||{};Object.keys(ks).forEach(function(k){
+    if(k==='dtp_days'||k.indexOf('dtp_days_')===0){
+      var a;try{a=JSON.parse(ks[k]||'[]');}catch(e){a=[];}
+      if(Array.isArray(a))for(var i=0;i<a.length;i++){var d=a[i];if(d&&d.strategy)out.push(d);}
+    }
+  });}catch(e){}
+  out.sort(function(x,y){return (x.date||'')<(y.date||'')?-1:(x.date||'')>(y.date||'')?1:0;});
+  return out;
+}
+function scrBackupView(){
+  if(!isAdmin()&&!(window.CLOUD&&window.CLOUD.isSuper))return screenShell('Snapshot','<div class="body-empty" style="padding:24px 12px">This tool is admin-only.</div>',null,null,'Close');
+  var list=loadBackups(),b=list[S.screen.idx];
+  if(!b)return screenShell('Snapshot','<div class="body-empty" style="padding:24px 12px">Snapshot not found.</div>',null,null,'Close');
+  var days=backupDays(b);
+  var body='<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:14px;color:var(--ink)">'
+    +'Day strategies saved in the snapshot from <strong>'+esc(backupWhen(b))+'</strong>. Copy any day\'s text and paste it back into that day\'s Strategy &amp; Notes editor — nothing here changes your current data.</div>';
+  if(!days.length){
+    body+='<div class="body-empty" style="text-align:left;padding:2px">No day strategies in this snapshot.</div>';
+  }else{
+    for(var i=0;i<days.length;i++){var d=days[i];
+      var hd=(d.dl?d.dl+' ':'')+monOf(d.date)+' '+(d.d||d.date.slice(8))+', '+d.date.slice(0,4);
+      body+='<div class="ov-card" style="margin:0 0 8px"><div style="padding:12px 14px">'
+        +'<div style="font-weight:700;margin-bottom:6px">'+esc(hd)+'</div>'
+        +'<textarea id="bv-'+i+'" readonly style="display:block;width:100%;box-sizing:border-box;height:120px;border:1px solid var(--border);border-radius:8px;padding:10px;font-size:15px;line-height:1.6;font-family:inherit;background:var(--cream);color:var(--ink)">'+esc(d.strategy)+'</textarea>'
+        +'<button class="btn-secondary" style="margin-top:8px" onclick="copyBackupStrat('+i+')">Copy this text</button>'
+        +'</div></div>';
+    }
+  }
+  return screenShell('Snapshot strategies',body,null,null,'Back');
+}
+function copyBackupStrat(i){
+  var ta=document.getElementById('bv-'+i);if(!ta)return;
+  var t=ta.value;
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(t).then(function(){toast('Strategy copied — paste it into the day');},function(){fallbackSelect(ta);});
+      return;
+    }
+  }catch(e){}
+  fallbackSelect(ta);
+}
+function fallbackSelect(ta){
+  try{ta.focus();ta.setSelectionRange(0,ta.value.length);var ok=document.execCommand&&document.execCommand('copy');toast(ok?'Strategy copied — paste it into the day':'Select the text above and copy it');}
+  catch(e){toast('Select the text above and copy it');}
 }
 function importCsvDownload(){downloadCSV('trip-template.csv',importCsvTemplate());}
 /* small RFC-ish CSV parser (handles quotes, commas, CRLF) → array of rows */
