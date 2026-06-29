@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='303';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='304';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -449,7 +449,7 @@ function tripMemberIds(){
 }
 function whoStack(who){
   who=collapseWho(who);
-  if(who==="all"||!who) return '<span class="who-all">Everyone</span>';
+  if(who==="all"||!who) return '<div class="who-named-row"><span class="who-named who-all">'+IC.users+'Everyone</span></div>';
   if(!who.length) return '';
   var set=tripMemberIds();
   var ppl=[];
