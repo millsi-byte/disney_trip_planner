@@ -183,7 +183,8 @@ button{font-family:inherit}
 
 /* ── Flight ──────────────────────────────────────────────── */
 .flt-jbox{border:1px solid var(--border);border-radius:10px;margin:14px 12px;overflow:hidden}
-.flt-sep{height:1.5px;background:#9CA3AF;border-radius:2px;margin:4px 30px}
+.flt-sep{position:relative;height:2px;background:var(--hd-flight);border-radius:2px;margin:16px 30px;display:flex;align-items:center;justify-content:center}
+.flt-sep-pill{display:flex;align-items:center;justify-content:center;background:var(--hd-flight);color:#fff;width:24px;height:24px;border-radius:50%;box-shadow:0 0 0 4px var(--card)}
 .flt-jbox.planning{border-style:dashed;border-color:#C9C2B4}
 .flt-jhd{padding:10px 14px 0;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .flt-jlabel{font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
