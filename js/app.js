@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='313';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='314';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2039,7 +2039,10 @@ function dayPlanCard(d,pk){
       o+='<div style="flex:1;min-width:0"><div class="t-text">'+nameHtml+'</div>';
       /* pills: category + the SAME shared pills the cards use (status / meal / park) */
       var tags=[];
-      var chip=planChip(e.type);if(chip)tags.push(chip);
+      /* dining shows the meal (Lunch/Dinner/Snack…) in the dining colour
+         instead of a generic "Dining" pill */
+      if(e.type==='dining'&&e.meal) tags.push('<span class="t-tag" style="background:#7C2D12;color:#fff">'+esc(e.meal)+'</span>');
+      else{ var chip=planChip(e.type);if(chip)tags.push(chip); }
       if((e.type==='dining'||e.type==='show'||e.type==='parade'||e.type==='ll')&&e.status) tags.push(statusBadge(e.status));
       if(e.type==='dining'){
         tags.push(e.park&&PARKS[e.park]?'<span class="inpark-badge" style="background:'+PARKS[e.park].color+'">'+esc(PARKS[e.park].short)+'</span>':(e.loc==='in'?'<span class="inpark-badge" style="background:#8C9BAA">In-Park</span>':'<span class="nonpark-badge">Non-Park</span>'));
