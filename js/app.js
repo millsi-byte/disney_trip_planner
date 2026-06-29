@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='311';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='312';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2015,7 +2015,12 @@ function dayPlanCard(d,pk){
   o+=cardHead(key,'var(--hd-plan)',pk.color,IC.route,'Daily Agenda',items.length+' stops');
   if(S.open[key]){
     o+='<div class="card-body">';
-    o+='<button class="add-link solo" onclick="openScreen({type:\'stopedit\',day:\''+d.date+'\'})">'+IC.plus+' Add plans</button>';
+    o+='<div class="dp-addrow">';
+    o+='<button class="dp-addchip" onclick="openScreen({type:\'stopedit\',day:\''+d.date+'\'})">'+IC.plus+' Add plans</button>';
+    o+='<button class="dp-addchip" onclick="openScreen({type:\'adddining\',day:\''+d.date+'\'})">'+IC.plus+' Add Dining</button>';
+    o+='<button class="dp-addchip" onclick="openScreen({type:\'addll\',day:\''+d.date+'\'})">'+IC.plus+' Add Lightning Lane</button>';
+    o+='<button class="dp-addchip" onclick="openScreen({type:\'visedit\',day:\''+d.date+'\'})">'+IC.plus+' Add Park Visit</button>';
+    o+='</div>';
     if(llFor(d.date).length){
       o+='<div class="ll-legend"><div class="ll-legend-item"><span class="ll-tag sp">SP</span> Single Pass</div>'
         +'<div class="ll-legend-item"><span class="ll-tag mp1">T1</span> Multi Pass T1</div>'
