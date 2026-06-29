@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='318';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='319';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1990,7 +1990,7 @@ function dayPlanItems(d){
   diningFor(date).forEach(function(dn){if(dn.status==='reserved'||dn.status==='planned')out.push({t:dn.time,x:dn.meal+' — '+dn.name,name:dn.name,meal:dn.meal,park:(dn.loc==='in'?dn.park:null),loc:dn.loc,type:'dining',who:dn.who,ref:dn.id,status:dn.status,dstatus:dn.status,soft:dn.status==='planned'});});
   showsFor(date).forEach(function(s){if((s.status||'attend')==='attend')out.push({t:s.time,x:s.name,name:s.name,park:s.park,type:'show',who:s.who,ref:s.id,status:s.status||'attend'});});
   paradesFor(date).forEach(function(p){if((p.status||'attend')==='attend')out.push({t:p.time,x:p.name,name:p.name,park:p.park,type:'parade',who:p.who,ref:p.id,status:p.status||'attend'});});
-  llFor(date).forEach(function(l){var bk=l.status==='booked';out.push({t:llSlotTime(l),x:l.ride,name:l.ride,type:'ll',who:l.who,ref:l.id,soft:!bk,tier:l.tier,status:l.status});});
+  llFor(date).forEach(function(l){var bk=l.status==='booked';out.push({t:llSlotTime(l),x:l.ride,name:l.ride,type:'ll',who:l.who,ref:l.id,soft:!bk,tier:l.tier,status:l.status,win:llWindowText(l)});});
   (d.itin||[]).forEach(function(it,idx){
     if(it.priv&&it.by&&it.by!==S.persona)return;   /* private stop — only its author sees it */
     out.push({t:it.t,x:it.x,type:'manual',who:it.who||'all',crit:it.crit,idx:idx,priv:!!it.priv});
@@ -2002,12 +2002,15 @@ function dayPlanItems(d){
   out.forEach(function(e){
     woven.push(e);
     if(e.type==='ll'&&e.ref){
-      rebooksFor(date).forEach(function(rb){if(rb.after===e.ref&&visible(rb.who))woven.push({t:rb.time||e.t,x:rebookText(rb),type:'rebook',who:rb.who,soft:e.soft});});
+      rebooksFor(date).forEach(function(rb){if(rb.after===e.ref&&visible(rb.who))woven.push({t:e.t,x:rebookText(rb),type:'rebook',who:rb.who,soft:e.soft});});
     }
   });
   return woven;
 }
-function rebookText(rb){var a=rb.after?(LLS.filter(function(l){return l.id===rb.after;})[0]):null;return (a?'After '+a.ride+' → ':'')+rb.text+(rb.time?' · '+((rb.anchor==='before')?'Before ':'After ')+rb.time:'');}
+function rebookText(rb){var a=rb.after?(LLS.filter(function(l){return l.id===rb.after;})[0]):null;return (a?'After '+a.ride+' → ':'')+rb.text;}
+/* the optional After/Before target time — shown on the LL card only, NOT on the
+   Day Agenda (where the re-book always sits right after the ride it follows) */
+function rebookTimeLabel(rb){return rb.time?((rb.anchor==='before')?'Before ':'After ')+rb.time:'';}
 function planChip(t){
   var map={flight:['Flight','#1B2B4A','#fff'],dining:['Dining','#7C2D12','#fff'],show:['Show','#4C1D95','#fff'],parade:['Parade','#A21CAF','#fff'],ll:['Lightning Lane','#FACC15','#7C2D12'],resort:['Resort','#1C3A5E','#fff'],rebook:['Re-book','#7C3AED','#fff']};
   var m=map[t];return m?'<span class="t-tag'+(t==='ll'?' t-tag-ll':'')+'" style="background:'+m[1]+';color:'+m[2]+'">'+m[0]+'</span>':'';
@@ -2042,6 +2045,7 @@ function dayPlanCard(d,pk){
       var nameHtml=(e.type==='ll')?(esc(e.name||e.x)+' <span class="ll-tag '+tagCls(e.tier)+'">'+tagShort(e.tier)+'</span>')
                    :(e.type==='dining'||e.type==='show'||e.type==='parade')?esc(e.name||e.x):pillify(esc(e.x));
       o+='<div style="flex:1;min-width:0"><div class="t-text">'+nameHtml+'</div>';
+      if(e.type==='ll'&&e.win) o+='<div class="t-sub">Booking window: '+esc(e.win)+'</div>';
       /* pills: category + the SAME shared pills the cards use (status / meal / park) */
       var tags=[];
       /* dining shows the meal (Lunch/Dinner/Snack…) in the dining colour
@@ -2134,7 +2138,7 @@ function llCard(lls,d,pk){
         o+='<div class="ll-win booked">'+IC.check+' Booked '+esc(l.bookedTime)+'</div>';
         if(l.conf) o+='<div class="ll-conf">Confirmation '+esc(l.conf)+'</div>';
       }else{
-        var _wt=llWindowText(l);if(_wt)o+='<div class="ll-win">Planned window: '+esc(_wt)+'</div>';
+        var _wt=llWindowText(l);if(_wt)o+='<div class="ll-win">Booking window: '+esc(_wt)+'</div>';
       }
       if(l.rideTime) o+='<div class="ll-win">Ride at '+esc(l.rideTime)+'</div>';
       o+=whoStack(l.who);
@@ -2148,7 +2152,7 @@ function llCard(lls,d,pk){
     }
     o+='<div class="roll-hd">Rolling Re-books</div>';
     for(var r=0;r<roll.length;r++){var rb=roll[r];
-      o+='<div class="roll-row"><span class="roll-arr">'+IC.arr+'</span><span style="flex:1">'+esc(rebookText(rb))+' '+whoStack(rb.who)+'</span>'
+      o+='<div class="roll-row"><span class="roll-arr">'+IC.arr+'</span><span style="flex:1">'+esc(rebookText(rb))+(rebookTimeLabel(rb)?' <span style="color:var(--muted)">· '+esc(rebookTimeLabel(rb))+'</span>':'')+' '+whoStack(rb.who)+'</span>'
         +'<button class="hdr-icon" style="width:26px;height:26px;background:#F3F1EC;color:#6B7280;flex-shrink:0" onclick="openScreen({type:\'rbedit\',edit:\''+rb.id+'\',day:\''+d.date+'\'})">'+IC.pencil+'</button></div>';
     }
     if(!roll.length) o+='<div class="body-empty" style="text-align:left;padding:2px 2px 4px">No rolling re-books yet.</div>';
@@ -3433,7 +3437,7 @@ function scrLLBook(){
   var body='';
   body+='<div class="field-group"><div class="field-group-title">Ride</div>';
   body+='<div style="display:flex;align-items:center;gap:10px"><div class="ll-ride" style="font-size:20px">'+esc(l.ride)+'</div><span class="ll-tag '+tagCls(l.tier)+'">'+tagLbl(l.tier)+'</span></div>';
-  body+='<div class="ll-win" style="margin-top:8px">Planned window: '+esc(llWindowText(l))+(l.rideTime?' · Ride at '+esc(l.rideTime):'')+'</div></div>';
+  body+='<div class="ll-win" style="margin-top:8px">Booking window: '+esc(llWindowText(l))+(l.rideTime?' · Ride at '+esc(l.rideTime):'')+'</div></div>';
   body+='<div class="field"><label class="field-label">Status</label><div class="seg"><button class="seg-btn" onclick="toast(\'Already planning\')">Planning</button><button class="seg-btn on book">Booked</button></div></div>';
   body+='<div class="field"><label class="field-label">Confirmed return time</label>'+timeField('llb-time','')+'</div>';
   body+='<div class="field"><label class="field-label">Confirmation #</label><input class="field-input" id="llb-conf" placeholder="MP-00000"></div>';
@@ -3491,7 +3495,7 @@ function scrAddLL(){
   body+='<div class="field"><label class="field-label">Status <span class="opt">(only Booked shows on the Day Plan)</span></label><div class="seg">';
   body+='<button class="seg-btn'+(stt==='planning'?' on':'')+'" onclick="pickStatus(\'ll\',\'planning\')">Planned</button>';
   body+='<button class="seg-btn'+(stt==='booked'?' on book':'')+'" onclick="pickStatus(\'ll\',\'booked\')">Booked</button></div></div>';
-  body+='<div class="field"><label class="field-label">Planned window <span class="opt">(reservation hour)</span></label>';
+  body+='<div class="field"><label class="field-label">Booking Window <span class="opt">(reservation hour)</span></label>';
   body+='<div class="field-row"><div class="field" style="margin:0"><label class="field-label" style="font-size:11px">From</label>'+timeField('ll-wstart',win.start)+'</div>';
   body+='<div class="field" style="margin:0"><label class="field-label" style="font-size:11px">To</label>'+timeField('ll-wend',win.end)+'</div></div></div>';
   body+='<div class="field"><label class="field-label">Planned time to ride <span class="opt">(slots the ride on the Day Plan)</span></label>'+timeField('ll-rtime',edit&&edit.rideTime?edit.rideTime:'')+'</div>';
