@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='324';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='325';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2416,8 +2416,10 @@ function renderChat(){
       h+='<div class="msg-edit-btns"><button class="rxn-act" onclick="chatEditCancel()">Cancel</button><button class="rxn-act save" onclick="chatEditSave(\''+m.id+'\')">Save</button></div></div>';
     }else{
       h+='<div class="msg-bubble" ontouchstart="chatPressStart(event,\''+m.id+'\')" ontouchend="chatPressEnd()" ontouchmove="chatPressEnd()" onclick="chatTapMsg(\''+m.id+'\')">';
-      if(m.ref) h+='<div class="msg-ref" onclick="event.stopPropagation();chatJumpRef(\''+m.id+'\')">'+refIcon(m.ref.type)+esc(m.ref.label)+'</div>';
-      h+=(m.text?esc(m.text):'')+'</div>';
+      if(m.ref){var _rc=m.wishId?"openScreen({type:'wishlist'})":("chatJumpRef('"+m.id+"')");h+='<div class="msg-ref" onclick="event.stopPropagation();'+_rc+'">'+refIcon(m.ref.type)+esc(m.ref.label)+'</div>';}
+      h+=(m.text?esc(m.text):'');
+      if(m.wishId){var _nw=wishById(m.wishId);if(_nw&&_nw.note)h+='<div class="msg-wishnote">'+esc(_nw.note)+'</div>';}
+      h+='</div>';
       h+='<div class="msg-time">'+esc(chatTime(m))+(m.edited?' · edited':'')+'</div>';
       if(m.wishId){var _vw=wishById(m.wishId);if(_vw)h+='<div class="wl-voterow"><span class="msg-votelbl">Vote</span>'+wishVoteBtns(_vw)+'</div>';}
     }

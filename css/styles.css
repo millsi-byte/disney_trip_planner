@@ -171,6 +171,7 @@ button{font-family:inherit}
 .wl-vote.on{background:#DCFCE7;border-color:#15803D;color:#15803D}
 .wl-vote.down.on{background:#FEE2E2;border-color:#B91C1C;color:#B91C1C}
 .msg-votelbl{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;align-self:center;margin-right:2px}
+.msg-wishnote{font-size:13px;opacity:.85;font-style:italic;margin-top:4px}
 .who-named-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px}
 .who-named{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--ink);background:transparent;border:1px solid var(--border);border-radius:16px;padding:3px 10px 3px 4px}
 .who-named .wdot{width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700;flex-shrink:0}
