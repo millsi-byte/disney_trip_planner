@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='310';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='311';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2205,6 +2205,7 @@ function showsCard(sh,pk,date){
 }
 function paradesCard(par,pk,date){
   var key='parades';
+  if(!(key in S.open)) S.open[key]=true;
   var o='<div class="card">';
   o+=cardHead(key,'var(--hd-parade)',pk.color,IC.sparkles,'Parade Schedule',par.length?(par.length+' parade'+(par.length>1?'s':'')):'Nothing yet');
   if(S.open[key]){
