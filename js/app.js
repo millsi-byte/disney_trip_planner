@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='312';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='313';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2007,6 +2007,8 @@ function planChip(t){
   var map={flight:['Flight','#1B2B4A','#fff'],dining:['Dining','#7C2D12','#fff'],show:['Show','#4C1D95','#fff'],parade:['Parade','#A21CAF','#fff'],ll:['Lightning Lane','#FACC15','#7C2D12'],resort:['Resort','#1C3A5E','#fff'],rebook:['Re-book','#7C3AED','#fff']};
   var m=map[t];return m?'<span class="t-tag'+(t==='ll'?' t-tag-ll':'')+'" style="background:'+m[1]+';color:'+m[2]+'">'+m[0]+'</span>':'';
 }
+/* Daily Agenda row → its edit screen, so booked items are editable inline */
+var DPLAN_EDIT={dining:'adddining',ll:'addll',show:'showedit',parade:'paradeedit'};
 function dayPlanCard(d,pk){
   var key='itin';
   var summary=d.strategy?firstSentence(d.strategy):null;
@@ -2051,6 +2053,7 @@ function dayPlanCard(d,pk){
       o+=whoStack(e.who);
       o+='</div>';
       if(e.type==='manual') o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;align-self:flex-start" onclick="openScreen({type:\'stopedit\',day:\''+d.date+'\',idx:'+e.idx+'})">'+IC.pencil+'</button>';
+      else if(e.ref&&DPLAN_EDIT[e.type]) o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;align-self:flex-start" onclick="openScreen({type:\''+DPLAN_EDIT[e.type]+'\',edit:\''+e.ref+'\',day:\''+d.date+'\'})">'+IC.pencil+'</button>';
       if(e.ref&&(e.type==='dining'||e.type==='ll'||e.type==='show'||e.type==='parade')) o+=rsvpRow(e.type,e.ref);
       else if(e.type==='manual'&&!e.priv) o+=rsvpRow('manual',d.date+'|'+e.idx);
       o+='</div>';
