@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='327';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='328';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1152,7 +1152,7 @@ function openScreen(def){
   if(SCR_EDIT[def.type]) S._scrBack=(S.screen&&!SCR_EDIT[S.screen.type])?S.screen:null;
   else S._scrBack=null;
   S.screen=def;S._who=null;S._formStatus={};S._delpk=null;S._deltd=null;S.tdForm=null;S.tdScope='mine';S._tdPriv=false;S.listWho=null;S.pkStoreFilter=null;S.ttForm=null;S._ttPriv=false;S.ptForm=null;S._ptStore='bag';S._ptPriv=false;S.wlForm=null;S._wlPriv=false;S._delwl=null;
-  S.pkForm=null;S.pkScope='mine';S._delsect=null;S._pksect=null;ADD.psect=null;
+  S.pkForm=null;S._packFor=null;S.pkScope='mine';S._delsect=null;S._pksect=null;ADD.psect=null;
   S._formLoc=null;S._formTier=null;S._formInit=null;S._formColor=null;
   S._notify=notifDefault();
   if(def.type==='newtrip'){S._notify=true;S._formInit=null;S._ntStep=null;S._ntPartyId=null;S._ntWhoMode=null;S._ntProvParty=null;S._ntTripId=null;S._ntFirstRun=false;S._ntPeople=null;S._ntInvite=null;S._ntPeopleCount=1;S._ntExpandedParty=null;S._ntTripName=null;S._ntGname=null;S._ntStart=null;S._ntEnd=null;S._ntCalYear=null;S._ntCalMonth=null;}
@@ -1468,8 +1468,9 @@ function pkSectDel(pid,c){if(!pkCanList(pid))return;var k='ds_'+pid+'_'+c;if(S._
 function pkSectDelCancel(){S._delsect=null;refreshLists();}
 /* per-item editor (storage, need-to-buy, buyer assignment) */
 function pkFormItem(){var f=S.pkForm;return f?(PACKING[f.pid]&&PACKING[f.pid][f.c]&&PACKING[f.pid][f.c].items[f.i]):null;}
-function pkItemEdit(pid,c,i){var it=PACKING[pid][c].items[i];if(!pkCanItem(pid,it)){toast('Only the owner or an admin can edit this');return;}S.pkForm={pid:pid,c:c,i:i};S._who=new Set(it.who||[]);S._notify=notifDefault();refreshLists();}
-function pkItemCancel(){S.pkForm=null;S._who=null;refreshLists();}
+function pkItemEdit(pid,c,i){var it=PACKING[pid][c].items[i];if(!pkCanItem(pid,it)){toast('Only the owner or an admin can edit this');return;}S.pkForm={pid:pid,c:c,i:i};S._who=new Set(it.who||[]);S._packFor=pid;S._notify=notifDefault();refreshLists();}
+function pkItemCancel(){S.pkForm=null;S._who=null;S._packFor=null;refreshLists();}
+function pkSetPackFor(pid){S._packFor=pid;renderScreen_inplace2();}
 /* storage location of a packing item: 'bag' (suitcase) | 'person' | 'locker'.
    Backward compatible: legacy items only had l (true=locker). */
 function pkStore(it){return (it&&it.store==='person')?'person':((it&&it.l)?'locker':'bag');}
@@ -1481,7 +1482,30 @@ function pkSetStore(v){var it=pkFormItem();if(!it)return;
 function pkFormStore(v){var it=pkFormItem();if(!it)return;it.l=v;if(v)it.qty=0;else if(!it.qty)it.qty=1;saveLists();renderScreen_inplace2();}
 function pkFormNeed(v){var it=pkFormItem();if(!it)return;it.needBuy=v;saveLists();renderScreen_inplace2();}
 function pkFormPriv(v){var it=pkFormItem();if(!it)return;it.priv=v;saveLists();renderScreen_inplace2();}
-function pkItemSave(){var it=pkFormItem();if(!it){pkItemCancel();return;}var nm=val('pki-name');if(nm)it.n=nm;var oldWho=it.who||[];it.who=S._who?tripMembers().filter(function(id){return S._who.has(id);}):[];saveLists();afterWhoSave('Packing',it,oldWho);S.pkForm=null;S._who=null;toast('Saved');refreshLists();}
+function pkItemSave(){
+  var f=S.pkForm,it=pkFormItem();if(!it){pkItemCancel();return;}
+  var nm=val('pki-name');if(nm)it.n=nm;
+  var oldWho=it.who||[];
+  it.who=S._who?tripMembers().filter(function(id){return S._who.has(id);}):[];
+  var buyersChanged=(oldWho.slice().sort().join()!==it.who.slice().sort().join());
+  /* relocate to another person's packing list if "Pack for" changed (owner/admin only) */
+  var target=(listOversight()&&S._packFor)?S._packFor:f.pid,moved=false;
+  if(target&&target!==f.pid){
+    PACKING[target]=PACKING[target]||[];
+    var catName=PACKING[f.pid][f.c].cat;
+    PACKING[f.pid][f.c].items.splice(f.i,1);            /* pull from the old list */
+    var tcats=PACKING[target],tc=-1;
+    for(var ci=0;ci<tcats.length;ci++){if(tcats[ci].cat===catName){tc=ci;break;}}
+    if(tc<0){tcats.push({cat:catName,items:[]});tc=tcats.length-1;}
+    if(target!==S.persona)it.by=S.persona;else delete it.by;   /* "Added by you" on their list */
+    tcats[tc].items.push(it);
+    moved=true;
+  }
+  saveLists();
+  if(buyersChanged)afterWhoSave('Packing',it,oldWho);
+  else if(moved)notifyPackAssign(it,target);
+  S.pkForm=null;S._who=null;S._packFor=null;toast('Saved');refreshLists();
+}
 /* trip-wide Need to Buy (shared) */
 /* shared shopping entries — private items only surface to their own owner */
 function needBuyEntries(){
@@ -2715,6 +2739,7 @@ function pkItemEditor(pid,c,j){
   var it=PACKING[pid][c].items[j];
   var o='<div class="inline-editor pk-acc">';
   o+='<div class="field" style="margin:0"><label class="field-label">Item</label><input class="field-input" id="pki-name" value="'+esc(it.n)+'"></div>';
+  o+=pkPackForField(pid);
   var est=pkStore(it);
   o+='<div class="field" style="margin:0"><label class="field-label">Storage</label><div class="seg seg3">'
     +'<button class="seg-btn'+(est==='bag'?' on':'')+'" onclick="pkSetStore(\'bag\')">Suitcase</button>'
@@ -2736,6 +2761,26 @@ function pkBuyerField(){
     h+='<div class="who-opt'+(on?' on':'')+'" onclick="toggleWho(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+'<span class="wcheck">'+IC.checkw.replace('currentColor','#15803D')+'</span></div>';
   }
   return h+'</div></div>';
+}
+/* "Pack for" — single-select; sets whose packing list this item lives on.
+   Only the trip owner / admin can move an item onto someone else's list. */
+function pkPackForField(curPid){
+  if(!listOversight())return '';
+  var mem=tripMembers();if(mem.length<2)return '';
+  var cur=S._packFor||curPid||S.persona;
+  var h='<div class="field" style="margin:0"><label class="field-label">Pack for <span class="opt">(whose list it\'s on)</span></label><div class="whoselect">';
+  for(var i=0;i<mem.length;i++){var p=person(mem[i]);if(!p)continue;var on=(cur===p.id);
+    h+='<div class="who-opt'+(on?' on':'')+'" onclick="pkSetPackFor(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+'<span class="wcheck">'+IC.checkw.replace('currentColor','#15803D')+'</span></div>';
+  }
+  return h+'</div></div>';
+}
+/* tell the assignee an item landed on their list (respects the notify toggle) */
+function notifyPackAssign(it,target){
+  if(!target||target===S.persona||!person(target))return;
+  var t=trip();if(!S._notify&&!(t&&t.notifyByDefault))return;
+  sendNotifPlan([{to:target,from:S.persona,trip:S.tripId,cat:'Packing',label:it.n,kind:'added',
+    text:pname(S.persona)+' added “'+it.n+'” to your packing list'}]);
+  try{bumpBell();}catch(e){}
 }
 /* ============================================================
    TO DO  (per-trip, assignable, privacy-aware)
