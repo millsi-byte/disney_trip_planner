@@ -147,7 +147,7 @@ button{font-family:inherit}
 /* ── Status badge ────────────────────────────────────────── */
 .st-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}
 .st-booked{background:#DCFCE7;color:#15803D}
-.st-planning{background:transparent;color:#92724A;border:1.5px dashed #C9A45E}
+.st-planning{background:#E0F2FE;color:#0369A1}
 .st-want{background:transparent;color:#92724A;border:1.5px dashed #C9A45E}
 .st-reserved{background:#DCFCE7;color:#15803D}
 .st-planned{background:#E0F2FE;color:#0369A1}
