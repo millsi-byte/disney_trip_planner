@@ -161,7 +161,7 @@ button{font-family:inherit}
 .who-chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
 .who-chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--ink);background:#F3F1EC;border:1px solid var(--border);padding:3px 9px 3px 4px;border-radius:20px}
 .who-chip .wdot{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700;flex-shrink:0}
-.who-all{color:var(--muted);background:#F3F1EC;padding:3px 11px}
+.who-named.who-all{color:var(--muted);background:#F3F1EC;padding:3px 11px}
 .who-all svg{width:15px;height:15px}
 .who-stack{display:flex;align-items:center}
 .who-stack .wdot{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;border:2px solid var(--card);margin-left:-7px}
