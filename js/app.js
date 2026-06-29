@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='308';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='309';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1120,7 +1120,14 @@ function closeSheet(){var host=document.getElementById('sheet-host');var b=host&
 function switchTrip(id){saveLists();S.tripId=id;saveTripId();var _st=tripById(id);if(_st&&_st.parties&&_st.parties[0]&&partyById(_st.parties[0])){S.partyId=_st.parties[0];savePartyId();}loadLists();S.dayIdx=0;S.tab="home";S.open=defOpen();S.fmode='all';S.filter.clear();closeSheet();toast("Switched to "+trip().name);render();}
 
 /* screens (slide-in) */
+/* leaf edit forms — opening one of these from a list/management screen should
+   return to that list on save/cancel (not all the way home). */
+var SCR_EDIT={adddining:1,llbook:1,addll:1,addflight:1,resortedit:1,showedit:1,predit:1,ticketedit:1,visedit:1,hoursedit:1,rbedit:1,stopedit:1};
 function openScreen(def){
+  /* remember the parent list when opening a leaf edit form on top of a
+     non-edit screen; otherwise clear any stale back reference. */
+  if(SCR_EDIT[def.type]) S._scrBack=(S.screen&&!SCR_EDIT[S.screen.type])?S.screen:null;
+  else S._scrBack=null;
   S.screen=def;S._who=null;S._formStatus={};S._delpk=null;S._deltd=null;S.tdForm=null;S.tdScope='mine';S._tdPriv=false;S.listWho=null;S.pkStoreFilter=null;S.ttForm=null;S._ttPriv=false;S.ptForm=null;S._ptStore='bag';S._ptPriv=false;
   S.pkForm=null;S.pkScope='mine';S._delsect=null;S._pksect=null;ADD.psect=null;
   S._formLoc=null;S._formTier=null;S._formInit=null;S._formColor=null;
@@ -1132,7 +1139,12 @@ function openScreen(def){
   if(def.type==='import'||def.type==='csvimport'){S.importStep=1;S._importItems=null;S._importCount=0;S._importEdit=null;}
   renderOverlay();requestAnimationFrame(function(){var s=document.getElementById('screen-host').firstChild;if(s)s.classList.add('in');});
 }
-function closeScreen(){var host=document.getElementById('screen-host');var s=host&&host.firstChild;if(s){s.classList.remove('in');setTimeout(function(){S.screen=null;renderOverlay();},260);}else{S.screen=null;renderOverlay();}}
+function closeScreen(){
+  var back=S._scrBack;S._scrBack=null;
+  var finish=function(){ if(back)openScreen(back); else { S.screen=null;renderOverlay(); } };
+  var host=document.getElementById('screen-host');var s=host&&host.firstChild;
+  if(s){s.classList.remove('in');setTimeout(finish,260);}else{finish();}
+}
 
 /* PIN entry — custom modal so we get a numeric keypad + auto-focused cursor
    (the native prompt() can\'t do either). Async: calls cb(value) or cb(null). */
