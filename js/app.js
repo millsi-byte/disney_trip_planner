@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='296';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='297';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1680,7 +1680,7 @@ function cardHead(key,bg,pkColor,icon,title,sub,planning,addAction){
 function dayConditions(d){
   var vs=visitsFor(d.date).filter(function(v){return visible(v.who);});
   if(!vs.length){
-    return '<div class="cond"><span class="cond-dot" style="background:'+PARKS.trv.color+'"></span><div style="flex:1"><div class="cond-pk">No park visit</div><div class="cond-hours" style="color:var(--muted)">Travel / rest day</div></div></div>';
+    return '<div class="cond"><span class="cond-dot" style="background:'+PARKS.trv.color+'"></span><div style="flex:1"><div class="cond-pk">No park visits planned</div></div></div>';
   }
   var o='';
   for(var i=0;i<vs.length;i++){
@@ -1708,12 +1708,12 @@ function parkPlanCard(d,pk){
   if(!(key in S.open)) S.open[key]=true;
   var vs=visitsFor(d.date).filter(function(v){return visible(v.who);});
   var o='<div class="card">';
-  o+=cardHead(key,'#0F766E',pk.color,IC.map,'Park Plan',vs.length?(vs.length+' park'+(vs.length>1?'s':'')):'No park visit');
+  o+=cardHead(key,'#0F766E',pk.color,IC.map,'Park Plan',vs.length?(vs.length+' park'+(vs.length>1?'s':'')):'No park visits planned');
   if(S.open[key]){
     o+='<div class="card-body">';
     o+='<button class="add-link solo" onclick="openScreen({type:\'parksplan\',day:\''+d.date+'\'})">'+IC.pencil+' Edit Parks Plan</button>';
     if(!vs.length){
-      o+='<div class="body-empty">Travel / rest day — no park visit.</div>';
+      o+='<div class="body-empty">No park visits planned.</div>';
     }else{
       for(var i=0;i<vs.length;i++){var v=vs[i],vpk=PARKS[v.park]||PARKS.trv;
         var pr=null,prl=parkResFor(d.date);
@@ -5558,7 +5558,7 @@ function scrParksPlan(){
   for(var vi=0;vi<vis.length;vi++){var vv=vis[vi],vpk=PARKS[vv.park];
     body+='<div class="ov-card" style="margin:0 0 8px"><div class="item-row" style="padding:10px 12px"><span style="background:'+(vpk?vpk.color:'#999')+';width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="item-name">'+(vpk?esc(vpk.name):esc(vv.park))+'</div><div class="item-time">'+timingLbl(vv.timing)+(vv.earlyEntry?' · Early Entry':'')+(vv.eveningHours?' · Evening':'')+'</div>'+whoChips(vv.who)+'</div>'+visitTicketTag(vv)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'visedit\',edit:\''+vv.id+'\',day:\''+d.date+'\'})">'+IC.pencil+'</button></div></div>';
   }
-  if(!vis.length) body+='<div class="body-empty" style="text-align:left;padding:2px 2px 4px">No park visit — travel / rest day.</div>';
+  if(!vis.length) body+='<div class="body-empty" style="text-align:left;padding:2px 2px 4px">No park visits planned.</div>';
   body+='</div>';
   body+='<div class="field"><label class="field-label">Park reservations <span class="opt">(tap to edit)</span></label>';
   body+='<button class="add-link solo" style="margin:0 0 6px" onclick="openScreen({type:\'predit\',day:\''+d.date+'\'})">'+IC.plus+' Add park reservation</button>';
