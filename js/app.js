@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='287';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='288';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -802,6 +802,20 @@ function agoText(ts){
   var hr=Math.floor(m/60);if(hr<24)return hr+'h ago';
   var d=Math.floor(hr/24);if(d<7)return d+'d ago';
   try{return new Date(ts).toLocaleDateString();}catch(e){return '';}
+}
+/* Chat timestamp: format the real ts ("Jun 2 · 8:14 PM" to match seed style),
+   falling back to the stored time string for seed messages that have no ts. */
+var CHAT_MONS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function chatTime(m){
+  if(m&&m.ts){
+    try{
+      var d=new Date(m.ts);
+      var hr=d.getHours(),ap=hr<12?'AM':'PM',h12=hr%12;if(h12===0)h12=12;
+      var mn=d.getMinutes();mn=mn<10?'0'+mn:''+mn;
+      return CHAT_MONS[d.getMonth()]+' '+d.getDate()+' · '+h12+':'+mn+' '+ap;
+    }catch(e){}
+  }
+  return (m&&m.time)?m.time:'';
 }
 function notifKindCls(k){return (k==='action'||k==='left')?'nk-act':k==='removed'?'nk-rm':'nk-add';}
 function notifKindMark(k){return (k==='action'||k==='left')?IC.warn:k==='removed'?'<span style="font-weight:800">–</span>':IC.checkw;}
@@ -2311,7 +2325,7 @@ function renderChat(){
       h+='<div class="msg-bubble" ontouchstart="chatPressStart(event,\''+m.id+'\')" ontouchend="chatPressEnd()" ontouchmove="chatPressEnd()" onclick="chatTapMsg(\''+m.id+'\')">';
       if(m.ref) h+='<div class="msg-ref" onclick="event.stopPropagation();chatJumpRef(\''+m.id+'\')">'+refIcon(m.ref.type)+esc(m.ref.label)+'</div>';
       h+=(m.text?esc(m.text):'')+'</div>';
-      h+='<div class="msg-time">'+esc(m.time)+(m.edited?' · edited':'')+'</div>';
+      h+='<div class="msg-time">'+esc(chatTime(m))+(m.edited?' · edited':'')+'</div>';
     }
     h+='</div></div>';   /* close msg-col, msg — avatar now bottom-aligns to the bubble */
     if(S._editMsg!==m.id) h+='<div class="rxnrow">'+chatReactions(m)+'</div>';
