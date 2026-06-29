@@ -165,6 +165,9 @@ button{font-family:inherit}
 .who-stack{display:flex;align-items:center}
 .who-stack .wdot{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;border:2px solid var(--card);margin-left:-7px}
 .who-stack .wdot:first-child{margin-left:0}
+.who-named-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.who-named{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--ink);background:#F3F1EC;border:1px solid var(--border);border-radius:16px;padding:3px 10px 3px 4px}
+.who-named .wdot{width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700;flex-shrink:0}
 
 /* ── Resort card ─────────────────────────────────────────── */
 .resort-body{padding:14px}

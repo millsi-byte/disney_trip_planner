@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='300';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='301';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -452,10 +452,20 @@ function whoStack(who){
   if(who==="all"||!who) return '<span class="who-all">Everyone</span>';
   if(!who.length) return '';
   var set=tripMemberIds();
+  var ppl=[];
+  for(var i=0;i<who.length;i++){var id=who[i];if(set&&!set[id])continue;var p=person(id);if(p)ppl.push(p);}
+  if(!ppl.length) return '';
+  /* 1–2 people: spell out the names; 3+: compact overlapping initials */
+  if(ppl.length<=2){
+    var chips='';
+    for(var j=0;j<ppl.length;j++){var pj=ppl[j];
+      chips+='<span class="who-named"><span class="wdot" style="background:'+pj.color+'">'+esc(pj.name[0])+'</span>'+esc(pj.name)+'</span>';}
+    return '<div class="who-named-row">'+chips+'</div>';
+  }
   var dots='';
-  for(var i=0;i<who.length;i++){var id=who[i];if(set&&!set[id])continue;var p=person(id);if(!p)continue;
-    dots+='<span class="wdot" style="background:'+p.color+'" title="'+esc(p.name)+'">'+esc(p.name[0])+'</span>';}
-  return dots?'<div class="who-stack">'+dots+'</div>':'';
+  for(var k=0;k<ppl.length;k++){var pk=ppl[k];
+    dots+='<span class="wdot" style="background:'+pk.color+'" title="'+esc(pk.name)+'">'+esc(pk.name[0])+'</span>';}
+  return '<div class="who-stack">'+dots+'</div>';
 }
 
 /* status badge */
