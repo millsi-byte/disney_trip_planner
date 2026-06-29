@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='321';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='322';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2963,7 +2963,8 @@ function wlConvert(id){
 }
 function wlSendChat(id){var w=wishById(id);if(!w)return;
   S._chatRef={type:w.kind,label:w.title,day:w.day||null};
-  S.screen=null;S.tab='chat';render();
+  S.screen=null;S.tab='chat';renderOverlay();render();   /* renderOverlay clears the wish-list screen; render shows the Chat tab */
+  toast('Attached to chat');
   setTimeout(function(){var e=document.getElementById('chat-inp');if(e)try{e.focus();}catch(_){}} ,60);
 }
 function scrWishList(){return screenShell('Wish List',listContext()+'<div id="wish-body">'+wishBody()+'</div>',null,null,'Done');}
