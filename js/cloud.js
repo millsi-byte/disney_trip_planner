@@ -68,6 +68,23 @@
     return ref.set({val:v,ts:Date.now()}).then(function(){return ref.get();}).then(function(s){return s.exists?s.data().val:'(missing)';});
   };
 
+  /* ── Long-term backup mirror (per-account: users/<uid>/backups) ──────────
+     Kept OUTSIDE the kv sync so big snapshots never bloat the synced doc, and
+     covered by the existing users/<uid>/** rule (no rules change). One doc per
+     snapshot avoids the 1 MiB single-doc limit. */
+  C.saveBackup=function(id,obj){ if(!C.user)return Promise.resolve(false);
+    return db().doc('users/'+C.user.uid+'/backups/'+id).set(obj).then(function(){return true;},function(){return false;}); };
+  C.listBackups=function(){ if(!C.user)return Promise.resolve([]);
+    return db().collection('users/'+C.user.uid+'/backups').get().then(function(snap){
+      var a=[];snap.forEach(function(d){var x=d.data()||{};x.id=d.id;a.push(x);});
+      a.sort(function(p,q){return (p.ts||0)-(q.ts||0);});return a;
+    },function(){return [];}); };
+  C.pruneBackups=function(keepIds){ if(!C.user)return Promise.resolve();
+    var keep={};(keepIds||[]).forEach(function(i){keep[i]=1;});
+    return db().collection('users/'+C.user.uid+'/backups').get().then(function(snap){
+      var dels=[];snap.forEach(function(d){if(!keep[d.id])dels.push(d.ref.delete());});return Promise.all(dels);
+    }).catch(function(){}); };
+
   /* ── sync engine ───────────────────────────────────────── */
   /* keys that must stay device-local */
   var LOCAL_ONLY={dtp_persona:1,dtp_tripId:1,dtp_partyId:1,dtp_chatseen:1,dtp_ver:1,dtp_wid:1,dtp_invite:1,dtp_adminWid:1};

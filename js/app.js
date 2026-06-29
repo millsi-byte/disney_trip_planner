@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='325';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='326';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -315,6 +315,7 @@ function rehydrate(){
   try{ensureVisibleTrip();}catch(e){}
   try{loadLists();}catch(e){}
   try{render();}catch(e){}
+  try{runDailyArchive();}catch(e){}   /* once-per-day archive + cloud mirror after a sync settles */
 }
 /* returns true (and locks the device out) if the signed-in account's seat was
    removed from the shared workspace it's in. No-ops for the super-admin, for
@@ -3940,10 +3941,78 @@ function backupSummary(b){
   return cnt('dtp_trips')+' trips · '+cnt('dtp_family')+' people · '+days()+' day strategies';
 }
 function backupCountLabel(){var n=loadBackups().length;return n?(n+' snapshot'+(n===1?'':'s')+' saved'):'Auto-saved snapshots';}
+/* ── Long-term archive: daily → weekly → monthly, kept ~1 year ──────────
+   Separate from the every-5-min safety net. Captured once per calendar day
+   (first app open of the day), pruned grandfather-father-son, and mirrored to
+   the cloud (users/<uid>/backups) for off-device durability. The archive key
+   does NOT start with dtp_ so the sync engine and wipes leave it alone. */
+var ARCHIVE_KEY='dtparchive', ARCHIVE_DAY_KEY='dtparchive_lastday', ARCHIVE_MIRROR_KEY='dtparchive_mirrored', ARCHIVE_MAX_BYTES=3000000;
+function loadArchive(){try{var s=localStorage.getItem(ARCHIVE_KEY);if(s){var a=JSON.parse(s);if(Array.isArray(a))return a;}}catch(e){}return [];}
+function saveArchive(a){
+  try{localStorage.setItem(ARCHIVE_KEY,JSON.stringify(a));return;}catch(e){}
+  while(a.length>1){a.shift();try{localStorage.setItem(ARCHIVE_KEY,JSON.stringify(a));return;}catch(e2){}}
+}
+function isoWeekKey(d){
+  var dt=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
+  var day=dt.getUTCDay()||7;dt.setUTCDate(dt.getUTCDate()+4-day);
+  var ys=new Date(Date.UTC(dt.getUTCFullYear(),0,1));
+  var wk=Math.ceil((((dt-ys)/86400000)+1)/7);
+  return dt.getUTCFullYear()+'W'+wk;
+}
+/* grandfather-father-son retention: ≤7d keep one per day, ≤35d one per ISO
+   week, ≤366d one per month, drop older. Returns kept list oldest→newest. */
+function pruneArchive(list){
+  list=list.slice().sort(function(a,b){return (a.ts||0)-(b.ts||0);});
+  var now=Date.now(),DAY=86400000,seen={},keep=[];
+  for(var i=list.length-1;i>=0;i--){var b=list[i],age=(now-(b.ts||0))/DAY;
+    if(age>366)continue;
+    var d=new Date(b.ts||0),key;
+    if(age<=7)key='d'+d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();
+    else if(age<=35)key='w'+isoWeekKey(d);
+    else key='m'+d.getFullYear()+'-'+(d.getMonth()+1);
+    if(seen[key])continue;seen[key]=1;keep.push(b);
+  }
+  keep.sort(function(a,b){return (a.ts||0)-(b.ts||0);});
+  return keep;
+}
+function archiveTier(b){var age=(Date.now()-(b.ts||0))/86400000;return age<=7?'Daily':age<=35?'Weekly':'Monthly';}
+function archiveTodayKey(){var d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();}
+/* push the newest local archive snapshot to the cloud (once), then prune cloud
+   to match the local kept set. Decoupled from capture so a snapshot taken while
+   offline still mirrors on the next signed-in run. */
+function archiveMirror(list){
+  if(!(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user&&window.CLOUD.saveBackup))return;
+  if(!list||!list.length)return;
+  var newest=list[list.length-1],mk=null;
+  try{mk=localStorage.getItem(ARCHIVE_MIRROR_KEY);}catch(e){}
+  if(mk===newest.id)return;
+  var keepIds=list.map(function(x){return x.id;});
+  window.CLOUD.saveBackup(newest.id,newest).then(function(ok){
+    if(ok){try{localStorage.setItem(ARCHIVE_MIRROR_KEY,newest.id);}catch(e){}
+      if(window.CLOUD.pruneBackups)window.CLOUD.pruneBackups(keepIds);}
+  });
+}
+function runDailyArchive(force){
+  try{
+    if(window.CLOUD&&window.CLOUD.applyingRemote)return;
+    var keys=snapshotKeys();if(!keys.dtp_trips)return;
+    var tk=archiveTodayKey(),marker=null;try{marker=localStorage.getItem(ARCHIVE_DAY_KEY);}catch(e){}
+    var list=loadArchive();
+    if(force||marker!==tk){
+      var now=Date.now(),id='bk'+now;
+      list.push({id:id,ts:now,iso:new Date(now).toISOString(),build:BUILD,wid:(window.CLOUD&&window.CLOUD.wid)||null,keys:keys});
+      list=pruneArchive(list);
+      var blob=JSON.stringify(list);
+      while(list.length>1&&blob.length>ARCHIVE_MAX_BYTES){list.shift();blob=JSON.stringify(list);}
+      saveArchive(list);
+      try{localStorage.setItem(ARCHIVE_DAY_KEY,tk);}catch(e){}
+    }
+    archiveMirror(list);
+  }catch(e){}
+}
 function snapshotNow(){autoBackup(true);if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();toast('Snapshot saved');}
-function restoreBackup(idx){
+function applyBackupObj(b){
   if(!isAdmin()&&!(window.CLOUD&&window.CLOUD.isSuper)){toast('Admin only');return;}
-  var list=loadBackups(),b=list[idx];
   if(!b||!b.keys){toast('Backup not found');return;}
   if(!confirm('Restore the snapshot from '+backupWhen(b)+'?\n\nThis overwrites your current data with that snapshot and syncs it to the cloud.'))return;
   /* snapshot the CURRENT state first so a restore is itself undoable */
@@ -3965,6 +4034,14 @@ function restoreBackup(idx){
   S.tab='home';render();
   toast('Restored snapshot from '+backupWhen(b));
 }
+function restoreBackup(idx){applyBackupObj(loadBackups()[idx]);}
+function restoreArchive(id){var l=loadArchive();for(var i=0;i<l.length;i++)if(l[i].id===id){applyBackupObj(l[i]);return;}toast('Backup not found');}
+function restoreCloudBackup(id){var l=S._cloudBk||[];for(var i=0;i<l.length;i++)if(l[i].id===id){applyBackupObj(l[i]);return;}toast('Backup not found');}
+function loadCloudBackups(){
+  if(!(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user&&window.CLOUD.listBackups)){toast('Sign in to load cloud backups');return;}
+  S._cloudBkLoading=true;if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();
+  window.CLOUD.listBackups().then(function(a){S._cloudBk=a||[];S._cloudBkLoading=false;if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();});
+}
 function scrBackups(){
   if(!isAdmin()&&!(window.CLOUD&&window.CLOUD.isSuper))return screenShell('Backups','<div class="body-empty" style="padding:24px 12px">This tool is admin-only.</div>',null,null,'Close');
   var list=loadBackups();
@@ -3984,6 +4061,42 @@ function scrBackups(){
     }
   }
   body+='<button class="btn-secondary" onclick="snapshotNow()">Snapshot now</button>';
+
+  /* ── Daily / Weekly / Monthly archive (kept ~1 year) ── */
+  var arc=loadArchive();
+  body+='<div class="hub-section-label" style="margin-left:0">Daily · Weekly · Monthly archive</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 10px;font-size:13px">One snapshot a day, rolled up to weekly then monthly and kept for a year'+((window.CLOUD&&window.CLOUD.user)?' — also mirrored to your account in the cloud':'')+'.</div>';
+  if(!arc.length){
+    body+='<div class="body-empty" style="text-align:left;padding:2px">No archive yet — the first daily snapshot is taken automatically once the app has data.</div>';
+  }else{
+    for(var ai=arc.length-1;ai>=0;ai--){var ab=arc[ai];
+      body+='<div class="ov-card" style="margin:0 0 8px"><div style="padding:12px 14px">'
+        +'<div style="font-weight:700">'+esc(backupWhen(ab))+' <span class="st-badge st-todo" style="margin-left:4px">'+archiveTier(ab)+'</span></div>'
+        +'<div style="font-size:13px;color:var(--muted);margin-top:2px">'+esc(backupSummary(ab))+' · Build '+esc(ab.build||'?')+'</div>'
+        +'<div style="margin-top:8px"><button class="ri-btn" style="width:100%" onclick="restoreArchive(\''+ab.id+'\')">Restore this</button></div>'
+        +'</div></div>';
+    }
+  }
+
+  /* ── Cloud copies (off-device durability) ── */
+  if(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user){
+    body+='<div class="hub-section-label" style="margin-left:0">Cloud backups</div>';
+    if(S._cloudBkLoading){
+      body+='<div class="body-empty" style="text-align:left;padding:2px">Loading…</div>';
+    }else if(S._cloudBk){
+      if(!S._cloudBk.length){body+='<div class="body-empty" style="text-align:left;padding:2px">No cloud backups yet.</div>';}
+      else{for(var ci=S._cloudBk.length-1;ci>=0;ci--){var cb=S._cloudBk[ci];
+        body+='<div class="ov-card" style="margin:0 0 8px"><div style="padding:12px 14px">'
+          +'<div style="font-weight:700">'+esc(backupWhen(cb))+' <span class="st-badge st-todo" style="margin-left:4px">'+archiveTier(cb)+'</span></div>'
+          +'<div style="font-size:13px;color:var(--muted);margin-top:2px">'+esc(backupSummary(cb))+' · Build '+esc(cb.build||'?')+'</div>'
+          +'<div style="margin-top:8px"><button class="ri-btn" style="width:100%" onclick="restoreCloudBackup(\''+cb.id+'\')">Restore from cloud</button></div>'
+          +'</div></div>';
+      }}
+      body+='<button class="btn-secondary" onclick="loadCloudBackups()">Refresh cloud list</button>';
+    }else{
+      body+='<button class="btn-secondary" onclick="loadCloudBackups()">Load cloud backups</button>';
+    }
+  }
   return screenShell('Backups',body,null,null,'Close');
 }
 /* Non-destructive recovery: list every day strategy stored in one snapshot so a
@@ -6624,8 +6737,8 @@ render();
    throttled check every minute (autoBackup itself skips if unchanged / too
    soon). A pure local safety net — see the backup engine above. */
 try{
-  setTimeout(function(){try{autoBackup();}catch(e){}},20000);
-  setInterval(function(){try{autoBackup();}catch(e){}},60000);
+  setTimeout(function(){try{autoBackup();}catch(e){}try{runDailyArchive();}catch(e){}},20000);
+  setInterval(function(){try{autoBackup();}catch(e){}try{runDailyArchive();}catch(e){}},60000);
 }catch(e){}
 /* an invite link (#join=CODE&as=PERSON) — stash it so onCloudSynced can act
    on it after sign-in, then strip it from the URL */
