@@ -485,6 +485,9 @@ var TODO_TMPL = {
   ]
 };
 
+/* ── Wish List (communal backlog of things to do/try; convert → agenda) ── */
+var WISHLIST = [];
+
 /* ── Chat ─────────────────────────────────────────────────── */
 var CHAT = [
   {from:"hayley", text:"Just locked in Garden Grill for lunch on EPCOT day 🎉", time:"Jun 2 · 8:14 PM", day:"2026-07-15"},

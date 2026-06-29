@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='314';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='315';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -190,15 +190,18 @@ function saveChat(){save('dtp_chat',CHAT);}
 /* per-trip packing / to-do (PACKING/TODO hold the active trip\'s lists) */
 function listKey(base){return 'dtp_'+base+'_'+S.tripId;}
 function loadLists(){
-  if(!S.tripId){PACKING={};TODO=[];return;}   /* no trip selected — nothing to load */
+  if(!S.tripId){PACKING={};TODO=[];WISHLIST=[];return;}   /* no trip selected — nothing to load */
   PACKING=load(listKey('packing'),null)||(S.tripId==='jul26'?PACKING_SEED:{});
   TODO=load(listKey('todo'),null)||(S.tripId==='jul26'?JSON.parse(JSON.stringify(TODO_SEED)):[]);
   if(!Array.isArray(TODO))TODO=[];   /* guard against old per-person shape */
+  WISHLIST=load(listKey('wishlist'),null)||[];
+  if(!Array.isArray(WISHLIST))WISHLIST=[];
   ensureLists();
 }
 function ensureLists(){tripMembers().forEach(function(id){if(!PACKING[id])PACKING[id]=[];});}
-function saveLists(){if(!S.tripId)return;save(listKey('packing'),PACKING);save(listKey('todo'),TODO);}
+function saveLists(){if(!S.tripId)return;save(listKey('packing'),PACKING);save(listKey('todo'),TODO);save(listKey('wishlist'),WISHLIST);}
 function saveTODO(){save(listKey('todo'),TODO);}
+function saveWish(){save(listKey('wishlist'),WISHLIST);}
 function saveTmpl(){save('dtp_todo_tmpl',TODO_TMPL);}
 
 /* generate day skeletons for any trip that has none, from its start/end */
@@ -628,6 +631,7 @@ function notifLabel(cat,it){
   if(cat==='Park ticket')return ticketLabel(it);
   if(cat==='Plan')return it.x||it.n||'a plan';
   if(cat==='To Do')return it.n||'a to-do';
+  if(cat==='Wish')return it.title||'a wish';
   if(cat==='Packing')return it.n||'a packing item';
   return 'this item';
 }
@@ -1110,6 +1114,7 @@ function forceUpdate(){
 function applyFilterChange(){
   if(S.screen&&(S.screen.type==='lists'||S.screen.type==='packlist'))refreshLists();
   else if(S.screen&&S.screen.type==='todolist')refreshTodo();
+  else if(S.screen&&S.screen.type==='wishlist')refreshWish();
   else if(S.screen&&S.screen.type==='section')renderScreen_inplace2();
   else render();
 }
@@ -1145,7 +1150,7 @@ function openScreen(def){
      non-edit screen; otherwise clear any stale back reference. */
   if(SCR_EDIT[def.type]) S._scrBack=(S.screen&&!SCR_EDIT[S.screen.type])?S.screen:null;
   else S._scrBack=null;
-  S.screen=def;S._who=null;S._formStatus={};S._delpk=null;S._deltd=null;S.tdForm=null;S.tdScope='mine';S._tdPriv=false;S.listWho=null;S.pkStoreFilter=null;S.ttForm=null;S._ttPriv=false;S.ptForm=null;S._ptStore='bag';S._ptPriv=false;
+  S.screen=def;S._who=null;S._formStatus={};S._delpk=null;S._deltd=null;S.tdForm=null;S.tdScope='mine';S._tdPriv=false;S.listWho=null;S.pkStoreFilter=null;S.ttForm=null;S._ttPriv=false;S.ptForm=null;S._ptStore='bag';S._ptPriv=false;S.wlForm=null;S._wlPriv=false;S._delwl=null;
   S.pkForm=null;S.pkScope='mine';S._delsect=null;S._pksect=null;ADD.psect=null;
   S._formLoc=null;S._formTier=null;S._formInit=null;S._formColor=null;
   S._notify=notifDefault();
@@ -2248,6 +2253,7 @@ function renderListsHub(){
       ? hubRow(['Packing List',IC.suitcase,'#92400E',pkMyCount()+' items','packing'])
       : listStarterCard('Packing List',IC.suitcase,'#92400E','packing',pkTmplCount());
   o+=hubRow(['Need to Buy',IC.cart,'#B45309',needBuyCount()+' items','needbuy']);
+  o+=hubRow(['Wish List',IC.star,'#7C3AED',wishCount()+' items','wishlist']);
   o+='<div class="body-empty" style="text-align:left;padding:12px 2px 0;font-size:12px">Your To&nbsp;Do and Packing lists are private to you; the trip owner and admins can see everyone\'s. <strong>Need to Buy</strong> is shared with the whole group.</div>';
   o+='<div class="hub-section-label">Master templates</div>';
   o+='<button class="hub-row" onclick="openScreen({type:\'todotmpl\'})"><div class="hub-icon" style="background:#166534">'+IC.checks+'</div>'
@@ -2362,6 +2368,7 @@ function openSection(section){
   if(section==='todo'){openScreen({type:'todolist'});return;}
   if(section==='packing'){openScreen({type:'packlist'});return;}
   if(section==='needbuy'){openScreen({type:'needbuy'});return;}
+  if(section==='wishlist'){openScreen({type:'wishlist'});return;}
   if(section==='personas'){if(!adminGate())return;openScreen({type:'personas'});return;}
   openScreen({type:'section',section:section});
 }
@@ -2873,6 +2880,162 @@ function todoAssignField(creator){
 }
 
 /* ============================================================
+   WISH LIST — a communal backlog of things people want to do/try.
+   Everyone sees all wishes (private ones hide from non-involved people).
+   Each wish has a kind and can be CONVERTED into a real agenda item, or
+   pushed into chat for attention.  Built on the To Do list pattern.
+   ============================================================ */
+var WISH_KINDS=[['dining','Dining'],['show','Show'],['parade','Parade'],['ride','Ride'],['snack','Snack'],['other','Other']];
+function wishKindLabel(k){for(var i=0;i<WISH_KINDS.length;i++)if(WISH_KINDS[i][0]===k)return WISH_KINDS[i][1];return 'Other';}
+function wishById(id){for(var i=0;i<WISHLIST.length;i++)if(WISHLIST[i].id===id)return WISHLIST[i];return null;}
+function wishCanSee(w){
+  if(w.by===S.persona)return true;
+  if(w.who&&w.who.indexOf(S.persona)>=0)return true;
+  return !w.priv;   /* communal: everyone sees non-private wishes */
+}
+function wishCanEdit(w){return !!w&&(w.by===S.persona||todoOversight());}
+function wishCount(){return WISHLIST.filter(function(w){return w.trip===S.tripId&&wishCanSee(w);}).length;}
+function refreshWish(){
+  var b=document.getElementById('wish-body');
+  if(b&&S.screen&&S.screen.type==='wishlist'){
+    var sc=b.closest?b.closest('.screen-body'):null,top=sc?sc.scrollTop:0;
+    b.innerHTML=wishBody();
+    if(sc)sc.scrollTop=top;
+    return;
+  }
+  render();
+}
+function wlAdd(){
+  S.wlForm={id:null};S._who=new Set();S._wlPriv=false;S._wlKind='dining';S._notify=notifDefault();refreshWish();
+  setTimeout(function(){var e=document.getElementById('wl-title');if(e){try{e.scrollIntoView({block:'center',behavior:'smooth'});}catch(_){e.scrollIntoView();}try{e.focus({preventScroll:true});}catch(_2){e.focus();}}},60);
+}
+function wlEdit(id){var w=wishById(id);if(!w)return;if(!wishCanEdit(w)){toast('Only the creator or an admin can edit this');return;}S.wlForm={id:id};S._who=new Set(w.who||[]);S._wlPriv=!!w.priv;S._wlKind=w.kind||'other';S._notify=notifDefault();refreshWish();}
+function wlCancelForm(){S.wlForm=null;S._who=null;S._wlPriv=false;refreshWish();}
+function wlFormPriv(v){S._wlPriv=v;renderScreen_inplace2();}
+function wlPickKind(k){S._wlKind=k;renderScreen_inplace2();}
+function wlRemoveCancel(){S._delwl=null;refreshWish();}
+function wlToggleBooked(id){var w=wishById(id);if(!w)return;if(!wishCanEdit(w)){toast('Only the creator or an admin can change this');return;}w.booked=!w.booked;saveWish();refreshWish();}
+function wlSave(){
+  var title=val('wl-title');if(!title){toast('Add a title');return;}
+  var f=S.wlForm;if(!f)return;
+  var edit=f.id?wishById(f.id):null;
+  if(edit&&!wishCanEdit(edit)){toast('Only the creator or an admin can edit this');S.wlForm=null;refreshWish();return;}
+  var creator=edit?edit.by:S.persona;
+  var oldWho=edit?(edit.who||[]):[];
+  var who=S._who?tripMembers().filter(function(id){return id!==creator&&S._who.has(id);}):[];
+  var dsel=document.getElementById('wl-day');
+  var rec=edit||{id:'wl'+Date.now(),trip:S.tripId,by:S.persona,booked:false};
+  rec.title=title;rec.kind=S._wlKind||'other';rec.note=val('wl-note');
+  rec.day=dsel?dsel.value:'';rec.who=who;rec.priv=!!S._wlPriv;
+  if(!edit)WISHLIST.push(rec);
+  saveWish();afterWhoSave('Wish',rec,oldWho);S.wlForm=null;S._who=null;S._wlPriv=false;toast('Saved');refreshWish();
+}
+function wlRemove(id){
+  var w=wishById(id);if(!w)return;
+  if(!wishCanEdit(w)){toast('Only the creator or an admin can delete this');return;}
+  var k='wlrm_'+id;
+  if(S._delwl===k){for(var i=0;i<WISHLIST.length;i++)if(WISHLIST[i].id===id){WISHLIST.splice(i,1);break;}S._delwl=null;saveWish();notifyDelete('Wish',w);}
+  else{S._delwl=k;}
+  refreshWish();
+}
+/* convert a wish into a real agenda item — opens the matching creator form
+   PRE-FILLED (nothing is saved until the user hits Save in that form). */
+function wlConvert(id){
+  var w=wishById(id);if(!w)return;
+  var td=tripDays(),day=w.day||((td[0]&&td[0].date)||null);
+  var map={
+    dining:{type:'adddining',seed:{name:w.title,meal:'Dinner',loc:'in',status:'planned'}},
+    snack: {type:'adddining',seed:{name:w.title,meal:'Snack', loc:'in',status:'planned'}},
+    show:  {type:'showedit', seed:{name:w.title,status:'scheduled'}},
+    parade:{type:'paradeedit',seed:{name:w.title,status:'scheduled'}},
+    ride:  {type:'stopedit', seed:{x:w.title}},
+    other: {type:'stopedit', seed:{x:w.title}}
+  };
+  var m=map[w.kind]||map.other;
+  if(m.type==='stopedit'&&!day){toast('Add a day to the trip first');return;}
+  openScreen({type:m.type,day:day,seed:m.seed});
+}
+function wlSendChat(id){var w=wishById(id);if(!w)return;
+  S._chatRef={type:w.kind,label:w.title,day:w.day||null};
+  S.screen=null;S.tab='chat';render();
+  setTimeout(function(){var e=document.getElementById('chat-inp');if(e)try{e.focus();}catch(_){}} ,60);
+}
+function scrWishList(){return screenShell('Wish List',listContext()+'<div id="wish-body">'+wishBody()+'</div>',null,null,'Done');}
+function wishBody(){
+  var items=WISHLIST.filter(function(w){return w.trip===S.tripId&&wishCanSee(w);});
+  var open=items.filter(function(w){return !w.booked;}),booked=items.filter(function(w){return w.booked;});
+  var adding=S.wlForm&&S.wlForm.id===null;
+  var o='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">A shared backlog of things anyone wants to do or try. Tap '+IC.route+' to turn a wish into a planned item, or send it to chat for attention.</div>';
+  o+='<div class="hub-section-label" style="margin-left:0">Open</div>';
+  o+='<div class="card" style="padding:6px 0 0">';
+  if(!adding)o+='<button class="add-link" onclick="wlAdd()">'+IC.plus+' Add wish</button>';
+  if(!open.length&&!adding)o+='<div class="body-empty" style="text-align:left;padding:6px 12px">Nothing here yet.</div>';
+  for(var i=0;i<open.length;i++)o+=wishRowOrEditor(open[i]);
+  if(adding)o+=wishEditor(null);
+  o+='</div>';
+  if(booked.length){
+    o+='<div class="hub-section-label" style="margin-left:0">Booked</div>';
+    o+='<div class="card" style="padding:6px 0 0">';
+    for(var j=0;j<booked.length;j++)o+=wishRowOrEditor(booked[j]);
+    o+='</div>';
+  }
+  return o;
+}
+function wishRowOrEditor(w){
+  if(S.wlForm&&S.wlForm.id===w.id)return wishRow(w,true)+wishEditor(w);
+  return wishRow(w,false);
+}
+function wishRow(w,expanded){
+  var canEdit=wishCanEdit(w),pend=S._delwl==='wlrm_'+w.id;
+  var sub=[];
+  sub.push(wishKindLabel(w.kind));
+  if(w.day)sub.push(fmtDay(w.day).split(' · ')[0]);
+  if(w.who&&w.who.length)sub.push('For '+w.who.map(function(p){var pp=person(p);return pp?esc(pp.name):'';}).filter(Boolean).join(', '));
+  if(w.by!==S.persona){var c=person(w.by);sub.push('From '+(c?esc(c.name):'someone'));}
+  if(w.priv)sub.push(IC.lock+' Private');
+  var o='<div class="pk-row'+(expanded?' expanded':'')+'">';
+  o+='<div class="chkbox'+(w.booked?' on':'')+'" title="Mark booked" onclick="wlToggleBooked(\''+w.id+'\')">'+(w.booked?IC.checkw:'')+'</div>';
+  var meta='<span class="pk-by">'+sub.join(' · ')+'</span>';
+  if(w.note)meta+='<span class="pk-by" style="display:block">'+esc(w.note)+'</span>';
+  o+='<div class="pk-name'+(w.booked?' done':'')+'">'+esc(w.title)+'<div class="td-meta">'+meta+'</div></div>';
+  if(expanded){
+    o+='<button class="hdr-icon pk-edit-on" style="width:30px;height:30px;flex-shrink:0" title="Close" onclick="wlCancelForm()">'+IC.chevUp+'</button>';
+  }else if(canEdit){
+    if(pend){
+      o+='<button class="del-confirm-btn" onclick="wlRemove(\''+w.id+'\')">Remove?</button>';
+      o+='<button class="del-btn" title="Keep" onclick="wlRemoveCancel()">&times;</button>';
+    }else{
+      if(!w.booked)o+='<button class="hdr-icon" style="width:30px;height:30px;background:#EDE9FE;color:#6D28D9;flex-shrink:0" title="Add to plan" onclick="wlConvert(\''+w.id+'\')">'+IC.route+'</button>';
+      o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0" title="Send to chat" onclick="wlSendChat(\''+w.id+'\')">'+IC.chat+'</button>';
+      o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0" onclick="wlEdit(\''+w.id+'\')">'+IC.pencil+'</button>';
+      o+='<button class="del-btn" onclick="wlRemove(\''+w.id+'\')">&times;</button>';
+    }
+  }else{
+    o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0" title="Send to chat" onclick="wlSendChat(\''+w.id+'\')">'+IC.chat+'</button>';
+  }
+  o+='</div>';
+  return o;
+}
+function wishEditor(item){
+  var creator=item?item.by:S.persona;
+  var o='<div class="inline-editor'+(item?' pk-acc':'')+'">';
+  if(!item)o+='<div class="inline-editor-title">'+IC.pencil+' New wish</div>';
+  o+='<div class="field" style="margin:0"><label class="field-label">What do you want to do / try?</label><input class="field-input" id="wl-title" placeholder="e.g. Festival of Fantasy Parade" value="'+(item?esc(item.title):'')+'"></div>';
+  o+='<div class="field" style="margin:0"><label class="field-label">Kind</label><div class="seg wl-kindseg">';
+  for(var i=0;i<WISH_KINDS.length;i++){var k=WISH_KINDS[i];o+='<button class="seg-btn'+(S._wlKind===k[0]?' on':'')+'" onclick="wlPickKind(\''+k[0]+'\')">'+k[1]+'</button>';}
+  o+='</div></div>';
+  o+='<div class="field" style="margin:0"><label class="field-label">Note <span class="opt">(optional)</span></label><input class="field-input" id="wl-note" placeholder="Why / details" value="'+(item&&item.note?esc(item.note):'')+'"></div>';
+  o+='<div class="field" style="margin:0"><label class="field-label">Preferred day <span class="opt">(optional)</span></label><select class="field-select" id="wl-day"><option value=""'+(!(item&&item.day)?' selected':'')+'>Any day</option>'+dayOptions(item?item.day:'')+'</select></div>';
+  o+=todoAssignField(creator);
+  o+='<div class="field" style="margin:0"><label class="field-label">Privacy</label><div class="seg"><button class="seg-btn'+(!S._wlPriv?' on':'')+'" onclick="wlFormPriv(false)">Shared</button><button class="seg-btn'+(S._wlPriv?' on book':'')+'" onclick="wlFormPriv(true)">'+IC.lock+' Private</button></div></div>';
+  if(S._wlPriv)o+='<div class="priv-note">Hidden from everyone except people you tag it for.</div>';
+  o+=notifyField('Wish');
+  o+='<div style="display:flex;gap:8px"><button class="btn-primary" style="margin:0;flex:1" onclick="wlSave()">Save</button><button class="btn-secondary" style="margin:0;flex:1" onclick="wlCancelForm()">Cancel</button></div>';
+  o+='</div>';
+  return o;
+}
+
+/* ============================================================
    NAV
    ============================================================ */
 function renderNav(){
@@ -2994,6 +3157,7 @@ function renderScreen(){
   if(t==='lists')     return scrLists();
   if(t==='packlist')  return scrPackList();
   if(t==='todolist')  return scrTodo();
+  if(t==='wishlist')  return scrWishList();
   if(t==='todotmpl')  return scrTodoTmpl();
   if(t==='packtmpl')  return scrPackTmpl();
   if(t==='needbuy')   return scrNeedBuy();
@@ -3219,17 +3383,18 @@ function delFlight(id){
 /* Add Dining */
 function scrAddDining(){
   var edit=S.screen.edit?DINING.filter(function(x){return x.id===S.screen.edit;})[0]:null;
-  if(S._formInit!=='din'){S._formStatus.dd=edit?edit.status:'want';S._formLoc=edit?edit.loc:'in';S._formInit='din';}
+  var dseed=(!edit&&S.screen.seed)?S.screen.seed:null;
+  if(S._formInit!=='din'){S._formStatus.dd=edit?edit.status:((dseed&&dseed.status)||'planned');S._formLoc=edit?edit.loc:((dseed&&dseed.loc)||'in');S._formInit='din';}
   var st=S._formStatus.dd,loc=S._formLoc,pre=edit?edit.who:'all';
   var meals=['Breakfast','Lunch','Dinner','Drinks','Snack'];
   var body='';
-  body+='<div class="field"><label class="field-label">Restaurant</label><input class="field-input" id="dd-name" placeholder="e.g. Space 220" value="'+(edit?esc(edit.name):'')+'"></div>';
+  body+='<div class="field"><label class="field-label">Restaurant</label><input class="field-input" id="dd-name" placeholder="e.g. Space 220" value="'+(edit?esc(edit.name):(dseed&&dseed.name?esc(dseed.name):''))+'"></div>';
   body+='<div class="field-row"><div class="field"><label class="field-label">Meal</label><select class="field-select" id="dd-meal">';
-  for(var m=0;m<meals.length;m++)body+='<option'+((edit&&edit.meal===meals[m])||(!edit&&meals[m]==='Dinner')?' selected':'')+'>'+meals[m]+'</option>';
+  var dmeal=edit?edit.meal:((dseed&&dseed.meal)||'Dinner');
+  for(var m=0;m<meals.length;m++)body+='<option'+(dmeal===meals[m]?' selected':'')+'>'+meals[m]+'</option>';
   body+='</select></div>';
   body+='<div class="field"><label class="field-label">Time</label>'+timeField('dd-time',edit?edit.time:'')+'</div></div>';
   body+='<div class="field"><label class="field-label">Status <span class="opt">(Reserved & Planned show on the Day Plan)</span></label><div class="seg">';
-  body+='<button class="seg-btn'+(st==='want'?' on':'')+'" onclick="pickStatus(\'dd\',\'want\')">Want to Try</button>';
   body+='<button class="seg-btn'+(st==='planned'?' on':'')+'" onclick="pickStatus(\'dd\',\'planned\')">Planned</button>';
   body+='<button class="seg-btn'+(st==='reserved'?' on book':'')+'" onclick="pickStatus(\'dd\',\'reserved\')">Reserved</button></div></div>';
   if(st==='reserved') body+='<div class="field"><label class="field-label">Confirmation #</label><input class="field-input" id="dd-conf" placeholder="DR-118455" value="'+(edit&&edit.conf?esc(edit.conf):'')+'"></div>';
@@ -3251,7 +3416,7 @@ function saveDining(){
   var rec=edit||{id:'d'+Date.now(),trip:S.tripId,by:S.persona};
   rec.day=dy;rec.meal=val('dd-meal')||'Dinner';rec.name=nm;rec.time=val('dd-time')||'TBD';
   rec.loc=S._formLoc||'in';rec.park=(S._formLoc==='in')?(val('dd-park')||dayPrimaryPark(dy)):null;
-  rec.status=S._formStatus.dd||'want';rec.conf=val('dd-conf')||'';rec.who=whoVal();
+  rec.status=S._formStatus.dd||'planned';rec.conf=val('dd-conf')||'';rec.who=whoVal();
   if(!edit)DINING.push(rec);
   save('dtp_dining',DINING);afterWhoSave('Dining',rec,oldWho);S._who=null;toast('Dining saved');closeScreen();render();
 }
@@ -3865,7 +4030,7 @@ function importCsvFile(ev){
 /* editable fields per type: [key,label,kind]  kind: text | date | [options] */
 var IMPORT_FIELDS={
   Resort:[['name','Name','text'],['room','Room','text'],['checkin','Check-in','date'],['checkout','Check-out','date'],['conf','Confirmation #','text'],['status','Status',['booked','planning']]],
-  Dining:[['name','Name','text'],['day','Date','date'],['time','Time','text'],['meal','Meal',['Breakfast','Lunch','Dinner','Drinks']],['loc','Location',['in','off']],['conf','Confirmation #','text'],['status','Status',['reserved','want','planned']]],
+  Dining:[['name','Name','text'],['day','Date','date'],['time','Time','text'],['meal','Meal',['Breakfast','Lunch','Dinner','Drinks','Snack']],['loc','Location',['in','off']],['conf','Confirmation #','text'],['status','Status',['reserved','planned']]],
   'Lightning Lane':[['ride','Ride','text'],['day','Date','date'],['park','Park',['mk','ep','hs','ak']],['tier','Tier',['sp','mp1','mp2']],['status','Status',['booked','planning']],['bookedTime','Booked time','text'],['conf','Confirmation #','text']],
   'Park reservation':[['day','Date','date'],['park','Park',['mk','ep','hs','ak']],['status','Status',['booked','planning']]],
   Show:[['name','Name','text'],['day','Date','date'],['time','Time','text'],['park','Park',['mk','ep','hs','ak']],['status','Status',['attend','scheduled']]],
@@ -4427,7 +4592,7 @@ function resetToBlank(){
   var oid='p'+Date.now();
   var owner={id:oid,name:wizOwnerName(),color:PALETTE[0][0],admin:true,parties:[],email:(window.CLOUD&&window.CLOUD.user&&window.CLOUD.user.email)||'',uid:cloudUid()};
   FAMILY.push(owner);ALL_IDS=[oid];
-  S.persona=oid;S.partyId=null;S.tripId=null;PACKING={};TODO=[];
+  S.persona=oid;S.partyId=null;S.tripId=null;PACKING={};TODO=[];WISHLIST=[];
   /* drop every per-trip day record locally so loadDays() can't resurrect a
      wiped trip's days from a stale dtp_days_<id> key */
   try{for(var _i=localStorage.length-1;_i>=0;_i--){var _k=localStorage.key(_i);if(_k&&(_k==='dtp_days'||_k.indexOf('dtp_days_')===0))localStorage.removeItem(_k);}}catch(e){}
@@ -5228,6 +5393,9 @@ function delPersona(id){
   /* drop this person\'s to-do items and strip them from any assignments */
   TODO=TODO.filter(function(t){return t.by!==id;});
   TODO.forEach(function(t){if(t.who)t.who=t.who.filter(function(m){return m!==id;});});
+  /* same for wish-list items */
+  WISHLIST=WISHLIST.filter(function(w){return w.by!==id;});
+  WISHLIST.forEach(function(w){if(w.who)w.who=w.who.filter(function(m){return m!==id;});});
   /* strip them from any packing buyer assignments on others' items */
   Object.keys(PACKING).forEach(function(o){(PACKING[o]||[]).forEach(function(c){(c.items||[]).forEach(function(it){if(it.who)it.who=it.who.filter(function(m){return m!==id;});});});});
   for(var i=0;i<TRIPS.length;i++)if(TRIPS[i].members)TRIPS[i].members=TRIPS[i].members.filter(function(m){return m!==id;});
@@ -6041,9 +6209,10 @@ function delHours(id){
 function scrStopEdit(){
   var d=dayByDate(S.screen.day);if(!d)return scrGeneric();
   var has=S.screen.idx!=null,it=has?d.itin[S.screen.idx]:null;
+  var stseed=(!has&&S.screen.seed)?S.screen.seed:null;
   if(S._formInit!=='stop'){S._stPriv=!!(it&&it.priv);S._formInit='stop';}
   var body='<div class="field"><label class="field-label">Time</label>'+timeField('st-time',it?it.t:'')+'</div>';
-  body+='<div class="field"><label class="field-label">What\'s happening</label><input class="field-input" id="st-text" placeholder="e.g. Rope drop — Test Track" value="'+(it?esc(it.x):'')+'"></div>';
+  body+='<div class="field"><label class="field-label">What\'s happening</label><input class="field-input" id="st-text" placeholder="e.g. Rope drop — Test Track" value="'+(it?esc(it.x):(stseed&&stseed.x?esc(stseed.x):''))+'"></div>';
   body+='<div class="field"><label class="field-label">Tag <span class="opt">(optional, e.g. Critical, Hop)</span></label><input class="field-input" id="st-crit" placeholder="Critical" value="'+(it&&it.crit?esc(it.crit):'')+'"></div>';
   body+=whoSelectField(it?it.who:'all');
   body+='<div class="field" style="margin:0"><label class="field-label">Privacy</label><div class="seg"><button class="seg-btn'+(!S._stPriv?' on':'')+'" onclick="stFormPriv(false)">Shared</button><button class="seg-btn'+(S._stPriv?' on book':'')+'" onclick="stFormPriv(true)">'+IC.lock+' Keep private</button></div></div>';
@@ -6105,9 +6274,10 @@ function delRebook(id){
 /* ── Night show ────────────────────────────────────────────── */
 function scrShowEdit(){
   var edit=S.screen.edit?SHOWS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
-  if(S._formInit!=='sh'){S._formStatus.sh=edit?(edit.status||'attend'):'attend';S._formInit='sh';}
+  var sseed=(!edit&&S.screen.seed)?S.screen.seed:null;
+  if(S._formInit!=='sh'){S._formStatus.sh=edit?(edit.status||'attend'):((sseed&&sseed.status)||'attend');S._formInit='sh';}
   var st=S._formStatus.sh,pre=edit?edit.who:'all';
-  var body='<div class="field"><label class="field-label">Show name</label><input class="field-input" id="sh-name" placeholder="e.g. Happily Ever After" value="'+(edit?esc(edit.name):'')+'"></div>';
+  var body='<div class="field"><label class="field-label">Show name</label><input class="field-input" id="sh-name" placeholder="e.g. Happily Ever After" value="'+(edit?esc(edit.name):(sseed&&sseed.name?esc(sseed.name):''))+'"></div>';
   body+='<div class="field"><label class="field-label">Time</label>'+timeField('sh-time',edit?edit.time:'')+'</div>';
   body+='<div class="field"><label class="field-label">Status <span class="opt">(only Attend shows on the Day Plan)</span></label><div class="seg">';
   body+='<button class="seg-btn'+(st==='scheduled'?' on':'')+'" onclick="pickStatus(\'sh\',\'scheduled\')">Scheduled</button>';
@@ -6137,9 +6307,10 @@ function delShow(id){
 /* ── Parade (set up exactly like Night Shows) ──────────────── */
 function scrParadeEdit(){
   var edit=S.screen.edit?PARADES.filter(function(x){return x.id===S.screen.edit;})[0]:null;
-  if(S._formInit!=='pa'){S._formStatus.pa=edit?(edit.status||'attend'):'attend';S._formInit='pa';}
+  var paseed=(!edit&&S.screen.seed)?S.screen.seed:null;
+  if(S._formInit!=='pa'){S._formStatus.pa=edit?(edit.status||'attend'):((paseed&&paseed.status)||'attend');S._formInit='pa';}
   var st=S._formStatus.pa,pre=edit?edit.who:'all';
-  var body='<div class="field"><label class="field-label">Parade name</label><input class="field-input" id="pa-name" placeholder="e.g. Festival of Fantasy Parade" value="'+(edit?esc(edit.name):'')+'"></div>';
+  var body='<div class="field"><label class="field-label">Parade name</label><input class="field-input" id="pa-name" placeholder="e.g. Festival of Fantasy Parade" value="'+(edit?esc(edit.name):(paseed&&paseed.name?esc(paseed.name):''))+'"></div>';
   body+='<div class="field"><label class="field-label">Time</label>'+timeField('pa-time',edit?edit.time:'')+'</div>';
   body+='<div class="field"><label class="field-label">Status <span class="opt">(only Attend shows on the Day Plan)</span></label><div class="seg">';
   body+='<button class="seg-btn'+(st==='scheduled'?' on':'')+'" onclick="pickStatus(\'pa\',\'scheduled\')">Scheduled</button>';
