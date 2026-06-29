@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='319';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='320';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2002,7 +2002,7 @@ function dayPlanItems(d){
   out.forEach(function(e){
     woven.push(e);
     if(e.type==='ll'&&e.ref){
-      rebooksFor(date).forEach(function(rb){if(rb.after===e.ref&&visible(rb.who))woven.push({t:e.t,x:rebookText(rb),type:'rebook',who:rb.who,soft:e.soft});});
+      rebooksFor(date).forEach(function(rb){if(rb.after===e.ref&&visible(rb.who))woven.push({t:e.t,x:rebookText(rb)+(rebookTimeLabel(rb)?' · '+rebookTimeLabel(rb):''),type:'rebook',who:rb.who,soft:e.soft,ref:rb.id});});
     }
   });
   return woven;
@@ -2016,7 +2016,7 @@ function planChip(t){
   var m=map[t];return m?'<span class="t-tag'+(t==='ll'?' t-tag-ll':'')+'" style="background:'+m[1]+';color:'+m[2]+'">'+m[0]+'</span>':'';
 }
 /* Daily Agenda row → its edit screen, so booked items are editable inline */
-var DPLAN_EDIT={dining:'adddining',ll:'addll',show:'showedit',parade:'paradeedit'};
+var DPLAN_EDIT={dining:'adddining',ll:'addll',show:'showedit',parade:'paradeedit',rebook:'rbedit'};
 function dayPlanCard(d,pk){
   var key='itin';
   var summary=d.strategy?firstSentence(d.strategy):null;
