@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='326';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='327';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2046,7 +2046,7 @@ function dayPlanCard(d,pk){
       var nameHtml=(e.type==='ll')?(esc(e.name||e.x)+' <span class="ll-tag '+tagCls(e.tier)+'">'+tagShort(e.tier)+'</span>')
                    :(e.type==='dining'||e.type==='show'||e.type==='parade')?esc(e.name||e.x):pillify(esc(e.x));
       o+='<div style="flex:1;min-width:0"><div class="t-text">'+nameHtml+'</div>';
-      if(e.type==='ll'&&e.win) o+='<div class="t-sub">Booking window: '+esc(e.win)+'</div>';
+      if(e.type==='ll'&&e.win) o+='<div class="t-sub">Ride window: '+esc(e.win)+'</div>';
       if(e.type==='rebook'&&e.sub) o+='<div class="t-sub">'+esc(e.sub)+'</div>';
       /* pills: category + the SAME shared pills the cards use (status / meal / park) */
       var tags=[];
@@ -2140,7 +2140,7 @@ function llCard(lls,d,pk){
         o+='<div class="ll-win booked">'+IC.check+' Booked '+esc(l.bookedTime)+'</div>';
         if(l.conf) o+='<div class="ll-conf">Confirmation '+esc(l.conf)+'</div>';
       }else{
-        var _wt=llWindowText(l);if(_wt)o+='<div class="ll-win">Booking window: '+esc(_wt)+'</div>';
+        var _wt=llWindowText(l);if(_wt)o+='<div class="ll-win">Ride window: '+esc(_wt)+'</div>';
       }
       if(l.rideTime) o+='<div class="ll-win">Ride at '+esc(l.rideTime)+'</div>';
       o+=whoStack(l.who);
@@ -3460,7 +3460,7 @@ function scrLLBook(){
   var body='';
   body+='<div class="field-group"><div class="field-group-title">Ride</div>';
   body+='<div style="display:flex;align-items:center;gap:10px"><div class="ll-ride" style="font-size:20px">'+esc(l.ride)+'</div><span class="ll-tag '+tagCls(l.tier)+'">'+tagLbl(l.tier)+'</span></div>';
-  body+='<div class="ll-win" style="margin-top:8px">Booking window: '+esc(llWindowText(l))+(l.rideTime?' · Ride at '+esc(l.rideTime):'')+'</div></div>';
+  body+='<div class="ll-win" style="margin-top:8px">Ride window: '+esc(llWindowText(l))+(l.rideTime?' · Ride at '+esc(l.rideTime):'')+'</div></div>';
   body+='<div class="field"><label class="field-label">Status</label><div class="seg"><button class="seg-btn" onclick="toast(\'Already planning\')">Planning</button><button class="seg-btn on book">Booked</button></div></div>';
   body+='<div class="field"><label class="field-label">Confirmed return time</label>'+timeField('llb-time','')+'</div>';
   body+='<div class="field"><label class="field-label">Confirmation #</label><input class="field-input" id="llb-conf" placeholder="MP-00000"></div>';
@@ -3518,7 +3518,7 @@ function scrAddLL(){
   body+='<div class="field"><label class="field-label">Status <span class="opt">(only Booked shows on the Day Plan)</span></label><div class="seg">';
   body+='<button class="seg-btn'+(stt==='planning'?' on':'')+'" onclick="pickStatus(\'ll\',\'planning\')">Planned</button>';
   body+='<button class="seg-btn'+(stt==='booked'?' on book':'')+'" onclick="pickStatus(\'ll\',\'booked\')">Booked</button></div></div>';
-  body+='<div class="field"><label class="field-label">Booking Window <span class="opt">(reservation hour)</span></label>';
+  body+='<div class="field"><label class="field-label">Ride Window <span class="opt">(reservation hour)</span></label>';
   body+='<div class="field-row"><div class="field" style="margin:0"><label class="field-label" style="font-size:11px">From</label>'+timeField('ll-wstart',win.start)+'</div>';
   body+='<div class="field" style="margin:0"><label class="field-label" style="font-size:11px">To</label>'+timeField('ll-wend',win.end)+'</div></div></div>';
   body+='<div class="field"><label class="field-label">Planned time to ride <span class="opt">(slots the ride on the Day Plan)</span></label>'+timeField('ll-rtime',edit&&edit.rideTime?edit.rideTime:'')+'</div>';
