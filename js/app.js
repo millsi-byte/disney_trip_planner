@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='320';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='321';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2002,7 +2002,7 @@ function dayPlanItems(d){
   out.forEach(function(e){
     woven.push(e);
     if(e.type==='ll'&&e.ref){
-      rebooksFor(date).forEach(function(rb){if(rb.after===e.ref&&visible(rb.who))woven.push({t:e.t,x:rebookText(rb)+(rebookTimeLabel(rb)?' · '+rebookTimeLabel(rb):''),type:'rebook',who:rb.who,soft:e.soft,ref:rb.id});});
+      rebooksFor(date).forEach(function(rb){if(rb.after===e.ref&&visible(rb.who))woven.push({t:e.t,x:rebookText(rb),type:'rebook',who:rb.who,soft:e.soft,ref:rb.id,sub:rebookTimeLabel(rb)});});
     }
   });
   return woven;
@@ -2046,6 +2046,7 @@ function dayPlanCard(d,pk){
                    :(e.type==='dining'||e.type==='show'||e.type==='parade')?esc(e.name||e.x):pillify(esc(e.x));
       o+='<div style="flex:1;min-width:0"><div class="t-text">'+nameHtml+'</div>';
       if(e.type==='ll'&&e.win) o+='<div class="t-sub">Booking window: '+esc(e.win)+'</div>';
+      if(e.type==='rebook'&&e.sub) o+='<div class="t-sub">'+esc(e.sub)+'</div>';
       /* pills: category + the SAME shared pills the cards use (status / meal / park) */
       var tags=[];
       /* dining shows the meal (Lunch/Dinner/Snack…) in the dining colour
