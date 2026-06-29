@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='298';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='299';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -463,11 +463,11 @@ function statusBadge(st){
   var map={
     booked:['st-booked','Booked'], planning:['st-planning','Planned'],
     reserved:['st-reserved','Reserved'], planned:['st-planned','Planned'], want:['st-want','Want to Try'],
-    attend:['st-booked','Attend'], scheduled:['st-todo','Scheduled'],
+    attend:['st-booked','Attending'], scheduled:['st-todo','Scheduled'],
     todo:['st-todo','To Do'], done:['st-done','Done'], na:['st-na','N/A']
   };
   var m=map[st]||['st-todo',st];
-  var ic = (st==='booked'||st==='reserved'||st==='done'||st==='attend')?'<span style="display:flex">'+IC.checkw+'</span>':'';
+  var ic = (st==='booked'||st==='reserved'||st==='done')?'<span style="display:flex">'+IC.checkw+'</span>':'';
   return '<span class="st-badge '+m[0]+'">'+ic+m[1]+'</span>';
 }
 function isPlanningStatus(st){return st==='planning'||st==='want'||st==='planned'||st==='scheduled';}
@@ -926,6 +926,8 @@ function rsvpSet(type,id,val){
   var rec=info.rec,me=S.persona,tid=rec.trip||S.tripId;
   rec.rsvp=rec.rsvp||{};
   var now; if(rec.rsvp[me]===val){delete rec.rsvp[me];now=null;}else{rec.rsvp[me]=val;now=val;}
+  /* clicking "Will attend" on a show confirms it onto the day plan */
+  if(type==='show'&&now==='in')rec.status='attend';
   /* sync who-it's-for: 'out' removes me; 'in' or cleared ensures I'm included */
   var arr=whoArrFor(rec.who==null?'all':rec.who,tid).slice();
   if(now==='out')arr=arr.filter(function(x){return x!==me;});
