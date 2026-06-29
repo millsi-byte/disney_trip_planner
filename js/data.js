@@ -310,6 +310,9 @@ var SHOWS = [
   {id:"s4", day:"2026-07-17", name:"Luminous The Symphony of Us", time:"9:00 PM", status:"attend", who:"all"}
 ];
 
+/* ── Parades (set up exactly like Night Shows) ─────────────── */
+var PARADES = [];
+
 /* ── Packing — per person ─────────────────────────────────── */
 /* Scott carries the full master list; others are lighter.     */
 var PK_FULL = [

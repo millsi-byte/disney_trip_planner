@@ -9,7 +9,7 @@
   --gold:#B8892A;--gold-lt:#FEF3C7;--gold-dk:#78350F;
   /* Section header colors (the navigation system) */
   --hd-flight:#1B2B4A;--hd-plan:#0F5F73;--hd-ll:#92400E;--hd-strat:#166534;
-  --hd-din:#7C2D12;--hd-show:#4C1D95;--hd-resort:#1C3A5E;
+  --hd-din:#7C2D12;--hd-show:#4C1D95;--hd-parade:#A21CAF;--hd-resort:#1C3A5E;
   --navline:#B8B2A8;
   --chip-bg:var(--cream);
 }
