@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='322';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='323';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2962,10 +2962,11 @@ function wlConvert(id){
   openScreen({type:m.type,day:day,seed:m.seed});
 }
 function wlSendChat(id){var w=wishById(id);if(!w)return;
-  S._chatRef={type:w.kind,label:w.title,day:w.day||null};
-  S.screen=null;S.tab='chat';renderOverlay();render();   /* renderOverlay clears the wish-list screen; render shows the Chat tab */
-  toast('Attached to chat');
-  setTimeout(function(){var e=document.getElementById('chat-inp');if(e)try{e.focus();}catch(_){}} ,60);
+  var txt='🌟 New wish list idea — '+wishKindLabel(w.kind)+': '+w.title+'. 👍 / 👎 vote it in the Wish List!';
+  var msg={id:'c'+Date.now()+'_'+Math.random().toString(36).slice(2,6),from:S.persona,text:txt,time:'Now',ts:Date.now(),trip:S.tripId,ref:{type:w.kind,label:w.title,day:w.day||null}};
+  CHAT.push(msg);saveChat();
+  S._chatRef=null;S.screen=null;S.tab='chat';renderOverlay();render();   /* clear the wish-list screen; show the Chat tab with the posted message */
+  toast('Posted to chat');
 }
 function scrWishList(){return screenShell('Wish List',listContext()+'<div id="wish-body">'+wishBody()+'</div>',null,null,'Done');}
 function wishBody(){
@@ -2992,6 +2993,22 @@ function wishRowOrEditor(w){
   if(S.wlForm&&S.wlForm.id===w.id)return wishRow(w,true)+wishEditor(w);
   return wishRow(w,false);
 }
+/* thumbs up/down voting on a wish — anyone on the trip can vote */
+function wlVote(id,dir){
+  var w=wishById(id);if(!w)return;
+  w.votes=w.votes||{};
+  if(w.votes[S.persona]===dir)delete w.votes[S.persona];else w.votes[S.persona]=dir;
+  if(!Object.keys(w.votes).length)delete w.votes;
+  saveWish();refreshWish();
+}
+function wishVoteRow(w){
+  var v=w.votes||{},my=v[S.persona],up=0,dn=0,k;
+  for(k in v){if(!person(k))continue;if(v[k]==='up')up++;else if(v[k]==='down')dn++;}
+  return '<div class="wl-voterow">'
+    +'<button class="wl-vote'+(my==='up'?' on':'')+'" onclick="event.stopPropagation();wlVote(\''+w.id+'\',\'up\')">👍 '+up+'</button>'
+    +'<button class="wl-vote down'+(my==='down'?' on':'')+'" onclick="event.stopPropagation();wlVote(\''+w.id+'\',\'down\')">👎 '+dn+'</button>'
+    +'</div>';
+}
 function wishRow(w,expanded){
   var canEdit=wishCanEdit(w),pend=S._delwl==='wlrm_'+w.id;
   var sub=[];
@@ -3004,7 +3021,7 @@ function wishRow(w,expanded){
   o+='<div class="chkbox'+(w.booked?' on':'')+'" title="Mark booked" onclick="wlToggleBooked(\''+w.id+'\')">'+(w.booked?IC.checkw:'')+'</div>';
   var meta='<span class="pk-by">'+sub.join(' · ')+'</span>';
   if(w.note)meta+='<span class="pk-by" style="display:block">'+esc(w.note)+'</span>';
-  o+='<div class="pk-name'+(w.booked?' done':'')+'">'+esc(w.title)+'<div class="td-meta">'+meta+'</div></div>';
+  o+='<div class="pk-name'+(w.booked?' done':'')+'">'+esc(w.title)+'<div class="td-meta">'+meta+'</div>'+wishVoteRow(w)+'</div>';
   if(expanded){
     o+='<button class="hdr-icon pk-edit-on" style="width:30px;height:30px;flex-shrink:0" title="Close" onclick="wlCancelForm()">'+IC.chevUp+'</button>';
   }else if(canEdit){
