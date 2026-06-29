@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='299';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='300';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -926,8 +926,12 @@ function rsvpSet(type,id,val){
   var rec=info.rec,me=S.persona,tid=rec.trip||S.tripId;
   rec.rsvp=rec.rsvp||{};
   var now; if(rec.rsvp[me]===val){delete rec.rsvp[me];now=null;}else{rec.rsvp[me]=val;now=val;}
-  /* clicking "Will attend" on a show confirms it onto the day plan */
-  if(type==='show'&&now==='in')rec.status='attend';
+  /* a show is "Attending" (on the day plan) while anyone is in; once no one is
+     attending it falls back to "Scheduled". */
+  if(type==='show'){
+    var ins=Object.keys(rec.rsvp).filter(function(x){return rec.rsvp[x]==='in'&&person(x);}).length;
+    rec.status=ins>0?'attend':'scheduled';
+  }
   /* sync who-it's-for: 'out' removes me; 'in' or cleared ensures I'm included */
   var arr=whoArrFor(rec.who==null?'all':rec.who,tid).slice();
   if(now==='out')arr=arr.filter(function(x){return x!==me;});
