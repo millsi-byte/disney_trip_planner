@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='323';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='324';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2419,6 +2419,7 @@ function renderChat(){
       if(m.ref) h+='<div class="msg-ref" onclick="event.stopPropagation();chatJumpRef(\''+m.id+'\')">'+refIcon(m.ref.type)+esc(m.ref.label)+'</div>';
       h+=(m.text?esc(m.text):'')+'</div>';
       h+='<div class="msg-time">'+esc(chatTime(m))+(m.edited?' · edited':'')+'</div>';
+      if(m.wishId){var _vw=wishById(m.wishId);if(_vw)h+='<div class="wl-voterow"><span class="msg-votelbl">Vote</span>'+wishVoteBtns(_vw)+'</div>';}
     }
     h+='</div></div>';   /* close msg-col, msg — avatar now bottom-aligns to the bubble */
     if(S._editMsg!==m.id) h+='<div class="rxnrow">'+chatReactions(m)+'</div>';
@@ -2947,6 +2948,7 @@ function wlRemove(id){
 /* convert a wish into a real agenda item — opens the matching creator form
    PRE-FILLED (nothing is saved until the user hits Save in that form). */
 function wlConvert(id){
+  if(!isTripOwner()){toast('Only the trip owner can add this to the plan');return;}
   var w=wishById(id);if(!w)return;
   var td=tripDays(),day=w.day||((td[0]&&td[0].date)||null);
   var map={
@@ -2962,8 +2964,8 @@ function wlConvert(id){
   openScreen({type:m.type,day:day,seed:m.seed});
 }
 function wlSendChat(id){var w=wishById(id);if(!w)return;
-  var txt='🌟 New wish list idea — '+wishKindLabel(w.kind)+': '+w.title+'. 👍 / 👎 vote it in the Wish List!';
-  var msg={id:'c'+Date.now()+'_'+Math.random().toString(36).slice(2,6),from:S.persona,text:txt,time:'Now',ts:Date.now(),trip:S.tripId,ref:{type:w.kind,label:w.title,day:w.day||null}};
+  var txt='🌟 New wish list idea — '+wishKindLabel(w.kind)+': '+w.title+'. Vote 👍 / 👎 right here!';
+  var msg={id:'c'+Date.now()+'_'+Math.random().toString(36).slice(2,6),from:S.persona,text:txt,time:'Now',ts:Date.now(),trip:S.tripId,ref:{type:w.kind,label:w.title,day:w.day||null},wishId:w.id};
   CHAT.push(msg);saveChat();
   S._chatRef=null;S.screen=null;S.tab='chat';renderOverlay();render();   /* clear the wish-list screen; show the Chat tab with the posted message */
   toast('Posted to chat');
@@ -3001,21 +3003,20 @@ function wlVote(id,dir){
   if(!Object.keys(w.votes).length)delete w.votes;
   saveWish();refreshWish();
 }
-function wishVoteRow(w){
+function wishVoteBtns(w){
   var v=w.votes||{},my=v[S.persona],up=0,dn=0,k;
   for(k in v){if(!person(k))continue;if(v[k]==='up')up++;else if(v[k]==='down')dn++;}
-  return '<div class="wl-voterow">'
-    +'<button class="wl-vote'+(my==='up'?' on':'')+'" onclick="event.stopPropagation();wlVote(\''+w.id+'\',\'up\')">👍 '+up+'</button>'
-    +'<button class="wl-vote down'+(my==='down'?' on':'')+'" onclick="event.stopPropagation();wlVote(\''+w.id+'\',\'down\')">👎 '+dn+'</button>'
-    +'</div>';
+  return '<button class="wl-vote'+(my==='up'?' on':'')+'" onclick="event.stopPropagation();wlVote(\''+w.id+'\',\'up\')">👍 '+up+'</button>'
+    +'<button class="wl-vote down'+(my==='down'?' on':'')+'" onclick="event.stopPropagation();wlVote(\''+w.id+'\',\'down\')">👎 '+dn+'</button>';
 }
+function wishVoteRow(w){return '<div class="wl-voterow">'+wishVoteBtns(w)+'</div>';}
 function wishRow(w,expanded){
   var canEdit=wishCanEdit(w),pend=S._delwl==='wlrm_'+w.id;
   var sub=[];
   sub.push(wishKindLabel(w.kind));
   if(w.day)sub.push(fmtDay(w.day).split(' · ')[0]);
   if(w.who&&w.who.length)sub.push('For '+w.who.map(function(p){var pp=person(p);return pp?esc(pp.name):'';}).filter(Boolean).join(', '));
-  if(w.by!==S.persona){var c=person(w.by);sub.push('From '+(c?esc(c.name):'someone'));}
+  var _by=person(w.by);sub.push('Added by '+(_by?esc(_by.name):'someone'));
   if(w.priv)sub.push(IC.lock+' Private');
   var o='<div class="pk-row'+(expanded?' expanded':'')+'">';
   o+='<div class="chkbox'+(w.booked?' on':'')+'" title="Mark booked" onclick="wlToggleBooked(\''+w.id+'\')">'+(w.booked?IC.checkw:'')+'</div>';
@@ -3029,7 +3030,7 @@ function wishRow(w,expanded){
       o+='<button class="del-confirm-btn" onclick="wlRemove(\''+w.id+'\')">Remove?</button>';
       o+='<button class="del-btn" title="Keep" onclick="wlRemoveCancel()">&times;</button>';
     }else{
-      if(!w.booked)o+='<button class="hdr-icon" style="width:30px;height:30px;background:#EDE9FE;color:#6D28D9;flex-shrink:0" title="Add to plan" onclick="wlConvert(\''+w.id+'\')">'+IC.route+'</button>';
+      if(!w.booked&&isTripOwner())o+='<button class="hdr-icon" style="width:30px;height:30px;background:#EDE9FE;color:#6D28D9;flex-shrink:0" title="Add to plan (trip owner)" onclick="wlConvert(\''+w.id+'\')">'+IC.route+'</button>';
       o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0" title="Send to chat" onclick="wlSendChat(\''+w.id+'\')">'+IC.chat+'</button>';
       o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0" onclick="wlEdit(\''+w.id+'\')">'+IC.pencil+'</button>';
       o+='<button class="del-btn" onclick="wlRemove(\''+w.id+'\')">&times;</button>';
