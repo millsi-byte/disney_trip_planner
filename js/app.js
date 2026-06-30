@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='329';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='330';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -2617,20 +2617,22 @@ function packStarter(){
   o+='</div></div>';
   return o;
 }
-/* items someone else assigned to ME to pack — they live on the enterer's list
-   but surface here so I can pack & check them off (which syncs to their list). */
-function packAssignedToMe(){
-  var me=S.persona,rows=[];
+/* items someone else assigned to TARGET to pack — they live on the enterer's
+   list but surface under the target so they can be packed & checked off (which
+   syncs back to the enterer's item). Used in the personal view and the
+   admin "Everyone" view. */
+function packAssignedSection(target,label){
+  var rows=[];
   tripMembers().forEach(function(owner){
-    if(owner===me)return;
+    if(owner===target)return;
     (PACKING[owner]||[]).forEach(function(cat,ci){
       (cat.items||[]).forEach(function(it,ii){
-        if(it.packFor===me&&(!it.priv||owner===me))rows.push({owner:owner,ci:ci,ii:ii,it:it});
+        if(it.packFor===target&&(!it.priv||owner===S.persona||listOversight()))rows.push({owner:owner,ci:ci,ii:ii,it:it});
       });
     });
   });
   if(!rows.length)return '';
-  var o='<div class="hub-section-label" style="margin-left:0">Assigned to you to pack</div><div class="card" style="padding:6px 0 0">';
+  var o='<div class="hub-section-label" style="margin-left:0">'+esc(label)+'</div><div class="card" style="padding:6px 0 0">';
   for(var r=0;r<rows.length;r++){var x=rows[r],it=x.it,frm=person(x.owner);
     o+='<div class="pk-row">'
       +'<div class="chkbox'+(it.done?' on':'')+'" onclick="pkChk(\''+x.owner+'\','+x.ci+','+x.ii+')">'+(it.done?IC.checkw:'')+'</div>'
@@ -2639,6 +2641,7 @@ function packAssignedToMe(){
   }
   return o+'</div>';
 }
+function packAssignedToMe(){return packAssignedSection(S.persona,'Assigned to you to pack');}
 function packScopeToggle(){
   var all=S.pkScope==='all';
   return '<div class="seg" style="margin-bottom:12px"><button class="seg-btn'+(all?'':' on')+'" onclick="setPkScope(\'mine\')">My list</button>'
@@ -2669,7 +2672,7 @@ function packEveryoneView(){
   var o='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">Everyone\'s packing lists for '+esc(trip().name)+'. As the trip owner or an admin you can edit any item.</div>';
   o+=personFilterRow(mem);
   o+=pkToolbar(mem.some(function(pid){return pkAnyDone(pid);}));
-  mem.forEach(function(pid){if(S.listWho&&pid!==S.listWho)return;o+=packingPerson(pid);});
+  mem.forEach(function(pid){if(S.listWho&&pid!==S.listWho)return;o+=packingPerson(pid);var pn=person(pid);o+=packAssignedSection(pid,'Assigned to '+(pn?pn.name:'them')+' to pack');});
   return o;
 }
 function packSticky(pid){
