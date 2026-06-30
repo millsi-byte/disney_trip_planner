@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='334';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='335';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -252,8 +252,18 @@ function saveChat(){save('dtp_chat',CHAT);}
 function listKey(base){return 'dtp_'+base+'_'+S.tripId;}
 function loadLists(){
   if(!S.tripId){PACKING={};TODO=[];WISHLIST=[];return;}   /* no trip selected — nothing to load */
-  PACKING=load(listKey('packing'),null)||(S.tripId==='jul26'?PACKING_SEED:{});
-  TODO=load(listKey('todo'),null)||(S.tripId==='jul26'?JSON.parse(JSON.stringify(TODO_SEED)):[]);
+  /* the demo seed (PACKING_SEED/TODO_SEED) is only a starting point for a
+     brand-new install that has never used cloud sync. Same guard as the
+     PARTIES "My Group" seed: once this device has ever signed in, a missing
+     local cache means "not pulled down yet", NOT "use the seed" — falling
+     back to the seed here would let it get saved (e.g. by switchTrip/
+     ntFinish calling saveLists() for the still-active trip) with a fresh
+     timestamp that wins the next reconcile, silently overwriting the real
+     synced list with the generic demo data. */
+  var seedOK=(S.tripId==='jul26');
+  try{ if(localStorage.getItem('dtp__lastuid'))seedOK=false; }catch(e){}
+  PACKING=load(listKey('packing'),null)||(seedOK?PACKING_SEED:{});
+  TODO=load(listKey('todo'),null)||(seedOK?JSON.parse(JSON.stringify(TODO_SEED)):[]);
   if(!Array.isArray(TODO))TODO=[];   /* guard against old per-person shape */
   WISHLIST=load(listKey('wishlist'),null)||[];
   if(!Array.isArray(WISHLIST))WISHLIST=[];
