@@ -162,7 +162,8 @@
   /* sync the local store against the active target.
        mode 'merge'  → last-write-wins per key, both directions (device sync)
        mode 'adopt'  → the target wins entirely (joining a family space) */
-  function reconcile(mode){
+  function reconcile(mode,attempt){
+    attempt=attempt||0;
     C.synced=false; stopListener();
     var col=kvCol();
     return col.get().then(function(snap){
@@ -186,6 +187,19 @@
       return Promise.all(pushes);
     }).then(function(){
       C.synced=true; doRehydrate(); startListener();
+    }).catch(function(e){
+      /* col.get() (or a push) rejecting — most likely a token not fully
+         attached to outgoing requests yet right after sign-in (transient
+         PERMISSION_DENIED), or a network blip — left C.synced false and no
+         listener attached, silently, until the next full sign-in. Retry with
+         backoff instead of leaving the device stuck looking "synced" in the
+         UI (authwait already closed by then) but never actually reconciled. */
+      try{console.warn('[DTP-WIPE] reconcile('+mode+') failed (attempt '+attempt+'):',e&&e.message,{wid:C.wid});}catch(e2){}
+      if(attempt<5){
+        return new Promise(function(res){ setTimeout(res,1000*(attempt+1)); }).then(function(){ return reconcile(mode,attempt+1); });
+      }
+      try{console.warn('[DTP-WIPE] reconcile('+mode+') gave up after '+attempt+' retries.');}catch(e2){}
+      throw e;
     });
   }
 
@@ -672,6 +686,7 @@
                local synced state because the in-memory copy is the OLD tenant's
                data — without this it would push into whatever space we land on
                next and bleed across tenants. */
+            try{console.warn('[DTP-WIPE] wids-validation: wipeLocalState() about to run — active wid lost.',{activeWid:C.wid,priorWids:C.wids.concat([C.wid]),validWids:validWids,info:info});}catch(e){}
             wipeLocalState();
             var next=C.wids[0]||null;
             setLocalWid(next); C.partyName=null;

@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='339';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='340';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1329,6 +1329,19 @@ function emailPersona(email){
 function onCloudSynced(){
   var uid=cloudUid();if(!uid)return;
   var i;
+  try{console.warn('[DTP-WIPE] onCloudSynced() entry state:',{
+    wid:(window.CLOUD&&window.CLOUD.wid)||null,
+    wids:(window.CLOUD&&window.CLOUD.wids||[]).slice(),
+    synced:!!(window.CLOUD&&window.CLOUD.synced),
+    isOwner:!!(window.CLOUD&&window.CLOUD.isOwner),
+    isSuper:!!(window.CLOUD&&window.CLOUD.isSuper),
+    isMember:!!(window.CLOUD&&window.CLOUD.isMember),
+    authUncertain:!!(window.CLOUD&&window.CLOUD.authUncertain),
+    inParty:!!(window.CLOUD&&window.CLOUD.inParty&&window.CLOUD.inParty()),
+    localStorageWid:(function(){try{return localStorage.getItem('dtp_wid');}catch(e){return '(err)';}})(),
+    familyCount:FAMILY.length, tripsCount:TRIPS.length, persona:S.persona,
+    linkedPersona:(function(){var p=personaForUid(uid);return p?p.id:null;})()
+  });}catch(e){}
   /* 0. enforce authorization on EVERY sign-in. If we definitively know this
      account is no longer authorized (not super, not on the allowlist, not a
      current workspace member) — and they aren't mid-invite — lock them out,
@@ -1379,11 +1392,17 @@ function onCloudSynced(){
          "My Group" auto-seeded by older builds, or orphaned data from a deleted
          tenant) so the owner truly starts fresh and only gets a group when they
          create one — which creates the cloud tenant. */
+      try{console.warn('[DTP-WIPE] onCloudSynced: resetToBlank() about to run — "owner with no workspace" branch.',{wid:window.CLOUD.wid,wids:(window.CLOUD.wids||[]).slice(),isOwner:window.CLOUD.isOwner,isSuper:window.CLOUD.isSuper,isMember:window.CLOUD.isMember,authUncertain:window.CLOUD.authUncertain,persona:S.persona,localWid:(function(){try{return localStorage.getItem('dtp_wid');}catch(e){return '(err)';}})()});}catch(e){}
       S._freshTenant=true;
       resetToBlank();
       openScreen({type:'newtrip'});return;
     }
     if(S.screen&&(S.screen.type==='signin'||S.screen.type==='claim'||S.screen.type==='authwait'))closeScreen();
+    try{var _t=trip();console.warn('[DTP-WIPE] onCloudSynced: normal path, about to render.',{
+      tripId:S.tripId, tripName:_t?_t.name:null, partyId:S.partyId,
+      packingKeys:Object.keys(PACKING||{}), packingMineCount:(PACKING&&PACKING[S.persona]?PACKING[S.persona].reduce(function(a,c){return a+(c.items?c.items.length:0);},0):0),
+      todoCount:TODO.length, daysCount:DAYS.length, tripsCount:TRIPS.length
+    });}catch(e){}
     render();return;
   }
   /* 2. your email matches a person the admin set up → link automatically */
@@ -1468,6 +1487,7 @@ function syncPersonInvite(p,oldEmail){
    stays on their device (local-first), but the gate blocks normal use and the
    server rules block all shared data. They can sign out from the gate. */
 function revokeAccess(){
+  try{console.warn('[DTP-WIPE] revokeAccess() called — showing "noaccess" screen.',{wid:(window.CLOUD&&window.CLOUD.wid)||null,persona:S.persona});}catch(e){}
   try{localStorage.removeItem('dtp_persona');}catch(e){}
   S.persona=null;S._seated=false;
   openScreen({type:'noaccess'});
