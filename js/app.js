@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='333';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='334';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -6454,10 +6454,12 @@ function delTicket(id){
   });
 }
 /* ── Annual passes (tenant-level; persist across trips) ─────────────── */
-/* passes valid within the active trip's date window — for any member */
+/* passes held by a member of the active trip whose validity window overlaps it */
 function passesForTrip(){
   var td=tripDays(),ts=(td[0]&&td[0].date)||'',te=(td.length?td[td.length-1].date:'')||'';
+  var members=whoArrFor('all',S.tripId);
   return PASSES.filter(function(p){
+    if(members.indexOf(p.person)<0)return false;          /* holder isn't on this trip */
     if(!ts||!te)return true;
     if(!p.activation&&!p.expiration)return true;          /* not detailed yet — show */
     return (!p.activation||p.activation<=te)&&(!p.expiration||p.expiration>=ts);
