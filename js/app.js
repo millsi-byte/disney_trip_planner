@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='337';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='338';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -4101,6 +4101,14 @@ function snapshotKeys(){
   return keys;
 }
 function backupSig(keys){var s='';var ks=Object.keys(keys).sort();for(var i=0;i<ks.length;i++)s+=ks[i]+':'+(keys[ks[i]]||'').length+';';return s;}
+/* remove the OLDEST unpinned entry from a snapshot list, in place. A pinned entry
+   is never auto-evicted — returns false once nothing unpinned is left to drop, so
+   callers can stop trying rather than silently evicting something the user pinned. */
+function evictOldestUnpinned(list){
+  for(var i=0;i<list.length;i++){if(!list[i].pinned){list.splice(i,1);return true;}}
+  return false;
+}
+function unpinnedCount(list){var n=0;for(var i=0;i<list.length;i++)if(!list[i].pinned)n++;return n;}
 function autoBackup(force){
   try{
     if(window.CLOUD&&window.CLOUD.applyingRemote)return;     /* mid cloud-apply — unstable */
@@ -4111,12 +4119,60 @@ function autoBackup(force){
       if(last._sig===sig)return;                             /* unchanged since last snapshot */
       if(now-(last.ts||0)<BACKUP_MIN_MS)return;              /* too soon */
     }
-    list.push({ts:now,iso:new Date(now).toISOString(),build:BUILD,wid:(window.CLOUD&&window.CLOUD.wid)||null,_sig:sig,keys:keys});
-    while(list.length>BACKUP_MAX)list.shift();
+    list.push({ts:now,iso:new Date(now).toISOString(),build:BUILD,wid:(window.CLOUD&&window.CLOUD.wid)||null,_sig:sig,keys:keys,label:'',pinned:false,kind:'auto'});
+    while(unpinnedCount(list)>BACKUP_MAX){if(!evictOldestUnpinned(list))break;}
     var blob=JSON.stringify(list);
-    while(list.length>1&&blob.length>BACKUP_MAX_BYTES){list.shift();blob=JSON.stringify(list);}
+    while(blob.length>BACKUP_MAX_BYTES){if(!evictOldestUnpinned(list))break;blob=JSON.stringify(list);}
     saveBackups(list);
   }catch(e){}
+}
+/* user-triggered snapshot: pinned by default (the whole point of taking one on
+   purpose), optionally labeled, and mirrored to the cloud immediately instead of
+   waiting for the once-a-day automatic archive — the thing the existing backup
+   system had no way to do on demand. */
+function manualSnapshot(label){
+  try{
+    var keys=snapshotKeys();
+    if(!keys.dtp_trips){toast('Nothing to back up yet');return;}
+    var now=Date.now(),id='bk'+now,sig=backupSig(keys);
+    var obj={id:id,ts:now,iso:new Date(now).toISOString(),build:BUILD,wid:(window.CLOUD&&window.CLOUD.wid)||null,_sig:sig,keys:keys,label:(label||'').trim(),pinned:true,kind:'manual'};
+    var list=loadBackups();
+    list.push(obj);
+    saveBackups(list);
+    if(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user&&window.CLOUD.saveBackup){
+      window.CLOUD.saveBackup(id,obj).then(function(ok){
+        toast(ok?'Pinned backup saved — local + cloud':'Saved locally — cloud push failed, will keep retrying on its own');
+      });
+    }else{
+      toast('Pinned backup saved locally — sign in to also back it up to the cloud');
+    }
+    if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();
+  }catch(e){}
+}
+function manualSnapshotPrompt(){
+  var label=window.prompt('Optional note for this backup (e.g. "known good — before troubleshooting"):','')||'';
+  manualSnapshot(label);
+}
+/* pin/unpin toggles — a pinned entry is exempt from every auto-prune path (the
+   rolling list's BACKUP_MAX cap and byte budget above, and pruneArchive()'s
+   grandfather-father-son collapse below). Works on an existing entry too, so an
+   already-good snapshot found later can be protected retroactively. */
+function toggleBackupPin(idx){
+  var list=loadBackups();if(!list[idx])return;
+  list[idx].pinned=!list[idx].pinned;
+  saveBackups(list);
+  toast(list[idx].pinned?'Pinned — kept until you unpin it':'Unpinned');
+  if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();
+}
+function toggleArchivePin(id){
+  var list=loadArchive();
+  for(var i=0;i<list.length;i++)if(list[i].id===id){
+    list[i].pinned=!list[i].pinned;
+    saveArchive(list);
+    toast(list[i].pinned?'Pinned — kept until you unpin it':'Unpinned');
+    break;
+  }
+  if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();
 }
 function backupWhen(b){try{return new Date(b.ts||b.iso).toLocaleString();}catch(e){return b.iso||'';}}
 function backupSummary(b){
@@ -4149,6 +4205,10 @@ function pruneArchive(list){
   list=list.slice().sort(function(a,b){return (a.ts||0)-(b.ts||0);});
   var now=Date.now(),DAY=86400000,seen={},keep=[];
   for(var i=list.length-1;i>=0;i--){var b=list[i],age=(now-(b.ts||0))/DAY;
+    /* a pinned entry is exempt from every rule below — age ceiling AND the
+       one-per-tier collapse — and doesn't consume its tier's slot either, so an
+       unrelated auto entry from the same day/week/month can still be kept too. */
+    if(b.pinned){keep.push(b);continue;}
     if(age>366)continue;
     var d=new Date(b.ts||0),key;
     if(age<=7)key='d'+d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();
@@ -4184,10 +4244,10 @@ function runDailyArchive(force){
     var list=loadArchive();
     if(force||marker!==tk){
       var now=Date.now(),id='bk'+now;
-      list.push({id:id,ts:now,iso:new Date(now).toISOString(),build:BUILD,wid:(window.CLOUD&&window.CLOUD.wid)||null,keys:keys});
+      list.push({id:id,ts:now,iso:new Date(now).toISOString(),build:BUILD,wid:(window.CLOUD&&window.CLOUD.wid)||null,keys:keys,label:'',pinned:false,kind:'daily'});
       list=pruneArchive(list);
       var blob=JSON.stringify(list);
-      while(list.length>1&&blob.length>ARCHIVE_MAX_BYTES){list.shift();blob=JSON.stringify(list);}
+      while(blob.length>ARCHIVE_MAX_BYTES){if(!evictOldestUnpinned(list))break;blob=JSON.stringify(list);}
       saveArchive(list);
       try{localStorage.setItem(ARCHIVE_DAY_KEY,tk);}catch(e){}
     }
@@ -4226,30 +4286,41 @@ function loadCloudBackups(){
   S._cloudBkLoading=true;if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();
   window.CLOUD.listBackups().then(function(a){S._cloudBk=a||[];S._cloudBkLoading=false;if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();});
 }
+/* shared chunk for a backup row's pin badge + label, used by all three lists */
+function backupPinLine(b){
+  var o='';
+  if(b.pinned)o+='<div style="margin-top:2px"><span class="st-badge st-booked">📌 Pinned — won\'t be auto-deleted</span></div>';
+  if(b.label)o+='<div style="font-size:13px;margin-top:4px;font-style:italic">“'+esc(b.label)+'”</div>';
+  return o;
+}
 function scrBackups(){
   if(!isAdmin()&&!(window.CLOUD&&window.CLOUD.isSuper))return screenShell('Backups','<div class="body-empty" style="padding:24px 12px">This tool is admin-only.</div>',null,null,'Close');
   var list=loadBackups();
   var body='<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:14px;color:var(--ink)">'
-    +'Automatic local snapshots, taken as you make changes and kept on this device (the last '+BACKUP_MAX+'). Restore one to roll back a bad sync or an accidental change. <span style="white-space:nowrap">Build '+BUILD+'</span></div>';
+    +'Automatic local snapshots, taken as you make changes and kept on this device (the last '+BACKUP_MAX+' unpinned ones). Pin one to keep it forever; restore one to roll back a bad sync or an accidental change. <span style="white-space:nowrap">Build '+BUILD+'</span></div>';
   if(!list.length){
-    body+='<div class="body-empty" style="text-align:left;padding:2px">No snapshots yet — they start saving automatically as you edit. Tap “Snapshot now” to take one immediately.</div>';
+    body+='<div class="body-empty" style="text-align:left;padding:2px">No snapshots yet — they start saving automatically as you edit. Tap “Pinned backup now” to take one immediately.</div>';
   }else{
     for(var ri=list.length-1;ri>=0;ri--){var b=list[ri];
       body+='<div class="ov-card" style="margin:0 0 8px"><div style="padding:12px 14px">'
         +'<div style="font-weight:700">'+esc(backupWhen(b))+'</div>'
         +'<div style="font-size:13px;color:var(--muted);margin-top:2px">'+esc(backupSummary(b))+' · Build '+esc(b.build||'?')+'</div>'
+        +backupPinLine(b)
         +'<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'
         +'<button class="btn-secondary" style="flex:1;min-width:130px" onclick="openScreen({type:\'backupview\',idx:'+ri+'})">View strategies</button>'
+        +'<button class="btn-secondary" style="flex:1;min-width:130px" onclick="toggleBackupPin('+ri+')">'+(b.pinned?'Unpin':'📌 Pin')+'</button>'
         +'<button class="ri-btn" style="flex:1;min-width:130px" onclick="restoreBackup('+ri+')">Restore snapshot</button>'
         +'</div></div></div>';
     }
   }
-  body+='<button class="btn-secondary" onclick="snapshotNow()">Snapshot now</button>';
+  body+='<div style="display:flex;gap:8px"><button class="btn-secondary" style="flex:1" onclick="snapshotNow()">Snapshot now</button>'
+    +'<button class="btn-secondary green" style="flex:1" onclick="manualSnapshotPrompt()">🔒 Pinned backup now</button></div>';
+  body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0;font-size:12px">“Pinned backup now” saves a labeled snapshot that\'s exempt from auto-cleanup'+((window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user)?' and pushes it to the cloud immediately':' — sign in to also push it to the cloud')+'.</div>';
 
   /* ── Daily / Weekly / Monthly archive (kept ~1 year) ── */
   var arc=loadArchive();
   body+='<div class="hub-section-label" style="margin-left:0">Daily · Weekly · Monthly archive</div>';
-  body+='<div class="body-empty" style="text-align:left;padding:0 2px 10px;font-size:13px">One snapshot a day, rolled up to weekly then monthly and kept for a year'+((window.CLOUD&&window.CLOUD.user)?' — also mirrored to your account in the cloud':'')+'.</div>';
+  body+='<div class="body-empty" style="text-align:left;padding:0 2px 10px;font-size:13px">One snapshot a day, rolled up to weekly then monthly and kept for a year'+((window.CLOUD&&window.CLOUD.user)?' — also mirrored to your account in the cloud':'')+'. Pin any entry here too to keep it past its normal rollup window.</div>';
   if(!arc.length){
     body+='<div class="body-empty" style="text-align:left;padding:2px">No archive yet — the first daily snapshot is taken automatically once the app has data.</div>';
   }else{
@@ -4257,8 +4328,11 @@ function scrBackups(){
       body+='<div class="ov-card" style="margin:0 0 8px"><div style="padding:12px 14px">'
         +'<div style="font-weight:700">'+esc(backupWhen(ab))+' <span class="st-badge st-todo" style="margin-left:4px">'+archiveTier(ab)+'</span></div>'
         +'<div style="font-size:13px;color:var(--muted);margin-top:2px">'+esc(backupSummary(ab))+' · Build '+esc(ab.build||'?')+'</div>'
-        +'<div style="margin-top:8px"><button class="ri-btn" style="width:100%" onclick="restoreArchive(\''+ab.id+'\')">Restore this</button></div>'
-        +'</div></div>';
+        +backupPinLine(ab)
+        +'<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'
+        +'<button class="btn-secondary" style="flex:1;min-width:130px" onclick="toggleArchivePin(\''+ab.id+'\')">'+(ab.pinned?'Unpin':'📌 Pin')+'</button>'
+        +'<button class="ri-btn" style="flex:1;min-width:130px" onclick="restoreArchive(\''+ab.id+'\')">Restore this</button>'
+        +'</div></div></div>';
     }
   }
 
@@ -4273,6 +4347,7 @@ function scrBackups(){
         body+='<div class="ov-card" style="margin:0 0 8px"><div style="padding:12px 14px">'
           +'<div style="font-weight:700">'+esc(backupWhen(cb))+' <span class="st-badge st-todo" style="margin-left:4px">'+archiveTier(cb)+'</span></div>'
           +'<div style="font-size:13px;color:var(--muted);margin-top:2px">'+esc(backupSummary(cb))+' · Build '+esc(cb.build||'?')+'</div>'
+          +backupPinLine(cb)
           +'<div style="margin-top:8px"><button class="ri-btn" style="width:100%" onclick="restoreCloudBackup(\''+cb.id+'\')">Restore from cloud</button></div>'
           +'</div></div>';
       }}
