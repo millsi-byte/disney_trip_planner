@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='338';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='339';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -4093,10 +4093,18 @@ function saveBackups(a){
 }
 /* raw dump of every data key (single-underscore dtp_*; skips dtp__ sync
    bookkeeping so a restore never corrupts timestamps/lastuid) */
+/* device-local identity/selector keys — must never be captured into or restored
+   from a backup. Same list as cloud.js's private LOCAL_ONLY (duplicated here since
+   that one isn't exposed): these are per-device state (which persona/trip/party/
+   workspace THIS device currently has selected), not shared trip data. A snapshot
+   taken on one device and restored on another previously silently repointed which
+   workspace/persona/trip the restoring device uses — capturing the SHARED data is
+   the whole point of a backup; capturing device identity selectors is a bug. */
+var BACKUP_LOCAL_ONLY={dtp_persona:1,dtp_tripId:1,dtp_partyId:1,dtp_chatseen:1,dtp_ver:1,dtp_wid:1,dtp_invite:1,dtp_adminWid:1};
 function snapshotKeys(){
   var keys={};
   try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);
-    if(k&&k.indexOf('dtp_')===0&&k.indexOf('dtp__')!==0){try{keys[k]=localStorage.getItem(k);}catch(e){}}
+    if(k&&k.indexOf('dtp_')===0&&k.indexOf('dtp__')!==0&&!BACKUP_LOCAL_ONLY[k]){try{keys[k]=localStorage.getItem(k);}catch(e){}}
   }}catch(e){}
   return keys;
 }
@@ -4263,15 +4271,14 @@ function applyBackupObj(b){
   autoBackup(true);
   try{
     Object.keys(b.keys).forEach(function(k){
+      if(BACKUP_LOCAL_ONLY[k])return;   /* defensive: skip even an old backup that still has these */
       var raw=b.keys[k],val;
       try{val=JSON.parse(raw);}catch(e){val=raw;}
       save(k,val);   /* localStorage + cloud push with a fresh (winning) timestamp */
     });
   }catch(e){}
-  /* reload selection + collections from the restored localStorage */
-  try{S.persona=load('dtp_persona',S.persona);}catch(e){}
-  try{S.partyId=load('dtp_partyId',S.partyId);}catch(e){}
-  try{S.tripId=load('dtp_tripId',S.tripId);}catch(e){}
+  /* selection (persona/trip/party/workspace) is this device's own and is never
+     touched by a restore — only the shared collections above are. */
   try{rehydrate();}catch(e){}
   try{materializeAllDays();ensureActiveParty();ensureVisibleTrip();loadLists();}catch(e){}
   try{closeScreen();}catch(e){}

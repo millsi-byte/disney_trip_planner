@@ -614,7 +614,23 @@
          it so the membership/eviction checks below process it. */
       if(C.wid&&C.wids.indexOf(C.wid)<0)C.wids.push(C.wid);
       setLocalWid(C.wid);
-    }).catch(function(){ C.wid=null; C.wids=[]; })
+    }).catch(function(){
+      /* CRITICAL: a transient failure reading the profile doc (network blip,
+         token still refreshing right after sign-in) must NOT look identical to
+         "this account genuinely has no workspace yet" — every other read in
+         this function already fails safe (keeps the user in) for exactly that
+         reason; this was the one place that failed closed instead. Sign-out
+         already nulls the in-memory C.wid, so on the very next sign-in this
+         read is the ONLY thing standing between "resume normally" and
+         onCloudSynced()'s new-owner branch treating !inParty() (=!C.wid) as
+         "no tenant yet" and calling resetToBlank() — wiping the whole device
+         over one dropped read. Fall back to the wid this device last knew
+         locally (untouched by sign-out, only the in-memory C.wid is nulled)
+         instead of null, so a hiccup here resumes the existing workspace
+         instead of looking like a first-time owner. */
+      var fallback=null; try{fallback=localStorage.getItem('dtp_wid');}catch(e){}
+      C.wid=fallback||null; C.wids=fallback?[fallback]:[];
+    })
       .then(function(){
         /* Validate every wid in the user's tenant list. Two kinds of garbage to
            clean up here: workspaces that no longer exist on the server (tenant
