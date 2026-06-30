@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='330';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='331';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -112,6 +112,7 @@ FLIGHTS = load('dtp_flights', FLIGHTS);
 RESORTS = load('dtp_resorts', RESORTS);
 PARKRES = load('dtp_parkres', PARKRES);
 TICKETS = load('dtp_tickets', TICKETS);
+PASSES  = load('dtp_passes', PASSES);
 REBOOKS = load('dtp_rebooks', REBOOKS);
 TRIPS   = load('dtp_trips', TRIPS);
 NOTIFS  = load('dtp_notifs', NOTIFS);
@@ -175,6 +176,22 @@ function savePartyId(){save('dtp_partyId',S.partyId);}
 /* every planning item belongs to a trip — default seed items to jul26 */
 function tagTrip(coll){for(var i=0;i<coll.length;i++)if(!coll[i].trip)coll[i].trip='jul26';}
 [DAYS,VISITS,PARKHOURS,DINING,LLS,SHOWS,PARADES,FLIGHTS,RESORTS,PARKRES,TICKETS,REBOOKS].forEach(tagTrip);
+/* annual passes are tenant-level (not trip-tagged) — move any legacy AP tickets
+   out of the per-trip TICKETS store into PASSES. */
+function passSig(p){return (p.tier||'')+'|'+(p.activation||'')+'|'+(Array.isArray(p.who)?p.who.slice().sort().join(','):(p.who||'all'));}
+function migratePasses(){
+  if(!Array.isArray(TICKETS)||!TICKETS.length)return;
+  var aps=TICKETS.filter(function(t){return t.category==='ap';});
+  if(!aps.length)return;
+  TICKETS=TICKETS.filter(function(t){return t.category!=='ap';});
+  var sig={};PASSES.forEach(function(p){sig[passSig(p)]=1;});
+  aps.forEach(function(t){
+    var rec={id:t.id||('ap'+Date.now()+Math.random().toString(36).slice(2,5)),category:'ap',who:(t.who==null?'all':t.who),tier:t.tier||'incredi',activation:t.activation||'',expiration:t.expiration||addOneYear(t.activation||''),activated:!!t.activated};
+    var s=passSig(rec);if(sig[s])return;sig[s]=1;PASSES.push(rec);
+  });
+  save('dtp_tickets',TICKETS);save('dtp_passes',PASSES);
+}
+try{migratePasses();}catch(e){}
 CHAT = load('dtp_chat', CHAT);
 /* every chat message needs a trip, a stable id, and a sortable timestamp
    (the seed uses display strings only) — backfill so sync/ordering works later */
@@ -289,7 +306,7 @@ function migrateDays(){
 function persist(){
   saveDays();save('dtp_visits',VISITS);save('dtp_hours',PARKHOURS);save('dtp_dining',DINING);save('dtp_lls',LLS);
   save('dtp_shows',SHOWS);save('dtp_parades',PARADES);save('dtp_flights',FLIGHTS);save('dtp_resorts',RESORTS);
-  save('dtp_parkres',PARKRES);save('dtp_tickets',TICKETS);save('dtp_rebooks',REBOOKS);save('dtp_trips',TRIPS);save('dtp_family',FAMILY);save('dtp_parties',PARTIES);save('dtp_chat',CHAT);
+  save('dtp_parkres',PARKRES);save('dtp_tickets',TICKETS);save('dtp_passes',PASSES);save('dtp_rebooks',REBOOKS);save('dtp_trips',TRIPS);save('dtp_family',FAMILY);save('dtp_parties',PARTIES);save('dtp_chat',CHAT);
 }
 
 /* re-read every synced collection from localStorage into the in-memory globals.
@@ -302,7 +319,8 @@ function rehydrate(){
   FAMILY=load('dtp_family',FAMILY); ALL_IDS=FAMILY.map(function(p){return p.id;});
   migrateDays(); DAYS=loadDays(); VISITS=load('dtp_visits',VISITS); PARKHOURS=load('dtp_hours',PARKHOURS);
   DINING=load('dtp_dining',DINING); LLS=load('dtp_lls',LLS); SHOWS=load('dtp_shows',SHOWS); PARADES=load('dtp_parades',PARADES);
-  FLIGHTS=load('dtp_flights',FLIGHTS); RESORTS=load('dtp_resorts',RESORTS); PARKRES=load('dtp_parkres',PARKRES); TICKETS=load('dtp_tickets',TICKETS);
+  FLIGHTS=load('dtp_flights',FLIGHTS); RESORTS=load('dtp_resorts',RESORTS); PARKRES=load('dtp_parkres',PARKRES); TICKETS=load('dtp_tickets',TICKETS); PASSES=load('dtp_passes',PASSES);
+  try{migratePasses();}catch(e){}
   REBOOKS=load('dtp_rebooks',REBOOKS); TRIPS=load('dtp_trips',TRIPS); NOTIFS=load('dtp_notifs',NOTIFS);
   PARTIES=load('dtp_parties',PARTIES)||PARTIES; CHAT=load('dtp_chat',CHAT);
   try{ensurePartyTags();}catch(e){}   /* re-tag records that arrived without a party */
@@ -552,7 +570,7 @@ function screenItem(){
   var t=S.screen.type;
   if(t==='stopedit'){var d=dayByDate(S.screen.day);return (d&&d.itin&&S.screen.idx!=null)?d.itin[S.screen.idx]:null;}
   var id=S.screen.edit;if(!id)return null;
-  var M={adddining:DINING,llbook:LLS,addll:LLS,addflight:FLIGHTS,resortedit:RESORTS,showedit:SHOWS,paradeedit:PARADES,predit:PARKRES,ticketedit:TICKETS,visedit:VISITS,hoursedit:PARKHOURS,rbedit:REBOOKS};
+  var M={adddining:DINING,llbook:LLS,addll:LLS,addflight:FLIGHTS,resortedit:RESORTS,showedit:SHOWS,paradeedit:PARADES,predit:PARKRES,ticketedit:TICKETS,passedit:PASSES,visedit:VISITS,hoursedit:PARKHOURS,rbedit:REBOOKS};
   var coll=M[t];if(!coll)return null;
   for(var i=0;i<coll.length;i++)if(coll[i].id===id)return coll[i];
   return null;
@@ -592,7 +610,7 @@ var ACTION_CATS={Dining:1,'Lightning Lane':1,'Park reservation':1};
 function isActionCat(c){return !!ACTION_CATS[c];}
 /* screen type → notification category (drives self-leave from plan items) */
 var CAT_OF={adddining:'Dining',llbook:'Lightning Lane',addll:'Lightning Lane',predit:'Park reservation',
-  showedit:'Show',paradeedit:'Parade',addflight:'Flight',resortedit:'Resort',visedit:'Park visit'};
+  showedit:'Show',paradeedit:'Parade',addflight:'Flight',resortedit:'Resort',visedit:'Park visit',passedit:'Annual pass'};
 
 function pname(id){var p=person(id);return p?p.name:'Someone';}
 /* readable list of who an item applies to: "Everyone" / "Nancy" / "Scott & Cian" */
@@ -630,6 +648,7 @@ function notifLabel(cat,it){
   if(cat==='Resort')return it.name||'a resort stay';
   if(cat==='Park visit')return (it.park&&PARKS[it.park]?PARKS[it.park].name:'a park')+' visit';
   if(cat==='Park ticket')return ticketLabel(it);
+  if(cat==='Annual pass')return ticketLabel(it);
   if(cat==='Plan')return it.x||it.n||'a plan';
   if(cat==='To Do')return it.n||'a to-do';
   if(cat==='Wish')return it.title||'a wish';
@@ -1145,7 +1164,7 @@ function switchTrip(id){saveLists();S.tripId=id;saveTripId();var _st=tripById(id
 /* screens (slide-in) */
 /* leaf edit forms — opening one of these from a list/management screen should
    return to that list on save/cancel (not all the way home). */
-var SCR_EDIT={adddining:1,llbook:1,addll:1,addflight:1,resortedit:1,showedit:1,paradeedit:1,predit:1,ticketedit:1,visedit:1,hoursedit:1,rbedit:1,stopedit:1};
+var SCR_EDIT={adddining:1,llbook:1,addll:1,addflight:1,resortedit:1,showedit:1,paradeedit:1,predit:1,ticketedit:1,passedit:1,visedit:1,hoursedit:1,rbedit:1,stopedit:1};
 function openScreen(def){
   /* remember the parent list when opening a leaf edit form on top of a
      non-edit screen; otherwise clear any stale back reference. */
@@ -2341,6 +2360,8 @@ function renderAdminHub(){
     +'<div class="hub-main"><div class="hub-title">People</div><div class="hub-sub">'+FAMILY.length+' '+(FAMILY.length===1?'person':'people')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
   o+='<button class="hub-row" onclick="openScreen({type:\'alltrips\'})"><div class="hub-icon" style="background:#0E7490">'+IC.map+'</div>'
     +'<div class="hub-main"><div class="hub-title">Trips</div><div class="hub-sub">'+TRIPS.length+' '+(TRIPS.length===1?'trip':'trips')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
+  o+='<button class="hub-row" onclick="openScreen({type:\'passes\'})"><div class="hub-icon" style="background:#0F766E">'+IC.ticket+'</div>'
+    +'<div class="hub-main"><div class="hub-title">Annual Passes</div><div class="hub-sub">'+PASSES.length+' '+(PASSES.length===1?'pass':'passes')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
   if(window.CLOUD&&window.CLOUD.isSuper){
     o+='<div class="hub-section-label">Super Admin</div>';
     o+='<button class="hub-row" onclick="openTenants()"><div class="hub-icon" style="background:#7C2D12">'+IC.grid+'</div>'
@@ -3215,7 +3236,7 @@ function renderSheet(){
 function renderScreen(){
   var t=S.screen.type;
   /* editing an existing item you don\'t own → limited view (with self-removal) */
-  var EDIT={adddining:1,llbook:1,addll:1,addflight:1,resortedit:1,showedit:1,paradeedit:1,predit:1,ticketedit:1,visedit:1,hoursedit:1,rbedit:1,stopedit:1};
+  var EDIT={adddining:1,llbook:1,addll:1,addflight:1,resortedit:1,showedit:1,paradeedit:1,predit:1,ticketedit:1,passedit:1,visedit:1,hoursedit:1,rbedit:1,stopedit:1};
   if(EDIT[t]){var _it=screenItem();if(_it&&!canManage(_it))return scrLimitedItem(_it);}
   if(t==='addflight') return scrAddFlight();
   if(t==='adddining') return scrAddDining();
@@ -3244,6 +3265,8 @@ function renderScreen(){
   if(t==='strategyedit') return scrStrategyEdit();
   if(t==='predit')    return scrPREdit();
   if(t==='ticketedit')return scrTicketEdit();
+  if(t==='passes')    return scrPasses();
+  if(t==='passedit')  return scrPassEdit();
   if(t==='visedit')   return scrVisitEdit();
   if(t==='hoursedit') return scrHoursEdit();
   if(t==='rbedit')    return scrRebookEdit();
@@ -4833,7 +4856,7 @@ function wizOwnerName(){
    created here — the owner explicitly chooses or creates one in the wizard, and
    that action is what creates the cloud workspace (tenant). */
 function resetToBlank(){
-  FAMILY=[];TRIPS=[];DAYS=[];VISITS=[];PARKHOURS=[];DINING=[];LLS=[];SHOWS=[];PARADES=[];FLIGHTS=[];RESORTS=[];PARKRES=[];TICKETS=[];REBOOKS=[];NOTIFS=[];CHAT=[];
+  FAMILY=[];TRIPS=[];DAYS=[];VISITS=[];PARKHOURS=[];DINING=[];LLS=[];SHOWS=[];PARADES=[];FLIGHTS=[];RESORTS=[];PARKRES=[];TICKETS=[];PASSES=[];REBOOKS=[];NOTIFS=[];CHAT=[];
   PARTIES=[];
   var oid='p'+Date.now();
   var owner={id:oid,name:wizOwnerName(),color:PALETTE[0][0],admin:true,parties:[],email:(window.CLOUD&&window.CLOUD.user&&window.CLOUD.user.email)||'',uid:cloudUid()};
@@ -5117,6 +5140,7 @@ function scrPersona(){
     body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px">You\'re '+esc(me?me.name:'')+(isAdmin()?' · Admin':'')+'.</div>';
     if(canCreateTrip())body+='<button class="btn-secondary green" onclick="openScreen({type:\'newtrip\'})">'+IC.plus+' Plan a new trip</button>';
     body+='<button class="btn-secondary" onclick="openScreen({type:\'persondetails\',pid:\''+S.persona+'\'})">My travel details</button>';
+    body+='<button class="btn-secondary" onclick="openScreen({type:\'passes\'})">Annual passes</button>';
     body+=cloudSection();
     if(!(window.CLOUD&&window.CLOUD.enabled)){
       body+='<div class="hub-section-label" style="margin-left:0">Account</div>';
@@ -5652,6 +5676,9 @@ function delPersona(id){
   S.filter.delete(id);
   // pull from park-visit assignments too
   VISITS.forEach(function(v){if(Array.isArray(v.who)){v.who=v.who.filter(function(m){return m!==id;});if(!v.who.length)v.who='all';}});
+  /* annual passes: drop the person from holders; remove a pass with no holders left */
+  PASSES.forEach(function(pp){if(Array.isArray(pp.who))pp.who=pp.who.filter(function(m){return m!==id;});});
+  PASSES=PASSES.filter(function(pp){return pp.who==='all'||(Array.isArray(pp.who)&&pp.who.length)||(typeof pp.who==='string'&&pp.who&&pp.who!=='all');});
   persist();saveLists();
   renderScreen_inplace2();
 }
@@ -5932,8 +5959,16 @@ function scrSection(){
     for(var itk=0;itk<tkl.length;itk++){var tk=tkl[itk];
       body+='<div class="ov-card"><div class="item-row" style="padding:10px 12px"><div style="flex:1;min-width:0"><div class="item-name">'+esc(ticketLabel(tk))+'</div><div class="item-time">'+esc(ticketSub(tk))+'</div>'+whoChips(tk.who)+'</div>'+ticketBadge(tk)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'ticketedit\',edit:\''+tk.id+'\'})">'+IC.pencil+'</button></div></div>';
     }
-    if(!tkl.length)body=fnote('park tickets');
-    add='<button class="sec-add" onclick="openScreen({type:\'ticketedit\'})">Add park ticket</button>';
+    if(!tkl.length)body+='<div class="body-empty" style="text-align:left;padding:2px 12px">No date-based tickets yet.</div>';
+    /* annual passes covering this trip — any member (kept on the account) */
+    var pft=passesForTrip();
+    body+='<div class="hub-section-label" style="margin-left:0">Annual passes (covering this trip)</div>';
+    if(!pft.length)body+='<div class="body-empty" style="text-align:left;padding:2px 12px">No annual passes cover these dates.</div>';
+    for(var ipf=0;ipf<pft.length;ipf++){var pf=pft[ipf];
+      body+='<div class="ov-card"><div class="item-row" style="padding:10px 12px"><div style="flex:1;min-width:0"><div class="item-name">'+esc(ticketLabel(pf))+'</div><div class="item-time">'+esc(ticketSub(pf))+'</div>'+whoChips(pf.who)+'</div>'+ticketBadge(pf)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'passedit\',edit:\''+pf.id+'\'})">'+IC.pencil+'</button></div></div>';
+    }
+    add='<button class="sec-add" onclick="openScreen({type:\'ticketedit\'})">Add park ticket</button>'
+       +'<button class="sec-add" onclick="openScreen({type:\'passedit\'})">Add Annual Pass</button>';
   }
   if(owned)body=renderFilter()+body;   /* Mine / Everyone / Not mine on ownership categories */
   return screenShell(m[0],body,null,null,'Done',add);
@@ -6232,11 +6267,19 @@ var AP_TIERS={
 };
 function addOneYear(ds){if(!/^\d{4}-\d{2}-\d{2}$/.test(ds||''))return '';var p=ds.split('-');return (+p[0]+1)+'-'+p[1]+'-'+p[2];}
 function fmtMD(ds){return /^\d{4}-\d{2}-\d{2}$/.test(ds||'')?(monOf(ds)+' '+(+ds.slice(8))):'';}
-function ticketsFor(date){return TICKETS.filter(function(t){
-  if(t.trip!==S.tripId)return false;
-  if(t.category==='date')return !!(t.start&&t.end&&date>=t.start&&date<=t.end);
-  return true;   /* annual pass — held for the whole trip */
-});}
+function ticketsFor(date){
+  var out=TICKETS.filter(function(t){
+    if(t.trip!==S.tripId)return false;
+    if(t.category==='date')return !!(t.start&&t.end&&date>=t.start&&date<=t.end);
+    return true;   /* legacy AP ticket (pre-migration) — held for the whole trip */
+  });
+  /* fold in tenant-level annual passes held by a trip member and covering the date */
+  PASSES.forEach(function(p){
+    if(!whoArrFor(p.who,S.tripId).length)return;
+    if((!p.activation||date>=p.activation)&&(!p.expiration||date<=p.expiration))out.push(p);
+  });
+  return out;
+}
 function ticketLabel(t){
   if(!t)return 'a ticket';
   if(t.category==='ap')return (AP_TIERS[t.tier]&&AP_TIERS[t.tier].name)||'Annual Pass';
@@ -6275,48 +6318,28 @@ function tkSyncExp(){S._tkAct=val('tk-activation');var e=document.getElementById
 function scrTicketEdit(){
   var edit=S.screen.edit?TICKETS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
   if(S._formInit!=='tk'){
-    S._tkCat=edit?edit.category:'date';
     S._tkBase=(edit&&edit.base)?edit.base:'base';
     S._tkWP=!!(edit&&edit.waterSports);
-    S._tkTier=(edit&&edit.tier)?edit.tier:'incredi';
-    S._tkActivated=!!(edit&&edit.activated);
-    S._tkAct=(edit&&edit.activation)||'';
     S._formInit='tk';
   }
   var t=trip(),pre=edit?edit.who:'all';
-  var body='<div class="field"><label class="field-label">Ticket type</label><div class="seg">';
-  body+='<button class="seg-btn'+(S._tkCat==='date'?' on':'')+'" onclick="tkCat(\'date\')">Date-based</button>';
-  body+='<button class="seg-btn'+(S._tkCat==='ap'?' on book':'')+'" onclick="tkCat(\'ap\')">Annual Pass</button></div></div>';
-  if(S._tkCat==='date'){
-    body+='<div class="field-row"><div class="field"><label class="field-label">Start date</label><input type="date" class="field-input" id="tk-start" value="'+esc((edit&&edit.start)||(t&&t.start)||'')+'"></div>';
-    body+='<div class="field"><label class="field-label">End date</label><input type="date" class="field-input" id="tk-end" value="'+esc((edit&&edit.end)||(t&&t.end)||'')+'"></div></div>';
-    body+='<div class="field"><label class="field-label">Base option</label><div class="seg seg3">';
-    body+='<button class="seg-btn'+(S._tkBase==='base'?' on':'')+'" onclick="tkBase(\'base\')">Base</button>';
-    body+='<button class="seg-btn'+(S._tkBase==='hopper'?' on':'')+'" onclick="tkBase(\'hopper\')">Hopper</button>';
-    body+='<button class="seg-btn'+(S._tkBase==='hopperplus'?' on':'')+'" onclick="tkBase(\'hopperplus\')">Hopper Plus</button></div>';
-    body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0">'+esc(TICKET_BASES[S._tkBase]||'')+'</div></div>';
-    body+='<div class="field"><label class="field-label">Add-on</label>';
-    if(S._tkBase==='hopperplus'){
-      body+='<div class="notify-row on"><span class="notify-check">'+IC.checkw+'</span><div><div class="notify-lbl">Water Parks &amp; Sports</div><div class="notify-sub">Included with Park Hopper Plus.</div></div></div>';
-    }else{
-      body+='<div class="notify-row'+(S._tkWP?' on':'')+'" onclick="tkWP('+(S._tkWP?'false':'true')+')"><span class="notify-check">'+(S._tkWP?IC.checkw:'')+'</span><div><div class="notify-lbl">Water Parks &amp; Sports</div><div class="notify-sub">Optional add-on: the two water parks plus ESPN Wide World of Sports &amp; more.</div></div></div>';
-    }
-    body+='</div>';
+  var body='<div class="field-row"><div class="field"><label class="field-label">Start date</label><input type="date" class="field-input" id="tk-start" value="'+esc((edit&&edit.start)||(t&&t.start)||'')+'"></div>';
+  body+='<div class="field"><label class="field-label">End date</label><input type="date" class="field-input" id="tk-end" value="'+esc((edit&&edit.end)||(t&&t.end)||'')+'"></div></div>';
+  body+='<div class="field"><label class="field-label">Base option</label><div class="seg seg3">';
+  body+='<button class="seg-btn'+(S._tkBase==='base'?' on':'')+'" onclick="tkBase(\'base\')">Base</button>';
+  body+='<button class="seg-btn'+(S._tkBase==='hopper'?' on':'')+'" onclick="tkBase(\'hopper\')">Hopper</button>';
+  body+='<button class="seg-btn'+(S._tkBase==='hopperplus'?' on':'')+'" onclick="tkBase(\'hopperplus\')">Hopper Plus</button></div>';
+  body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0">'+esc(TICKET_BASES[S._tkBase]||'')+'</div></div>';
+  body+='<div class="field"><label class="field-label">Add-on</label>';
+  if(S._tkBase==='hopperplus'){
+    body+='<div class="notify-row on"><span class="notify-check">'+IC.checkw+'</span><div><div class="notify-lbl">Water Parks &amp; Sports</div><div class="notify-sub">Included with Park Hopper Plus.</div></div></div>';
   }else{
-    body+='<div class="field"><label class="field-label">Pass tier</label>';
-    ['incredi','sorcerer','pirate','pixie'].forEach(function(k){var tt=AP_TIERS[k],on=S._tkTier===k;
-      body+='<div class="notify-row'+(on?' on':'')+'" style="margin-bottom:8px" onclick="tkTier(\''+k+'\')"><span class="notify-check">'+(on?IC.checkw:'')+'</span>'
-        +'<div style="flex:1"><div class="notify-lbl">'+esc(tt.name)+'</div><div class="notify-sub">'+esc(tt.elig)+'</div></div>'
-        +(tt.hop?'<span class="inpark-badge" style="background:#0F766E;align-self:center">Park Hopper</span>':'')+'</div>';
-    });
-    body+='</div>';
-    body+='<div class="field-row"><div class="field"><label class="field-label">Activation date</label><input type="date" class="field-input" id="tk-activation" value="'+esc(S._tkAct||'')+'" onchange="tkSyncExp()"></div>';
-    body+='<div class="field"><label class="field-label">Expires</label><input type="date" class="field-input" id="tk-exp" value="'+esc(addOneYear(S._tkAct)||'')+'" readonly style="color:var(--muted)"></div></div>';
-    body+='<div class="field"><label class="field-label">Status</label><div class="notify-row'+(S._tkActivated?' on':'')+'" onclick="tkActivated('+(S._tkActivated?'false':'true')+')"><span class="notify-check">'+(S._tkActivated?IC.checkw:'')+'</span><div><div class="notify-lbl">Pass activated</div><div class="notify-sub">Switch on once the pass has been activated in-park.</div></div></div></div>';
-    body+='<div class="body-empty" style="text-align:left;padding:2px 2px 6px;color:#92400E"><strong>Reminder:</strong> Annual Pass holders still need a park reservation for every day they plan to enter a park.</div>';
+    body+='<div class="notify-row'+(S._tkWP?' on':'')+'" onclick="tkWP('+(S._tkWP?'false':'true')+')"><span class="notify-check">'+(S._tkWP?IC.checkw:'')+'</span><div><div class="notify-lbl">Water Parks &amp; Sports</div><div class="notify-sub">Optional add-on: the two water parks plus ESPN Wide World of Sports &amp; more.</div></div></div>';
   }
+  body+='</div>';
   body+=whoSelectField(pre);
   body+=notifyField('Park ticket');
+  body+='<div class="body-empty" style="text-align:left;padding:8px 2px 0;font-size:12px">Annual passes are managed separately under <strong>Annual Passes</strong> (Account or the Add Annual Pass button).</div>';
   if(edit) body+='<button class="btn-danger-link" onclick="delTicket(\''+edit.id+'\')">Delete this ticket</button>';
   return screenShell(edit?'Edit Park Ticket':'Add Park Ticket',body,'Save','saveTicket()');
 }
@@ -6324,20 +6347,12 @@ function saveTicket(){
   var edit=S.screen.edit?TICKETS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
   var oldWho=edit?edit.who:[];
   var rec=edit||{id:'tk'+Date.now(),trip:S.tripId,by:S.persona};
-  rec.category=S._tkCat||'date';
-  if(rec.category==='date'){
-    var s=val('tk-start')||(trip()&&trip().start)||'',e=val('tk-end')||s;
-    if(e&&s&&e<s){var tmp=e;e=s;s=tmp;}
-    rec.start=s;rec.end=e;rec.base=S._tkBase||'base';
-    rec.waterSports=(rec.base==='hopperplus')?true:!!S._tkWP;
-    rec.tier=null;rec.activation=null;rec.expiration=null;rec.activated=false;
-  }else{
-    rec.tier=S._tkTier||'incredi';
-    rec.activation=val('tk-activation')||'';
-    rec.expiration=addOneYear(rec.activation);
-    rec.activated=!!S._tkActivated;
-    rec.start=null;rec.end=null;rec.base=null;rec.waterSports=false;
-  }
+  rec.category='date';
+  var s=val('tk-start')||(trip()&&trip().start)||'',e=val('tk-end')||s;
+  if(e&&s&&e<s){var tmp=e;e=s;s=tmp;}
+  rec.start=s;rec.end=e;rec.base=S._tkBase||'base';
+  rec.waterSports=(rec.base==='hopperplus')?true:!!S._tkWP;
+  rec.tier=null;rec.activation=null;rec.expiration=null;rec.activated=false;
   rec.who=whoVal();
   if(!edit)TICKETS.push(rec);
   save('dtp_tickets',TICKETS);afterWhoSave('Park ticket',rec,oldWho);
@@ -6349,6 +6364,76 @@ function delTicket(id){
     for(var i=0;i<TICKETS.length;i++)if(TICKETS[i].id===id){TICKETS.splice(i,1);break;}
     save('dtp_tickets',TICKETS);notifyDelete('Park ticket',it);toast('Ticket removed');closeScreen();render();
   });
+}
+/* ── Annual passes (tenant-level; persist across trips) ─────────────── */
+/* passes valid within the active trip's date window — for any member */
+function passesForTrip(){
+  var td=tripDays(),ts=(td[0]&&td[0].date)||'',te=(td.length?td[td.length-1].date:'')||'';
+  return PASSES.filter(function(p){
+    if(!ts||!te)return true;
+    if(!p.activation&&!p.expiration)return true;          /* not detailed yet — show */
+    return (!p.activation||p.activation<=te)&&(!p.expiration||p.expiration>=ts);
+  });
+}
+function passTier(v){S._passTier=v;renderScreen_inplace2();}
+function passActivated(v){S._passActivated=v;renderScreen_inplace2();}
+function passSyncExp(){var a=document.getElementById('pass-activation'),e=document.getElementById('pass-exp');S._passAct=a?a.value:'';if(e)e.value=addOneYear(S._passAct);}
+function scrPassEdit(){
+  var edit=S.screen.edit?PASSES.filter(function(x){return x.id===S.screen.edit;})[0]:null;
+  if(S._formInit!=='pass'){
+    S._passTier=(edit&&edit.tier)?edit.tier:'incredi';
+    S._passActivated=!!(edit&&edit.activated);
+    S._passAct=(edit&&edit.activation)||'';
+    S._formInit='pass';
+  }
+  var pre=edit?edit.who:[S.persona];
+  var body='<div class="field"><label class="field-label">Pass tier</label>';
+  ['incredi','sorcerer','pirate','pixie'].forEach(function(k){var tt=AP_TIERS[k],on=S._passTier===k;
+    body+='<div class="notify-row'+(on?' on':'')+'" style="margin-bottom:8px" onclick="passTier(\''+k+'\')"><span class="notify-check">'+(on?IC.checkw:'')+'</span>'
+      +'<div style="flex:1"><div class="notify-lbl">'+esc(tt.name)+'</div><div class="notify-sub">'+esc(tt.elig)+'</div></div>'
+      +(tt.hop?'<span class="inpark-badge" style="background:#0F766E;align-self:center">Park Hopper</span>':'')+'</div>';
+  });
+  body+='</div>';
+  body+='<div class="field-row"><div class="field"><label class="field-label">Activation date</label><input type="date" class="field-input" id="pass-activation" value="'+esc(S._passAct||'')+'" onchange="passSyncExp()"></div>';
+  body+='<div class="field"><label class="field-label">Expires</label><input type="date" class="field-input" id="pass-exp" value="'+esc(addOneYear(S._passAct)||'')+'" readonly style="color:var(--muted)"></div></div>';
+  body+='<div class="field"><label class="field-label">Status</label><div class="notify-row'+(S._passActivated?' on':'')+'" onclick="passActivated('+(S._passActivated?'false':'true')+')"><span class="notify-check">'+(S._passActivated?IC.checkw:'')+'</span><div><div class="notify-lbl">Pass activated</div><div class="notify-sub">Switch on once the pass has been activated in-park.</div></div></div></div>';
+  body+='<div class="body-empty" style="text-align:left;padding:2px 2px 6px;color:#92400E"><strong>Reminder:</strong> Annual Pass holders still need a park reservation for every day they plan to enter a park.</div>';
+  body+=whoSelectField(pre);
+  body+=notifyField('Annual pass');
+  if(edit) body+='<button class="btn-danger-link" onclick="delPass(\''+edit.id+'\')">Delete this pass</button>';
+  return screenShell(edit?'Edit Annual Pass':'Add Annual Pass',body,'Save','savePass()');
+}
+function savePass(){
+  var edit=S.screen.edit?PASSES.filter(function(x){return x.id===S.screen.edit;})[0]:null;
+  var oldWho=edit?edit.who:[];
+  var rec=edit||{id:'ap'+Date.now(),by:S.persona};
+  rec.category='ap';rec.tier=S._passTier||'incredi';
+  rec.activation=val('pass-activation')||'';
+  rec.expiration=addOneYear(rec.activation);
+  rec.activated=!!S._passActivated;
+  rec.who=whoVal();
+  if(!edit)PASSES.push(rec);
+  save('dtp_passes',PASSES);afterWhoSave('Annual pass',rec,oldWho);
+  S._who=null;S._formInit=null;toast('Annual pass saved');closeScreen();render();
+}
+function delPass(id){
+  var it=PASSES.filter(function(x){return x.id===id;})[0];if(!it)return;
+  if(!canManage(it)){toast('Only the holder, owner or an admin can delete this');return;}
+  for(var i=0;i<PASSES.length;i++)if(PASSES[i].id===id){PASSES.splice(i,1);break;}
+  save('dtp_passes',PASSES);notifyDelete('Annual pass',it);toast('Pass removed');closeScreen();render();
+}
+function scrPasses(){
+  var list=PASSES.filter(function(p){return visible(p.who);});
+  var body='<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:14px;color:var(--ink)">Annual passes are kept on your account and apply to <strong>every</strong> trip — you only enter them once.</div>';
+  body+='<button class="sec-add" style="margin:0 0 10px" onclick="openScreen({type:\'passedit\'})">'+IC.plus+' Add annual pass</button>';
+  if(!list.length){
+    body+='<div class="body-empty" style="text-align:left;padding:2px">No annual passes yet.</div>';
+  }else{
+    for(var i=0;i<list.length;i++){var pp=list[i];
+      body+='<div class="ov-card" style="margin:0 0 8px"><div class="item-row"><div style="flex:1;min-width:0"><div class="item-name">'+esc(ticketLabel(pp))+'</div><div class="item-time">'+esc(ticketSub(pp))+'</div>'+whoChips(pp.who)+'</div>'+ticketBadge(pp)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'passedit\',edit:\''+pp.id+'\'})">'+IC.pencil+'</button></div></div>';
+    }
+  }
+  return screenShell('Annual Passes',body,null,null,'Done');
 }
 
 /* ── Park visit (first-class item: park + day + people) ─────── */

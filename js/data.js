@@ -202,6 +202,8 @@ var PARKRES = [
 
 /* ── Park tickets (date-based admission or annual passes) ──── */
 var TICKETS = [];
+/* Annual passes — tenant-level (NOT trip-tagged); persist across trips. */
+var PASSES = [];
 
 /* ── Lightning Lanes ──────────────────────────────────────── */
 /* tier: sp | mp1 | mp2 · status: planning | booked           */
