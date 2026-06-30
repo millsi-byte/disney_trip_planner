@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='331';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='332';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -176,20 +176,64 @@ function savePartyId(){save('dtp_partyId',S.partyId);}
 /* every planning item belongs to a trip — default seed items to jul26 */
 function tagTrip(coll){for(var i=0;i<coll.length;i++)if(!coll[i].trip)coll[i].trip='jul26';}
 [DAYS,VISITS,PARKHOURS,DINING,LLS,SHOWS,PARADES,FLIGHTS,RESORTS,PARKRES,TICKETS,REBOOKS].forEach(tagTrip);
+/* WDW annual passes all INCLUDE Park Hopper admission (hop:true). Defined here
+   (above the boot-time migration) so pass naming/tiers are available early. */
+var AP_TIERS={
+  incredi:{name:'Incredi-Pass',elig:'Available nationwide',hop:true},
+  sorcerer:{name:'Sorcerer Pass',elig:'Florida residents & DVC members',hop:true},
+  pirate:{name:'Pirate Pass',elig:'Florida residents',hop:true},
+  pixie:{name:'Pixie Dust Pass',elig:'Florida residents · weekday admission',hop:true}
+};
 /* annual passes are tenant-level (not trip-tagged) — move any legacy AP tickets
-   out of the per-trip TICKETS store into PASSES. */
-function passSig(p){return (p.tier||'')+'|'+(p.activation||'')+'|'+(Array.isArray(p.who)?p.who.slice().sort().join(','):(p.who||'all'));}
+   out of the per-trip TICKETS store into PASSES. Each pass is an individual,
+   single-person component: keyed by `person`, with its own `name`. */
+function passDefaultName(personId,tier){var p=person(personId),tn=(AP_TIERS[tier]&&AP_TIERS[tier].name)||'Annual Pass';return ((p&&p.name)?(p.name+'’s '):'')+tn;}
+function passSig(p){return (p.tier||'')+'|'+(p.activation||'')+'|'+(p.person||'');}
 function migratePasses(){
-  if(!Array.isArray(TICKETS)||!TICKETS.length)return;
-  var aps=TICKETS.filter(function(t){return t.category==='ap';});
-  if(!aps.length)return;
-  TICKETS=TICKETS.filter(function(t){return t.category!=='ap';});
-  var sig={};PASSES.forEach(function(p){sig[passSig(p)]=1;});
-  aps.forEach(function(t){
-    var rec={id:t.id||('ap'+Date.now()+Math.random().toString(36).slice(2,5)),category:'ap',who:(t.who==null?'all':t.who),tier:t.tier||'incredi',activation:t.activation||'',expiration:t.expiration||addOneYear(t.activation||''),activated:!!t.activated};
-    var s=passSig(rec);if(sig[s])return;sig[s]=1;PASSES.push(rec);
-  });
-  save('dtp_tickets',TICKETS);save('dtp_passes',PASSES);
+  var dirtyTickets=false,dirtyPasses=false;
+  /* (1) legacy: AP entries still living in the per-trip TICKETS store */
+  if(Array.isArray(TICKETS)&&TICKETS.length){
+    var aps=TICKETS.filter(function(t){return t.category==='ap';});
+    if(aps.length){
+      TICKETS=TICKETS.filter(function(t){return t.category!=='ap';});dirtyTickets=true;
+      aps.forEach(function(t){
+        /* a legacy AP may have applied to several people (who array / 'all') —
+           expand into one pass per holder so each becomes its own component. */
+        var holders=Array.isArray(t.who)?t.who.slice():(t.who==='all'||t.who==null?ALL_IDS.slice():[t.who]);
+        if(!holders.length)holders=[S.persona];
+        holders.forEach(function(pid){
+          PASSES.push({id:t.id?(t.id+'_'+pid):('ap'+Date.now()+Math.random().toString(36).slice(2,5)),category:'ap',person:pid,name:t.name||passDefaultName(pid,t.tier||'incredi'),tier:t.tier||'incredi',activation:t.activation||'',expiration:t.expiration||addOneYear(t.activation||''),activated:!!t.activated});
+        });
+      });
+      dirtyPasses=true;
+    }
+  }
+  /* (2) Build-331 passes still in the multi-person {who} shape — expand to
+     one single-person pass each. Idempotent: {person} records are skipped. */
+  if(Array.isArray(PASSES)&&PASSES.some(function(p){return p.who!==undefined;})){
+    var expanded=[];
+    PASSES.forEach(function(p){
+      if(p.who===undefined){expanded.push(p);return;}
+      var holders=Array.isArray(p.who)?p.who.slice():(p.who==='all'||p.who==null?ALL_IDS.slice():[p.who]);
+      if(!holders.length&&p.person)holders=[p.person];
+      if(!holders.length)holders=[S.persona];
+      holders.forEach(function(pid){
+        var rec={};for(var k in p)if(p.hasOwnProperty(k)&&k!=='who')rec[k]=p[k];
+        rec.person=pid;rec.name=p.name||passDefaultName(pid,p.tier||'incredi');
+        if(holders.length>1)rec.id=(p.id||'ap')+'_'+pid;
+        expanded.push(rec);
+      });
+    });
+    PASSES=expanded;dirtyPasses=true;
+  }
+  /* dedupe by person|tier|activation */
+  if(dirtyPasses){
+    var sig={},out=[];
+    PASSES.forEach(function(p){var s=passSig(p);if(sig[s])return;sig[s]=1;out.push(p);});
+    PASSES=out;
+  }
+  if(dirtyTickets)save('dtp_tickets',TICKETS);
+  if(dirtyPasses)save('dtp_passes',PASSES);
 }
 try{migratePasses();}catch(e){}
 CHAT = load('dtp_chat', CHAT);
@@ -3236,7 +3280,7 @@ function renderSheet(){
 function renderScreen(){
   var t=S.screen.type;
   /* editing an existing item you don\'t own → limited view (with self-removal) */
-  var EDIT={adddining:1,llbook:1,addll:1,addflight:1,resortedit:1,showedit:1,paradeedit:1,predit:1,ticketedit:1,passedit:1,visedit:1,hoursedit:1,rbedit:1,stopedit:1};
+  var EDIT={adddining:1,llbook:1,addll:1,addflight:1,resortedit:1,showedit:1,paradeedit:1,predit:1,ticketedit:1,visedit:1,hoursedit:1,rbedit:1,stopedit:1};
   if(EDIT[t]){var _it=screenItem();if(_it&&!canManage(_it))return scrLimitedItem(_it);}
   if(t==='addflight') return scrAddFlight();
   if(t==='adddining') return scrAddDining();
@@ -5502,6 +5546,8 @@ function scrPersonDetails(){
   if(pid!==S.persona&&!isAdmin())return screenShell('Travel Details','<div class="body-empty" style="padding:24px 12px">You can only edit your own details.</div>',null,null,'Done');
   var body='<div class="body-empty" style="text-align:left;padding:0 2px 10px;font-size:13px">Used when booking flights and at check-in. Visible to you and admins.</div>';
   body+=personTravelFields(p,'pd');
+  /* a member's own annual passes live with their account — surface them here */
+  if(pid===S.persona)body+=personPassesSection(pid,'pdGotoPass');
   return screenShell((pid===S.persona?'My Travel Details':esc(p.name)+'\'s Travel Details'),body,'Save','savePersonDetails(\''+pid+'\')');
 }
 function savePersonDetails(pid){
@@ -5510,6 +5556,34 @@ function savePersonDetails(pid){
   var oldEmail=p.email;
   captureTravel(p,'pd');
   save('dtp_family',FAMILY);syncPersonInvite(p,oldEmail);toast('Travel details saved');closeScreen();render();
+}
+/* Annual-passes subsection for a person editor — passes are stored in PASSES
+   keyed by `person`, so this reads as "attached to" the person's metadata.
+   gotoFn is the name of a commit-then-open helper (person form edits would
+   otherwise be lost when navigating to the pass editor). */
+function personPassesSection(pid,gotoFn){
+  var list=PASSES.filter(function(p){return p.person===pid;});
+  var h='<div class="hub-section-label" style="margin-left:0">Annual passes</div>';
+  if(!list.length)h+='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">No annual passes yet.</div>';
+  for(var i=0;i<list.length;i++){var pp=list[i];
+    h+='<div class="ov-card" style="margin:0 0 8px"><div class="item-row"><div style="flex:1;min-width:0"><div class="item-name">'+esc(pp.name||ticketLabel(pp))+'</div><div class="item-time">'+esc(ticketLabel(pp)+' · '+ticketSub(pp))+'</div></div>'+ticketBadge(pp)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="'+gotoFn+'(\''+pid+'\',\''+pp.id+'\')">'+IC.pencil+'</button></div></div>';
+  }
+  h+='<button class="sec-add" style="margin:4px 0 10px" onclick="'+gotoFn+'(\''+pid+'\',\'\')">'+IC.plus+' Add annual pass</button>';
+  return h;
+}
+/* commit self-service travel edits, then open the pass editor for this person */
+function pdGotoPass(pid,passId){
+  var p=person(pid);if(p){captureTravel(p,'pd');save('dtp_family',FAMILY);}
+  S._formInit=null;openScreen(passId?{type:'passedit',edit:passId}:{type:'passedit',person:pid});
+}
+/* commit admin person-editor fields, then open the pass editor for this person */
+function peGotoPass(pid,passId){
+  var p=person(pid);
+  if(p){var nm=val('pe-name');if(nm)p.name=nm;p.lastName=val('pe-last');
+    var c=document.getElementById('pe-color');if(c&&c.value)p.color=c.value;
+    var gs=[];if(S._peParties)S._peParties.forEach(function(x){gs.push(x);});if(gs.length)p.parties=gs;
+    captureTravel(p,'pe');save('dtp_family',FAMILY);}
+  S._formInit=null;openScreen(passId?{type:'passedit',edit:passId}:{type:'passedit',person:pid});
 }
 
 /* Full person editor (admin) — opened by tapping a person in Manage People.
@@ -5562,6 +5636,8 @@ function scrPersonEdit(){
   /* travel details */
   body+='<div class="hub-section-label" style="margin-left:0">Travel details</div>';
   body+=personTravelFields(p,'pe',{noName:true,noEmail:true});
+  /* annual passes — attached to this person's metadata (admin can add for them) */
+  body+=personPassesSection(pid,'peGotoPass');
   body+='<button class="btn-danger-link" onclick="peDelete(\''+pid+'\')">Remove this person</button>';
   return screenShell('Edit '+esc(p.name),body,'Save','savePersonEdit(\''+pid+'\')','Cancel',null,'backToPeople()');
 }
@@ -5676,9 +5752,8 @@ function delPersona(id){
   S.filter.delete(id);
   // pull from park-visit assignments too
   VISITS.forEach(function(v){if(Array.isArray(v.who)){v.who=v.who.filter(function(m){return m!==id;});if(!v.who.length)v.who='all';}});
-  /* annual passes: drop the person from holders; remove a pass with no holders left */
-  PASSES.forEach(function(pp){if(Array.isArray(pp.who))pp.who=pp.who.filter(function(m){return m!==id;});});
-  PASSES=PASSES.filter(function(pp){return pp.who==='all'||(Array.isArray(pp.who)&&pp.who.length)||(typeof pp.who==='string'&&pp.who&&pp.who!=='all');});
+  /* annual passes are individual, single-person components — drop this person's */
+  PASSES=PASSES.filter(function(pp){return pp.person!==id;});
   persist();saveLists();
   renderScreen_inplace2();
 }
@@ -5965,10 +6040,10 @@ function scrSection(){
     body+='<div class="hub-section-label" style="margin-left:0">Annual passes (covering this trip)</div>';
     if(!pft.length)body+='<div class="body-empty" style="text-align:left;padding:2px 12px">No annual passes cover these dates.</div>';
     for(var ipf=0;ipf<pft.length;ipf++){var pf=pft[ipf];
-      body+='<div class="ov-card"><div class="item-row" style="padding:10px 12px"><div style="flex:1;min-width:0"><div class="item-name">'+esc(ticketLabel(pf))+'</div><div class="item-time">'+esc(ticketSub(pf))+'</div>'+whoChips(pf.who)+'</div>'+ticketBadge(pf)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'passedit\',edit:\''+pf.id+'\'})">'+IC.pencil+'</button></div></div>';
+      body+='<div class="ov-card"><div class="item-row" style="padding:10px 12px"><div style="flex:1;min-width:0"><div class="item-name">'+esc(pf.name||ticketLabel(pf))+'</div><div class="item-time">'+esc(ticketLabel(pf)+' · '+ticketSub(pf))+'</div>'+ticketWhoChips(pf)+'</div>'+ticketBadge(pf)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'passedit\',edit:\''+pf.id+'\'})">'+IC.pencil+'</button></div></div>';
     }
-    add='<button class="sec-add" onclick="openScreen({type:\'ticketedit\'})">Add park ticket</button>'
-       +'<button class="sec-add" onclick="openScreen({type:\'passedit\'})">Add Annual Pass</button>';
+    add='<div class="sec-add-stack"><button class="sec-add" onclick="openScreen({type:\'ticketedit\'})">Add park ticket</button>'
+       +'<button class="sec-add" onclick="openScreen({type:\'passedit\'})">Add Annual Pass</button></div>';
   }
   if(owned)body=renderFilter()+body;   /* Mine / Everyone / Not mine on ownership categories */
   return screenShell(m[0],body,null,null,'Done',add);
@@ -6258,13 +6333,6 @@ function delPR(id){
    and an activated toggle. Park visits are managed separately (no auto-gen). */
 var TICKET_BASES={base:'Base Ticket · 1 park per day',hopper:'Park Hopper · hop between parks same day',hopperplus:'Park Hopper Plus · hopping + water parks & sports'};
 var TICKET_BASE_SHORT={base:'1 park/day',hopper:'Hopper',hopperplus:'Hopper Plus'};
-/* WDW annual passes all INCLUDE Park Hopper admission (hop:true). */
-var AP_TIERS={
-  incredi:{name:'Incredi-Pass',elig:'Available nationwide',hop:true},
-  sorcerer:{name:'Sorcerer Pass',elig:'Florida residents & DVC members',hop:true},
-  pirate:{name:'Pirate Pass',elig:'Florida residents',hop:true},
-  pixie:{name:'Pixie Dust Pass',elig:'Florida residents · weekday admission',hop:true}
-};
 function addOneYear(ds){if(!/^\d{4}-\d{2}-\d{2}$/.test(ds||''))return '';var p=ds.split('-');return (+p[0]+1)+'-'+p[1]+'-'+p[2];}
 function fmtMD(ds){return /^\d{4}-\d{2}-\d{2}$/.test(ds||'')?(monOf(ds)+' '+(+ds.slice(8))):'';}
 function ticketsFor(date){
@@ -6274,8 +6342,9 @@ function ticketsFor(date){
     return true;   /* legacy AP ticket (pre-migration) — held for the whole trip */
   });
   /* fold in tenant-level annual passes held by a trip member and covering the date */
+  var members=whoArrFor('all',S.tripId);
   PASSES.forEach(function(p){
-    if(!whoArrFor(p.who,S.tripId).length)return;
+    if(members.indexOf(p.person)<0)return;
     if((!p.activation||date>=p.activation)&&(!p.expiration||date<=p.expiration))out.push(p);
   });
   return out;
@@ -6293,6 +6362,15 @@ function ticketBadge(t){
   if(t.category==='ap')return t.activated?'<span class="st-badge st-booked">Active</span>':'<span class="st-badge st-todo">Inactive</span>';
   return '<span class="inpark-badge" style="background:#0F766E">'+esc(TICKET_BASE_SHORT[t.base]||'Ticket')+'</span>';
 }
+/* who-chips for a ticket OR an annual pass (a pass has one `person`, not a who[]) */
+function ticketWhoChips(t){
+  if(t&&t.category==='ap'){var h=person(t.person);return h?('<div class="who-named-row"><span class="who-named"><span class="wdot" style="background:'+h.color+'">'+esc((h.name[0]||'').toUpperCase())+'</span>'+esc(h.name)+'</span></div>'):'';}
+  return whoChips(t&&t.who);
+}
+function ticketHolderName(t){
+  if(t&&t.category==='ap'){var h=person(t.person);return h?h.name:'';}
+  return whoNames(t&&t.who);
+}
 function ticketCard(tks,pk,date){
   var key='tickets';
   var o='<div class="card">';
@@ -6300,7 +6378,7 @@ function ticketCard(tks,pk,date){
   if(S.open[key]){
     o+='<div class="card-body">';
     for(var i=0;i<tks.length;i++){var t=tks[i];
-      o+='<div class="item-row" style="padding:10px 14px"><div style="flex:1;min-width:0"><div class="item-name">'+esc(ticketLabel(t))+'</div><div class="item-time">'+esc(ticketSub(t))+'</div>'+whoChips(t.who)+'</div>'+ticketBadge(t)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'ticketedit\',edit:\''+t.id+'\'})">'+IC.pencil+'</button></div>';
+      o+='<div class="item-row" style="padding:10px 14px"><div style="flex:1;min-width:0"><div class="item-name">'+esc(t.category==='ap'?(t.name||ticketLabel(t)):ticketLabel(t))+'</div><div class="item-time">'+esc(ticketSub(t))+'</div>'+ticketWhoChips(t)+'</div>'+ticketBadge(t)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\''+(t.category==='ap'?'passedit':'ticketedit')+'\',edit:\''+t.id+'\'})">'+IC.pencil+'</button></div>';
     }
     o+='<button class="add-link" onclick="openScreen({type:\'ticketedit\'})">'+IC.plus+' Add park ticket</button>';
     o+='</div>';
@@ -6375,19 +6453,44 @@ function passesForTrip(){
     return (!p.activation||p.activation<=te)&&(!p.expiration||p.expiration>=ts);
   });
 }
-function passTier(v){S._passTier=v;renderScreen_inplace2();}
-function passActivated(v){S._passActivated=v;renderScreen_inplace2();}
+/* capture the free-text name before any in-place re-render wipes the input */
+function passKeepName(){var n=document.getElementById('pass-name');if(n)S._passName=n.value;}
+function passTier(v){passKeepName();S._passTier=v;renderScreen_inplace2();}
+function passActivated(v){passKeepName();S._passActivated=v;renderScreen_inplace2();}
+function passSetPerson(v){passKeepName();S._passPerson=v;renderScreen_inplace2();}
 function passSyncExp(){var a=document.getElementById('pass-activation'),e=document.getElementById('pass-exp');S._passAct=a?a.value:'';if(e)e.value=addOneYear(S._passAct);}
+/* a viewer may see a pass if they're an admin or it's their own */
+function canSeePass(p){return isAdmin()||(p&&p.person===S.persona);}
+/* the owner this editor is targeting: an edit keeps its person; a new pass
+   honours the screen's person arg (from a person editor) but non-admins are
+   always pinned to themselves — they can only add passes for themselves. */
+function passOwnerId(edit){
+  if(!isAdmin())return S.persona;
+  if(edit&&edit.person)return edit.person;
+  return (S.screen&&S.screen.person)||S.persona;
+}
 function scrPassEdit(){
   var edit=S.screen.edit?PASSES.filter(function(x){return x.id===S.screen.edit;})[0]:null;
+  if(edit&&!canSeePass(edit))return screenShell('Annual Pass','<div class="body-empty" style="padding:24px 12px">You can only manage your own annual passes.</div>',null,null,'Done');
   if(S._formInit!=='pass'){
     S._passTier=(edit&&edit.tier)?edit.tier:'incredi';
     S._passActivated=!!(edit&&edit.activated);
     S._passAct=(edit&&edit.activation)||'';
+    S._passPerson=passOwnerId(edit);
+    S._passName=(edit&&edit.name)||'';
     S._formInit='pass';
   }
-  var pre=edit?edit.who:[S.persona];
-  var body='<div class="field"><label class="field-label">Pass tier</label>';
+  var ownerNm=(person(S._passPerson)||{}).name||'';
+  var body='<div class="field"><label class="field-label">Pass name <span class="opt">(optional)</span></label><input class="field-input" id="pass-name" value="'+esc(S._passName||'')+'" placeholder="'+esc(passDefaultName(S._passPerson,S._passTier))+'"></div>';
+  /* owner: admins pick anyone; everyone else is fixed to themselves */
+  if(isAdmin()){
+    body+='<div class="field"><label class="field-label">Pass holder</label><select class="field-select" id="pass-person" onchange="passSetPerson(this.value)">';
+    for(var fi=0;fi<FAMILY.length;fi++){var fp=FAMILY[fi];body+='<option value="'+esc(fp.id)+'"'+(fp.id===S._passPerson?' selected':'')+'>'+esc(fp.name)+'</option>';}
+    body+='</select></div>';
+  }else{
+    body+='<div class="field"><label class="field-label">Pass holder</label><div class="field-input" style="background:var(--cream);color:var(--muted)">'+esc(ownerNm)+'</div></div>';
+  }
+  body+='<div class="field"><label class="field-label">Pass tier</label>';
   ['incredi','sorcerer','pirate','pixie'].forEach(function(k){var tt=AP_TIERS[k],on=S._passTier===k;
     body+='<div class="notify-row'+(on?' on':'')+'" style="margin-bottom:8px" onclick="passTier(\''+k+'\')"><span class="notify-check">'+(on?IC.checkw:'')+'</span>'
       +'<div style="flex:1"><div class="notify-lbl">'+esc(tt.name)+'</div><div class="notify-sub">'+esc(tt.elig)+'</div></div>'
@@ -6398,40 +6501,46 @@ function scrPassEdit(){
   body+='<div class="field"><label class="field-label">Expires</label><input type="date" class="field-input" id="pass-exp" value="'+esc(addOneYear(S._passAct)||'')+'" readonly style="color:var(--muted)"></div></div>';
   body+='<div class="field"><label class="field-label">Status</label><div class="notify-row'+(S._passActivated?' on':'')+'" onclick="passActivated('+(S._passActivated?'false':'true')+')"><span class="notify-check">'+(S._passActivated?IC.checkw:'')+'</span><div><div class="notify-lbl">Pass activated</div><div class="notify-sub">Switch on once the pass has been activated in-park.</div></div></div></div>';
   body+='<div class="body-empty" style="text-align:left;padding:2px 2px 6px;color:#92400E"><strong>Reminder:</strong> Annual Pass holders still need a park reservation for every day they plan to enter a park.</div>';
-  body+=whoSelectField(pre);
-  body+=notifyField('Annual pass');
   if(edit) body+='<button class="btn-danger-link" onclick="delPass(\''+edit.id+'\')">Delete this pass</button>';
   return screenShell(edit?'Edit Annual Pass':'Add Annual Pass',body,'Save','savePass()');
 }
 function savePass(){
   var edit=S.screen.edit?PASSES.filter(function(x){return x.id===S.screen.edit;})[0]:null;
-  var oldWho=edit?edit.who:[];
+  if(edit&&!canSeePass(edit)){toast('You can only manage your own annual passes');closeScreen();return;}
   var rec=edit||{id:'ap'+Date.now(),by:S.persona};
   rec.category='ap';rec.tier=S._passTier||'incredi';
+  /* owner: admin may reassign via the picker; non-admins are pinned to self */
+  var owner=isAdmin()?(val('pass-person')||S._passPerson||S.persona):S.persona;
+  rec.person=owner;
+  rec.name=val('pass-name')||passDefaultName(owner,rec.tier);
   rec.activation=val('pass-activation')||'';
   rec.expiration=addOneYear(rec.activation);
   rec.activated=!!S._passActivated;
-  rec.who=whoVal();
+  if(rec.who!==undefined)delete rec.who;   /* legacy multi-person field is gone */
   if(!edit)PASSES.push(rec);
-  save('dtp_passes',PASSES);afterWhoSave('Annual pass',rec,oldWho);
-  S._who=null;S._formInit=null;toast('Annual pass saved');closeScreen();render();
+  save('dtp_passes',PASSES);
+  S._who=null;S._passPerson=null;S._formInit=null;toast('Annual pass saved');closeScreen();render();
 }
 function delPass(id){
   var it=PASSES.filter(function(x){return x.id===id;})[0];if(!it)return;
-  if(!canManage(it)){toast('Only the holder, owner or an admin can delete this');return;}
+  if(!(isAdmin()||it.person===S.persona||(it.by&&it.by===S.persona))){toast('Only the holder or an admin can delete this');return;}
   for(var i=0;i<PASSES.length;i++)if(PASSES[i].id===id){PASSES.splice(i,1);break;}
   save('dtp_passes',PASSES);notifyDelete('Annual pass',it);toast('Pass removed');closeScreen();render();
 }
+function passRow(pp){
+  var holder=person(pp.person),chip=holder?('<span class="wdot" style="background:'+holder.color+';width:22px;height:22px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;color:#fff;margin-top:6px">'+esc((holder.name[0]||'').toUpperCase())+'</span>'):'';
+  return '<div class="ov-card" style="margin:0 0 8px"><div class="item-row"><div style="flex:1;min-width:0"><div class="item-name">'+esc(pp.name||ticketLabel(pp))+'</div><div class="item-time">'+esc(ticketLabel(pp)+' · '+ticketSub(pp))+'</div>'+(holder?('<div class="item-time" style="opacity:.85">'+esc(holder.name)+'</div>'):'')+'</div>'+ticketBadge(pp)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'passedit\',edit:\''+pp.id+'\'})">'+IC.pencil+'</button></div></div>';
+}
 function scrPasses(){
-  var list=PASSES.filter(function(p){return visible(p.who);});
-  var body='<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:14px;color:var(--ink)">Annual passes are kept on your account and apply to <strong>every</strong> trip — you only enter them once.</div>';
+  var list=PASSES.filter(canSeePass);
+  var lead=isAdmin()?'Annual passes are kept on each person\'s account and apply to <strong>every</strong> trip. As an admin you can see and add passes for anyone.'
+                    :'Annual passes are kept on your account and apply to <strong>every</strong> trip — you only enter them once.';
+  var body='<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:14px;color:var(--ink)">'+lead+'</div>';
   body+='<button class="sec-add" style="margin:0 0 10px" onclick="openScreen({type:\'passedit\'})">'+IC.plus+' Add annual pass</button>';
   if(!list.length){
     body+='<div class="body-empty" style="text-align:left;padding:2px">No annual passes yet.</div>';
   }else{
-    for(var i=0;i<list.length;i++){var pp=list[i];
-      body+='<div class="ov-card" style="margin:0 0 8px"><div class="item-row"><div style="flex:1;min-width:0"><div class="item-name">'+esc(ticketLabel(pp))+'</div><div class="item-time">'+esc(ticketSub(pp))+'</div>'+whoChips(pp.who)+'</div>'+ticketBadge(pp)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'passedit\',edit:\''+pp.id+'\'})">'+IC.pencil+'</button></div></div>';
-    }
+    for(var i=0;i<list.length;i++)body+=passRow(list[i]);
   }
   return screenShell('Annual Passes',body,null,null,'Done');
 }
@@ -6468,7 +6577,7 @@ function scrVisitEdit(){
   if(validTks.length){
     var assoc=(edit&&edit.tickets)||[];
     for(var ti=0;ti<validTks.length;ti++){var tk=validTks[ti];
-      body+='<label class="chk-row"><input type="checkbox" class="vs-tk" value="'+tk.id+'"'+(assoc.indexOf(tk.id)>=0?' checked':'')+'><span style="flex:1;min-width:0">'+esc(ticketLabel(tk))+'</span><span class="chk-who">'+esc(whoNames(tk.who))+'</span></label>';
+      body+='<label class="chk-row"><input type="checkbox" class="vs-tk" value="'+tk.id+'"'+(assoc.indexOf(tk.id)>=0?' checked':'')+'><span style="flex:1;min-width:0">'+esc(tk.category==='ap'?(tk.name||ticketLabel(tk)):ticketLabel(tk))+'</span><span class="chk-who">'+esc(ticketHolderName(tk))+'</span></label>';
     }
   }else{
     body+='<div class="body-empty" style="text-align:left;padding:2px">No tickets valid on this date yet — add one in Park Hours &amp; Tickets first.</div>';

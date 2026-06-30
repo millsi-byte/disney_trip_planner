@@ -567,6 +567,11 @@ button{font-family:inherit}
 .screen-foot{flex-shrink:0;background:var(--cream);border-top:1px solid var(--border);padding:12px 12px calc(14px + env(safe-area-inset-bottom))}
 .sec-add{display:block;width:100%;padding:14px;background:var(--gold);color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;min-height:50px}
 .sec-add:active{filter:brightness(.95)}
+/* two stacked footer add-buttons (e.g. Park Tickets: ticket + annual pass) need
+   a gap so they don't overlap */
+.sec-add+.sec-add{margin-top:10px}
+.sec-add-stack{display:flex;flex-direction:column;gap:10px}
+.sec-add-stack .sec-add{margin-top:0}
 .btn-secondary{width:100%;padding:14px;background:var(--card);color:var(--ink);border:1px solid var(--border);border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:8px;min-height:50px}
 .btn-secondary.green{background:var(--ak);color:#fff;border-color:var(--ak)}
 
