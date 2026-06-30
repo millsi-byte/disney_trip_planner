@@ -705,6 +705,7 @@
   }
 
   /* reflect auth state in the UI and drive sync on/off */
+  var _firstAuthResolve=true;   /* see the authwait lock below */
   auth.onAuthStateChanged(function(u){
     C.user=u; C.ready=true;
     if(u){
@@ -721,13 +722,22 @@
          this account to its real destination — otherwise the gap between auth
          resolving and the first sync finishing flashed whatever stale screen
          was underneath (sometimes the account hub with "Join with a code",
-         which is misleading for users who clearly don't have access). Only
-         open it from sign-in / no-screen states so we don't trample a screen
-         the user is already on (claim, noaccess, etc. all stay put). */
+         which is misleading for users who clearly don't have access).
+         On the FIRST auth resolution of this page load, force the gate open
+         UNCONDITIONALLY — overriding whatever screen the user already tapped
+         into. Before this point everything on screen (and anything they could
+         have saved by interacting with it) is built from this device's local
+         cache, which may be the unverified demo seed; the only safe move is to
+         freeze input the moment we know a real sign-in is in flight, not just
+         when the screen happens to already be empty/signin. Later re-resolves
+         (e.g. a token refresh on an already-synced session) keep the narrower
+         check so an active user mid-screen isn't yanked out from under
+         themselves for no reason. */
       try{
-        if(window.S&&typeof openScreen==='function'&&(!S.screen||S.screen.type==='signin'))
+        if(window.S&&typeof openScreen==='function'&&(_firstAuthResolve||!S.screen||S.screen.type==='signin'))
           openScreen({type:'authwait'});
       }catch(e){}
+      _firstAuthResolve=false;
       /* Route the user in whether or not the first sync succeeds. The app is
          local-first and the super-admin/owner check is just an email lookup —
          a stumbling Firestore read (blocked transport, transient permission

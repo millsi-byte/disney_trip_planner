@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='336';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='337';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -186,7 +186,14 @@ function ensurePartyTags(){
 }
 ensurePartyTags();
 function saveParties(){save('dtp_parties',PARTIES);}
-S.partyId = load('dtp_partyId', PARTIES[0].id);   /* active party context */
+/* PARTIES can legitimately be [] here — a cloud-used device that hasn't yet
+   pulled its real party data down (ensurePartyTags() intentionally leaves it
+   empty rather than seed it, see above). PARTIES[0] would then be undefined,
+   and JS evaluates load()'s fallback argument eagerly regardless of whether
+   it's actually needed — so reading .id off it unconditionally crashed the
+   whole boot sequence before render() ever ran. ensureActiveParty() already
+   re-derives a real partyId once PARTIES is populated. */
+S.partyId = load('dtp_partyId', (PARTIES[0]&&PARTIES[0].id)||null);   /* active party context */
 function savePartyId(){save('dtp_partyId',S.partyId);}
 
 /* every planning item belongs to a trip — default seed items to jul26 */
@@ -7045,6 +7052,14 @@ ensureVisibleTrip();
 loadLists();
 S.open=defOpen();
 render();
+/* Zero-latency lock: if this device has a real cloud account but hasn't yet
+   cached its trips, lock the UI behind the "Signing you in…" screen the
+   INSTANT we paint — synchronously, in the same tick as render() above, so
+   there is no async gap for a tap to land on (and possibly save) unverified
+   seed data before cloud.js's auth callback gets a chance to run. cloud.js
+   replaces this screen (or the destination it routes to) once the real sync
+   completes. */
+if(awaitingFirstCloudSync())openScreen({type:'authwait'});
 /* automatic rolling backups: a first snapshot once data has settled, then a
    throttled check every minute (autoBackup itself skips if unchanged / too
    soon). A pure local safety net — see the backup engine above. */
@@ -7077,12 +7092,22 @@ try{
 var _bootTries=0;
 function bootFrontDoor(){
   try{
+    /* Never downgrade the synchronous awaitingFirstCloudSync() lock (see the
+       boot tail above) to "signin"/"persona" — it's deliberately set before
+       this function's first poll so a previously-cloud-used device can't be
+       bounced into an interactive screen while we still don't know if its
+       local cache is real or unverified seed data. Once window.CLOUD exists,
+       cloud.js's own auth callbacks (onCloudSynced / onCloudSignedOut) own
+       moving it on, so this polling loop's job is done either way — keep
+       polling only while CLOUD genuinely hasn't loaded yet, so a real Firebase
+       failure still eventually falls through rather than locking forever. */
+    var locked=!!(S.screen&&S.screen.type==='authwait');
     if(window.CLOUD){
       if(window.CLOUD.enabled){
         if(window.CLOUD.user)return;                          /* signed in → auth callbacks route */
-        if(!(S.screen&&(S.screen.type==='signin'||S.screen.type==='claim')))
+        if(!locked&&!(S.screen&&(S.screen.type==='signin'||S.screen.type==='claim')))
           openScreen({type:'signin'});
-      }else if(!localStorage.getItem('dtp_persona')){
+      }else if(!locked&&!localStorage.getItem('dtp_persona')){
         openScreen({type:'persona'});                         /* no firebase at all → local mode */
       }
       return;   /* CLOUD resolved — stop polling */
@@ -7090,7 +7115,7 @@ function bootFrontDoor(){
     /* CLOUD not loaded yet: show the sign-in gate NOW so a slow Firebase CDN
        can't leave the page blank, then keep polling so we can correct to the
        local persona chooser in the rare case Firebase is actually disabled. */
-    if(!(S.screen&&(S.screen.type==='signin'||S.screen.type==='claim')))
+    if(!locked&&!(S.screen&&(S.screen.type==='signin'||S.screen.type==='claim')))
       openScreen({type:'signin'});
     if(_bootTries++<200)setTimeout(bootFrontDoor,30);
   }catch(e){}
