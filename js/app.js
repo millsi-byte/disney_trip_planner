@@ -74,7 +74,7 @@ function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='332';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='333';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -1635,6 +1635,7 @@ function setListWho(pid){
   S.listWho=(S.listWho===pid)?null:(pid||null);
   if(S.screen&&S.screen.type==='todolist')refreshTodo();
   else if(S.screen&&(S.screen.type==='packlist'||S.screen.type==='lists'))refreshLists();
+  else if(S.screen&&S.screen.type==='wishlist')refreshWish();
   else renderScreen_inplace2();
 }
 function personFilterRow(members){
@@ -3050,6 +3051,10 @@ function refreshWish(){
   }
   render();
 }
+/* hide/show booked (completed) wishes — mirrors the Need-to-Buy "Hide bought" */
+function wlHideDone(){try{return localStorage.getItem('bt_wlHideDone')==='1';}catch(e){return false;}}
+function wlToggleHideDone(){try{localStorage.setItem('bt_wlHideDone',wlHideDone()?'0':'1');}catch(e){}refreshWish();}
+function wlHideToggle(){return '<div style="display:flex;justify-content:flex-end;margin:-2px 2px 8px"><button class="lens-btn'+(wlHideDone()?' on':'')+'" onclick="wlToggleHideDone()">'+(wlHideDone()?'Show booked':'Hide booked')+'</button></div>';}
 function wlAdd(){
   S.wlForm={id:null};S._who=new Set();S._wlPriv=false;S._wlKind='dining';S._notify=notifDefault();refreshWish();
   setTimeout(function(){var e=document.getElementById('wl-title');if(e){try{e.scrollIntoView({block:'center',behavior:'smooth'});}catch(_){e.scrollIntoView();}try{e.focus({preventScroll:true});}catch(_2){e.focus();}}},60);
@@ -3111,17 +3116,22 @@ function wlSendChat(id){var w=wishById(id);if(!w)return;
 function scrWishList(){return screenShell('Wish List',listContext()+'<div id="wish-body">'+wishBody()+'</div>',null,null,'Done');}
 function wishBody(){
   var items=WISHLIST.filter(function(w){return w.trip===S.tripId&&wishCanSee(w);});
+  /* individual filter — by who entered the wish (parity with Need to Buy) */
+  if(S.listWho)items=items.filter(function(w){return w.by===S.listWho;});
   var open=items.filter(function(w){return !w.booked;}),booked=items.filter(function(w){return w.booked;});
+  var hideDone=wlHideDone();
   var adding=S.wlForm&&S.wlForm.id===null;
   var o='<div class="body-empty" style="text-align:left;padding:0 2px 8px;font-size:12px">A shared backlog of things anyone wants to do or try. Tap '+IC.route+' to turn a wish into a planned item, or send it to chat for attention.</div>';
+  o+=personFilterRow(tripMembers());
+  if(booked.length)o+=wlHideToggle();
   o+='<div class="hub-section-label" style="margin-left:0">Open</div>';
   o+='<div class="card" style="padding:6px 0 0">';
   if(!adding)o+='<button class="add-link" onclick="wlAdd()">'+IC.plus+' Add wish</button>';
-  if(!open.length&&!adding)o+='<div class="body-empty" style="text-align:left;padding:6px 12px">Nothing here yet.</div>';
+  if(!open.length&&!adding)o+='<div class="body-empty" style="text-align:left;padding:6px 12px">'+(S.listWho?'No wishes from this person yet.':'Nothing here yet.')+'</div>';
   for(var i=0;i<open.length;i++)o+=wishRowOrEditor(open[i]);
   if(adding)o+=wishEditor(null);
   o+='</div>';
-  if(booked.length){
+  if(booked.length&&!hideDone){
     o+='<div class="hub-section-label" style="margin-left:0">Booked</div>';
     o+='<div class="card" style="padding:6px 0 0">';
     for(var j=0;j<booked.length;j++)o+=wishRowOrEditor(booked[j]);
