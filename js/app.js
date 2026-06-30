@@ -70,11 +70,27 @@ S.open = defOpen();
 function load(k,fb){try{var s=localStorage.getItem(k);if(s)return JSON.parse(s);}catch(e){}return fb;}
 function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
   try{if(typeof window!=='undefined'&&window.CLOUD&&window.CLOUD.push)window.CLOUD.push(k,v);}catch(e){}}
+/* True on a device that's signed into a real cloud account (dtp__lastuid is
+   set — same marker cloud.js stamps on every sign-in) but hasn't yet cached
+   ANY trip locally — i.e. this device's in-memory TRIPS/DAYS/etc. are still
+   the bundled demo seed, unverified against the real synced data (mirrors
+   cloud.js's own startSync() stale-data guard, which uses the identical
+   check to decide adopt-only vs merge). Boot-time code that AUTO-GENERATES
+   and SAVES derived data (e.g. blank day skeletons for "missing" trips) must
+   skip while this is true, or it stamps the seed with a fresh timestamp that
+   wins the next reconcile and overwrites the real synced data. */
+function awaitingFirstCloudSync(){
+  try{
+    if(!localStorage.getItem('dtp__lastuid'))return false;
+    var tj=localStorage.getItem('dtp_trips');
+    return !(tj&&(JSON.parse(tj)||[]).length>0);
+  }catch(e){return false;}
+}
 
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='335';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='336';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -378,6 +394,10 @@ function rehydrate(){
   REBOOKS=load('dtp_rebooks',REBOOKS); TRIPS=load('dtp_trips',TRIPS); NOTIFS=load('dtp_notifs',NOTIFS);
   PARTIES=load('dtp_parties',PARTIES)||PARTIES; CHAT=load('dtp_chat',CHAT);
   try{ensurePartyTags();}catch(e){}   /* re-tag records that arrived without a party */
+  /* backfill any trip still missing day skeletons — TRIPS/DAYS are now the
+     real, just-synced data (the boot-time call skips this on an unverified
+     device; this is where it safely runs once we know the data is real) */
+  try{materializeAllDays();}catch(e){}
   /* If a sync just removed the persona we were signed in as (the owner deleted
      us), we've been evicted — lock out instead of silently resolving to another
      seat (which let a removed test account become the admin and write to the
@@ -7013,7 +7033,13 @@ function render(){
   else{document.getElementById('app').style.padding='';}
   renderNav();
 }
-materializeAllDays();
+/* Skip on a device that's signed into a real cloud account but hasn't cached
+   any trip yet — TRIPS here is still the unverified demo seed, and "trip has
+   no days yet" would be true for ALL of it, generating + saving a full set of
+   blank day skeletons that can win the next reconcile and wipe real day
+   strategies/itineraries. Once the real TRIPS/DAYS arrive, rehydrate() runs
+   this same backfill safely. */
+if(!awaitingFirstCloudSync())materializeAllDays();
 ensureActiveParty();
 ensureVisibleTrip();
 loadLists();
