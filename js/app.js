@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='340';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='341';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -5062,6 +5062,21 @@ function resetToBlank(){
 }
 function startWizard(){openScreen({type:'newtrip'});}
 function wizSkip(){
+  /* "Skip" is meant to bail out of the FIRST-RUN wizard for a genuinely fresh
+     account whose caller already reset to blank before opening this screen
+     (S._freshTenant) — in that real case FAMILY/TRIPS are already empty, so
+     resetToBlank() here is a harmless no-op repeat. The danger is if this fires
+     when that ISN'T true (e.g. the wizard's first-run check read TRIPS.length
+     as 0 transiently on an established account) — this was the ONLY path to
+     resetToBlank() in the whole app with zero confirmation, on a button whose
+     label ("I'll set up manually") reads like "later", not "erase everything".
+     Require the same explicit confirmation startOver() already does before
+     destroying anything real; the genuine first-run case is unaffected since
+     there's nothing to warn about. */
+  var hasRealData=FAMILY.length>1||TRIPS.length>0||PARTIES.length>1;
+  if(hasRealData&&!confirm('This will remove all your trips, people and lists, leaving just you. Are you sure?')){
+    closeScreen();return;
+  }
   S._freshTenant=false;
   resetToBlank();
   closeScreen();S.tab='home';render();
