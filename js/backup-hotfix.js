@@ -1,5 +1,6 @@
-/* Build 342 backup safety hotfix.
-   Keeps pinned manual backups from being deleted by cloud pruning. */
+/* Build 343 backup + list-state safety hotfix.
+   Keeps pinned manual backups from being deleted by cloud pruning and makes
+   trip-specific lists visible again after sign-in/cloud rehydrate. */
 (function(){
   if(window.__DTP_BACKUP_HOTFIX__)return;
   window.__DTP_BACKUP_HOTFIX__=true;
@@ -48,6 +49,64 @@
     }catch(e){}
   }
 
+  function listStateSig(){
+    try{return [S&&S.tripId,S&&S.persona,S&&S.plan,S&&S.fmode].join('|');}
+    catch(e){return '';}
+  }
+  var lastListStateSig='';
+
+  function normalizeListState(opts){
+    opts=opts||{};
+    try{
+      if(!window.S)return;
+      if(!S.plan||['packing','todo','needbuy','wishlist'].indexOf(S.plan)<0)S.plan='packing';
+      S.fmode='all';
+      if(S.filter&&S.filter.clear)S.filter.clear();
+      if(typeof ensureActiveParty==='function')ensureActiveParty();
+      if(typeof ensureVisibleTrip==='function')ensureVisibleTrip();
+      if(typeof loadLists==='function')loadLists();
+      lastListStateSig=listStateSig();
+      if(opts.render!==false&&typeof render==='function')render();
+    }catch(e){}
+  }
+
+  function scheduleNormalizeListState(){
+    setTimeout(function(){normalizeListState();},0);
+    setTimeout(function(){normalizeListState();},250);
+    setTimeout(function(){normalizeListState();},1500);
+  }
+
+  function patchListState(){
+    try{
+      if(typeof rehydrate==='function'&&!window.__DTP_REHYDRATE_LIST_PATCHED__){
+        window.__DTP_REHYDRATE_LIST_PATCHED__=true;
+        var oldRehydrate=rehydrate;
+        window.rehydrate=function(){
+          var r=oldRehydrate.apply(this,arguments);
+          scheduleNormalizeListState();
+          return r;
+        };
+      }
+      if(typeof onCloudSynced==='function'&&!window.__DTP_CLOUD_SYNC_LIST_PATCHED__){
+        window.__DTP_CLOUD_SYNC_LIST_PATCHED__=true;
+        var oldOnCloudSynced=onCloudSynced;
+        window.onCloudSynced=function(){
+          var r=oldOnCloudSynced.apply(this,arguments);
+          scheduleNormalizeListState();
+          return r;
+        };
+      }
+      if(typeof renderListsHub==='function'&&!window.__DTP_LIST_HUB_PATCHED__){
+        window.__DTP_LIST_HUB_PATCHED__=true;
+        var oldRenderListsHub=renderListsHub;
+        window.renderListsHub=function(){
+          if(listStateSig()!==lastListStateSig)normalizeListState({render:false});
+          return oldRenderListsHub.apply(this,arguments);
+        };
+      }
+    }catch(e){}
+  }
+
   if(typeof toggleBackupPin==='function'){
     window.toggleBackupPin=function(idx){
       var list=loadBackups();if(!list[idx])return;
@@ -76,5 +135,8 @@
   }
 
   patchCloudPrune();
+  patchListState();
+  scheduleNormalizeListState();
   setTimeout(patchCloudPrune,1000);
+  setTimeout(patchListState,1000);
 })();
