@@ -1,4 +1,4 @@
-/* Build 343 backup + list-state safety hotfix.
+/* Build 344 backup + list-state safety hotfix.
    Keeps pinned manual backups from being deleted by cloud pruning and makes
    trip-specific lists visible again after sign-in/cloud rehydrate. */
 (function(){
@@ -76,6 +76,28 @@
     setTimeout(function(){normalizeListState();},1500);
   }
 
+  function restoreSignedInPersonaAndLists(){
+    try{
+      if(!(window.CLOUD&&CLOUD.user&&window.S&&window.FAMILY))return;
+      var uid=CLOUD.user.uid,match=null;
+      for(var i=0;i<FAMILY.length;i++){
+        if(FAMILY[i]&&FAMILY[i].uid===uid){match=FAMILY[i];break;}
+      }
+      if(match){
+        S.persona=match.id;
+        try{localStorage.setItem('dtp_persona',JSON.stringify(match.id));}catch(e){}
+        S._seated=true;
+      }
+      normalizeListState();
+    }catch(e){}
+  }
+
+  function scheduleRestoreSignedInPersonaAndLists(){
+    setTimeout(restoreSignedInPersonaAndLists,0);
+    setTimeout(restoreSignedInPersonaAndLists,300);
+    setTimeout(restoreSignedInPersonaAndLists,1500);
+  }
+
   function patchListState(){
     try{
       if(typeof rehydrate==='function'&&!window.__DTP_REHYDRATE_LIST_PATCHED__){
@@ -92,6 +114,7 @@
         var oldOnCloudSynced=onCloudSynced;
         window.onCloudSynced=function(){
           var r=oldOnCloudSynced.apply(this,arguments);
+          scheduleRestoreSignedInPersonaAndLists();
           scheduleNormalizeListState();
           return r;
         };
