@@ -1,7 +1,7 @@
 /* Baseline Tap — service worker
    Network-first so new versions show up on the next load; cache is the
    offline fallback only. */
-var CACHE = 'dtp-v341';
+var CACHE = 'dtp-v342';
 var ASSETS = [
   './',
   './index.html',
@@ -10,6 +10,7 @@ var ASSETS = [
   './js/app.js',
   './js/firebase-config.js',
   './js/cloud.js',
+  './js/backup-hotfix.js',
   './manifest.json',
   /* Self-hosted Firebase SDK — precached so sign-in never waits on (or is
      blocked by) the Google CDN. */
