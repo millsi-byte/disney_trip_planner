@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='347-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='348-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -144,7 +144,10 @@ var PARTIES = load('dtp_parties', null);
 if(!PARTIES){ var _legacy=load('dtp_groups',null); if(_legacy&&_legacy.length)PARTIES=_legacy; }
 if(!PARTIES||!PARTIES.length){
   var _hasCloud=false;try{_hasCloud=!!localStorage.getItem('dtp__lastuid');}catch(e){}
-  if(!_hasCloud){
+  /* blank-first (F-02): only re-seed the default group when there are actual
+     PEOPLE to put in it (an existing local-mode account whose group record
+     was lost). A truly blank boot stays blank — the wizard creates the group. */
+  if(!_hasCloud&&FAMILY.length){
     var _pa=(FAMILY.filter(function(p){return p.admin;})[0]||FAMILY[0]||{}).id||null;
     PARTIES=[{id:'g1',name:'My Group',by:_pa}];
   }else{
@@ -162,10 +165,12 @@ function ensurePartyTags(){
     else{
       var _hc=false;try{_hc=!!localStorage.getItem('dtp__lastuid');}catch(e){}
       if(_hc)return;
+      if(!FAMILY.length)return;   /* blank-first: no people → no auto group */
       var _pa=(FAMILY.filter(function(p){return p.admin;})[0]||FAMILY[0]||{}).id||null;
       PARTIES=[{id:'g1',name:'My Group',by:_pa}];
     }
   }
+  if(!PARTIES.length)return;
   var pid=PARTIES[0].id;
   /* parties carry a color too (like people and trips) — backfill any missing
      one from the shared palette so existing data picks up a stable color.
@@ -346,17 +351,15 @@ function collectShards(base,tid){
 function loadLists(){
   if(!S.tripId){PACKING={};TODO=[];WISHLIST=[];return;}   /* no trip selected — nothing to load */
   try{migrateListShards();}catch(e){}
-  /* the demo seed only ever applies to a brand-new install that has never
-     synced (same guard class as the PARTIES "My Group" seed — see audit F-02) */
-  var seedOK=(S.tripId==='jul26');
-  try{ if(localStorage.getItem('dtp__lastuid'))seedOK=false; }catch(e){}
-  var pk={},pkFound=false;
-  collectShards('packing',S.tripId).forEach(function(s){if(Array.isArray(s.arr)){pk[s.pid]=s.arr;pkFound=true;}});
-  PACKING=pkFound?pk:(seedOK?PACKING_SEED:{});
-  var td=[],tdFound=false;
-  collectShards('todo',S.tripId).forEach(function(s){if(Array.isArray(s.arr)){td=td.concat(s.arr);tdFound=true;}});
-  TODO=tdFound?td:(seedOK?JSON.parse(JSON.stringify(TODO_SEED)):[]);
-  if(!Array.isArray(TODO))TODO=[];
+  /* blank-first (audit F-02): no seed fallback of any kind — an empty store
+     means empty lists, period. Demo data only ever arrives via the explicit
+     loadDemoData() action. */
+  var pk={};
+  collectShards('packing',S.tripId).forEach(function(s){if(Array.isArray(s.arr))pk[s.pid]=s.arr;});
+  PACKING=pk;
+  var td=[];
+  collectShards('todo',S.tripId).forEach(function(s){if(Array.isArray(s.arr))td=td.concat(s.arr);});
+  TODO=td;
   var wl=[];
   collectShards('wishlist',S.tripId).forEach(function(s){if(Array.isArray(s.arr))wl=wl.concat(s.arr);});
   WISHLIST=wl;
@@ -1898,9 +1901,15 @@ function renderHeader(){
   }
   var nb=notifUnread();
   h+='<button class="hdr-bell" onclick="openScreen({type:\'notifs\'})" aria-label="Notifications">'+IC.bell+(nb?'<span class="bell-badge">'+(nb>9?'9+':nb)+'</span>':'')+'</button>';
-  h+='<button class="hdr-iam" onclick="openScreen({type:\'persona\'})">';
-  h+='<span class="iam-name"><span class="pdot" style="background:'+me.color+'">'+esc(me.name[0])+'</span>'+esc(me.name)+' '+IC.chevd+'</span>';
-  h+='</button>';
+  /* blank-first boot: there may be NO people yet (fresh install before the
+     wizard runs) — render a neutral chip instead of crashing on me.color */
+  if(me){
+    h+='<button class="hdr-iam" onclick="openScreen({type:\'persona\'})">';
+    h+='<span class="iam-name"><span class="pdot" style="background:'+me.color+'">'+esc(me.name[0])+'</span>'+esc(me.name)+' '+IC.chevd+'</span>';
+    h+='</button>';
+  }else{
+    h+='<button class="hdr-iam" onclick="openScreen({type:\'persona\'})"><span class="iam-name">Set up '+IC.chevd+'</span></button>';
+  }
   h+='</header>';
   return h;
 }
@@ -2586,6 +2595,9 @@ function renderAdminHub(){
   o+='<div class="hub-section-label">Data</div>';
   o+='<button class="hub-row" onclick="exportAllData()"><div class="hub-icon" style="background:#475569">'+IC.upload+'</div>'
     +'<div class="hub-main"><div class="hub-title">Export / Backup</div><div class="hub-sub">Download all data as JSON</div></div><div class="chev">'+IC.chev+'</div></button>';
+  if(!(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user))
+    o+='<button class="hub-row" onclick="loadDemoData()"><div class="hub-icon" style="background:#6B4FA0">'+IC.sparkles+'</div>'
+      +'<div class="hub-main"><div class="hub-title">Load demo data</div><div class="hub-sub">Replace everything with the sample trip</div></div><div class="chev">'+IC.chev+'</div></button>';
   o+='<button class="hub-row" onclick="openScreen({type:\'backups\'})"><div class="hub-icon" style="background:#0F766E">'+IC.clock+'</div>'
     +'<div class="hub-main"><div class="hub-title">Restore from backup</div><div class="hub-sub">'+backupCountLabel()+'</div></div><div class="chev">'+IC.chev+'</div></button>';
   o+='<button class="hub-row" onclick="startOver()"><div class="hub-icon" style="background:#B91C1C">'+IC.warn+'</div>'
@@ -5202,6 +5214,8 @@ function scrNewTrip(){
     body+=renderNtCal();
     body+='<button class="btn-secondary green" onclick="ntGoToWho()">Next →</button>';
     if(fr)body+='<button class="btn-secondary" style="color:var(--muted);font-size:13px" onclick="wizSkip()">Skip — I\'ll set up manually</button>';
+    if(fr&&!(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user))
+      body+='<button class="btn-secondary" style="color:var(--muted);font-size:13px" onclick="loadDemoData()">Just exploring? Load the demo trip</button>';
     return screenShell('Plan a Trip',body,null,null,cancelLabel,null,cancelArg);
   }
 
@@ -5427,6 +5441,45 @@ function resetToBlank(){
   persist();save('dtp_persona',oid);savePartyId();saveTripId();
 }
 function startWizard(){openScreen({type:'newtrip'});}
+/* Load the sample trip (audit F-02: demo data is opt-in now, never a baseline).
+   Local-mode exploration only — refused while signed into the cloud, so demo
+   content can never be pushed over a real tenant's data. `force===true` skips
+   the confirm (used by the headless tests). */
+function loadDemoData(force){
+  if(typeof DEMO==='undefined'){toast('Demo data not available in this build');return;}
+  if(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user){
+    toast('Demo data is for signed-out exploration — it can\'t be loaded into a synced account');return;
+  }
+  if(force!==true&&!confirm('Load the demo trip? This replaces everything currently in the app with sample data.'))return;
+  try{autoBackup(true);}catch(e){}   /* current state stays recoverable */
+  function cp(x){return JSON.parse(JSON.stringify(x));}
+  FAMILY=cp(DEMO.FAMILY);ALL_IDS=FAMILY.map(function(p){return p.id;});
+  TRIPS=cp(DEMO.TRIPS);DAYS=cp(DEMO.DAYS);VISITS=cp(DEMO.VISITS);PARKHOURS=cp(DEMO.PARKHOURS);
+  RESORTS=cp(DEMO.RESORTS);FLIGHTS=cp(DEMO.FLIGHTS);PARKRES=cp(DEMO.PARKRES);LLS=cp(DEMO.LLS);
+  REBOOKS=cp(DEMO.REBOOKS);DINING=cp(DEMO.DINING);SHOWS=cp(DEMO.SHOWS);PARADES=cp(DEMO.PARADES);
+  TICKETS=cp(DEMO.TICKETS);PASSES=cp(DEMO.PASSES);NOTIFS=cp(DEMO.NOTIFS);CHAT=cp(DEMO.CHAT);
+  TODO_TMPL=cp(DEMO.TODO_TMPL);
+  PARTIES=[{id:'g1',name:'My Group',by:'scott',color:PALETTE[0][0]}];
+  [DAYS,VISITS,PARKHOURS,DINING,LLS,SHOWS,PARADES,FLIGHTS,RESORTS,PARKRES,TICKETS,REBOOKS].forEach(tagTrip);
+  /* chat seed lacks ids/timestamps — same backfill boot used to do */
+  (function(){var base=Date.now()-CHAT.length*1000;
+    for(var i=0;i<CHAT.length;i++){var m=CHAT[i];
+      if(!m.trip)m.trip='jul26';
+      if(!m.id)m.id='c'+(base+i*1000)+'_'+i;
+      if(!m.ts)m.ts=base+i*1000;
+    }
+  })();
+  ensurePartyTags();
+  S.persona='scott';S.partyId='g1';S.tripId='jul26';
+  save('dtp_persona',S.persona);savePartyId();saveTripId();
+  PACKING=cp(DEMO.PACKING);TODO=cp(DEMO.TODO);WISHLIST=cp(DEMO.WISHLIST||[]);
+  persist();saveTmpl();saveLists();saveChat();saveNotifs();
+  try{migratePasses();}catch(e){}
+  materializeAllDays();
+  S._seated=true;S.tab='home';S.open=defOpen();
+  try{closeScreen();}catch(e){}
+  render();toast('Demo trip loaded — explore away');
+}
 function wizSkip(){
   /* "Skip" is meant to bail out of the FIRST-RUN wizard for a genuinely fresh
      account whose caller already reset to blank before opening this screen
@@ -7597,7 +7650,10 @@ function bootFrontDoor(){
         if(!locked&&!(S.screen&&(S.screen.type==='signin'||S.screen.type==='claim')))
           openScreen({type:'signin'});
       }else if(!locked&&!localStorage.getItem('dtp_persona')){
-        openScreen({type:'persona'});                         /* no firebase at all → local mode */
+        /* no firebase at all → local mode. Blank-first: with no people yet
+           there is nothing to choose a persona FROM — go straight to the
+           first-run wizard (which also offers the demo trip). */
+        openScreen(FAMILY.length?{type:'persona'}:{type:'newtrip'});
       }
       return;   /* CLOUD resolved — stop polling */
     }

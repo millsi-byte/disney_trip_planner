@@ -11,6 +11,7 @@ const url = APP_URL;
   });
   await page.goto(url,{waitUntil:'load'});
   await page.waitForTimeout(800);
+  await page.evaluate(() => loadDemoData(true));   // blank-first boot: opt into demo dataset
   const r = await page.evaluate(() => {
     const out={};
     const tid = S.tripId;

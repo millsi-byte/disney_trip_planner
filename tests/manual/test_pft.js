@@ -8,6 +8,7 @@ const url = APP_URL;
   await page.addInitScript(() => { localStorage.setItem('dtp_ver','11'); localStorage.setItem('dtp_persona','scott'); });
   await page.goto(url,{waitUntil:'load'});
   await page.waitForTimeout(800);
+  await page.evaluate(() => loadDemoData(true));   // blank-first boot: opt into demo dataset
   const r = await page.evaluate(() => {
     const out={};
     // two passes covering July 2026: one for scott (a trip member), one for hayley (not on the new trip)

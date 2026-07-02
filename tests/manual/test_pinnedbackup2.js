@@ -8,6 +8,7 @@ const url = APP_URL;
   await page.addInitScript(() => { localStorage.setItem('dtp_ver','11'); localStorage.setItem('dtp_persona','scott'); });
   await page.goto(url,{waitUntil:'load'});
   await page.waitForTimeout(500);
+  await page.evaluate(() => loadDemoData(true));   // blank-first boot: opt into demo dataset
   const r = await page.evaluate(() => {
     const out = {};
     // dtp_trips must exist in localStorage for snapshotKeys()'s "nothing to back up yet" guard

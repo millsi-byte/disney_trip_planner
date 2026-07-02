@@ -12,6 +12,7 @@ const url = APP_URL;
 
   const r = await page.evaluate(async () => {
     const out = {};
+    loadDemoData(true);   // blank-first boot: tests opt into the demo dataset
     localStorage.setItem('dtp_trips', JSON.stringify(TRIPS));
 
     /* ── 1. esc() now escapes quotes (XSS fix) while keeping text readable ── */
@@ -58,7 +59,7 @@ const url = APP_URL;
     const snap = { ts: Date.now(), iso:'', build:'x', keys: {
       dtp_trips: JSON.stringify(TRIPS),
       dtp_family: JSON.stringify(FAMILY),
-      'dtp_packing_jul26': JSON.stringify({scott:[{cat:'C',items:[{n:'RealItem',qty:1}]}]}),
+      'dtp_packing_rtrip': JSON.stringify({scott:[{cat:'C',items:[{n:'RealItem',qty:1}]}]}),
       dtp_persona: JSON.stringify('EVIL'),        // must be skipped
       'dtp__synctimes': JSON.stringify({a:1})     // must be skipped
     }};
@@ -66,14 +67,14 @@ const url = APP_URL;
     await new Promise(res => setTimeout(res, 100));
     out.restorePaused = calls.pause === 1;
     out.restoreResumed = calls.resume === 1;
-    out.restorePushedDataKeys = calls.pushed.includes('dtp_packing_jul26') && calls.pushed.includes('dtp_trips');
+    out.restorePushedDataKeys = calls.pushed.includes('dtp_packing_rtrip') && calls.pushed.includes('dtp_trips');
     // Build 347: a legacy packing blob in the snapshot is migrated into a
     // per-person shard during restore; the SHARD (post-migration state) must
     // be what reaches both localStorage and the cloud.
-    out.restorePushedShard = calls.pushed.includes('dtp_packing_jul26_scott');
+    out.restorePushedShard = calls.pushed.includes('dtp_packing_rtrip_scott');
     out.restoreSkippedLocalKeys = !calls.pushed.includes('dtp_persona') && !calls.pushed.includes('dtp__synctimes');
     out.restorePersonaUntouched = localStorage.getItem('dtp_persona') !== '"EVIL"';
-    out.restoreWroteLocal = (localStorage.getItem('dtp_packing_jul26_scott')||'').includes('RealItem');
+    out.restoreWroteLocal = (localStorage.getItem('dtp_packing_rtrip_scott')||'').includes('RealItem');
 
     /* ── 5. content viewer shows actual item names + resolves names from snapshot ── */
     const viewSnap = { ts: Date.now(), iso:'', build:'x', label:'test view', keys: {

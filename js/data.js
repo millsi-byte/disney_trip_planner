@@ -531,3 +531,21 @@ var TRIP_SUMMARY = {
   feb27:{resort:"Disney's Riviera Resort", days:8, dining:0, flights:0, status:"Just dates so far"},
   spring25:{resort:"Disney's Beach Club", days:7, dining:9, flights:2, status:"Completed"}
 };
+
+/* ══════════════════════════════════════════════════════════════════════
+   BLANK-FIRST BOOT (audit F-02). Everything above this line is DEMO data —
+   a fictional trip kept ONLY for the explicit "Load demo trip" action. It
+   is no longer the app's baseline state: the bundle below captures it and
+   the live collections are re-pointed to empty, so a device with no saved
+   data boots BLANK (into onboarding), never into fake data that could sync
+   over real data. loadDemoData() in app.js deep-copies from DEMO.
+   ══════════════════════════════════════════════════════════════════════ */
+var DEMO={FAMILY:FAMILY,TRIPS:TRIPS,DAYS:DAYS,VISITS:VISITS,PARKHOURS:PARKHOURS,
+  RESORTS:RESORTS,FLIGHTS:FLIGHTS,PARKRES:PARKRES,LLS:LLS,REBOOKS:REBOOKS,
+  DINING:DINING,SHOWS:SHOWS,PARADES:PARADES,PACKING:PACKING,TODO:TODO,
+  TODO_TMPL:TODO_TMPL,WISHLIST:WISHLIST,CHAT:CHAT,NOTIFS:NOTIFS,
+  TRIP_SUMMARY:TRIP_SUMMARY,TICKETS:TICKETS,PASSES:PASSES};
+FAMILY=[];ALL_IDS=[];TRIPS=[];DAYS=[];VISITS=[];PARKHOURS=[];RESORTS=[];
+FLIGHTS=[];PARKRES=[];LLS=[];REBOOKS=[];DINING=[];SHOWS=[];PARADES=[];
+PACKING={};TODO=[];TODO_TMPL={};WISHLIST=[];CHAT=[];NOTIFS=[];TRIP_SUMMARY={};
+TICKETS=[];PASSES=[];

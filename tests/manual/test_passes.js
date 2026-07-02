@@ -22,9 +22,17 @@ const url = APP_URL;
 
   await page.goto(url, { waitUntil: 'load' });
   await page.waitForTimeout(800);
+  await page.evaluate(() => loadDemoData(true));   // blank-first boot: opt into demo dataset
 
   const r = await page.evaluate(() => {
     const out = {};
+    // demo load (above) wiped dtp_passes — re-seed the legacy who[] pass and
+    // re-run the migration so the per-person expansion is still exercised
+    localStorage.setItem('dtp_passes', JSON.stringify([
+      { id:'apX', category:'ap', who:['scott','hayley'], tier:'sorcerer', activation:'2026-01-10', expiration:'2027-01-10', activated:true }
+    ]));
+    PASSES = load('dtp_passes', []);
+    migratePasses();
     // 1. Migration: who[] -> per-person single records
     out.passCount = PASSES.length;
     out.allHavePerson = PASSES.every(p => typeof p.person === 'string' && p.person);
