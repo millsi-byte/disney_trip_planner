@@ -130,32 +130,15 @@
     }catch(e){}
   }
 
-  if(typeof toggleBackupPin==='function'){
-    window.toggleBackupPin=function(idx){
-      var list=loadBackups();if(!list[idx])return;
-      list[idx].pinned=!list[idx].pinned;
-      saveBackups(list);
-      mirrorBackupPinToCloud(list[idx]);
-      toast(list[idx].pinned?'Pinned - kept until you unpin it':'Unpinned');
-      if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();
-    };
-  }
-
-  if(typeof archiveMirror==='function'){
-    window.archiveMirror=function(list){
-      if(!(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user&&window.CLOUD.saveBackup))return;
-      if(!list||!list.length)return;
-      var newest=list[list.length-1],mk=null;
-      try{mk=localStorage.getItem(ARCHIVE_MIRROR_KEY);}catch(e){}
-      if(mk===newest.id)return;
-      var keepIds=list.map(function(x){return x.id;});
-      pinnedLocalBackupIds().forEach(function(id){if(keepIds.indexOf(id)<0)keepIds.push(id);});
-      window.CLOUD.saveBackup(newest.id,newest).then(function(ok){
-        if(ok){try{localStorage.setItem(ARCHIVE_MIRROR_KEY,newest.id);}catch(e){}
-          if(window.CLOUD.pruneBackups)window.CLOUD.pruneBackups(keepIds);}
-      });
-    };
-  }
+  /* NOTE (Build 345): the toggleBackupPin and archiveMirror overrides that
+     used to live here were removed — as of Build 345 app.js implements both
+     natively with strictly stronger behavior (pin assigns an id + uploads to
+     the cloud immediately; unpin updates the cloud doc's pinned flag;
+     archiveMirror's keepIds includes rolling-list pinned ids; and
+     CLOUD.pruneBackups itself refuses to delete any doc whose own pinned flag
+     is true). Re-overriding them here would have silently regressed that.
+     The pruneBackups wrapper below is kept as an extra, compatible layer of
+     protection (it can only ADD ids to keep, never remove). */
 
   patchCloudPrune();
   patchListState();
