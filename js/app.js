@@ -90,8 +90,31 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='348-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='349-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
+/* Global error capture (audit F-10: the app knew about failures it never
+   surfaced). Every uncaught error / rejection lands in a ring buffer
+   ('dtperrors' — non-dtp_ prefix: never synced, never wiped), and the FIRST
+   error of a session triggers a protective local snapshot, since crashes and
+   data accidents historically travel together in this app. Registered this
+   early so even boot errors are recorded. */
+(function(){
+  var first=true;
+  function recErr(kind,msg,src){
+    try{
+      var log=JSON.parse(localStorage.getItem('dtperrors')||'[]');
+      log.push({t:Date.now(),k:kind,m:String(msg||'').slice(0,300),s:String(src||'').slice(0,140),b:BUILD});
+      while(log.length>30)log.shift();
+      localStorage.setItem('dtperrors',JSON.stringify(log));
+    }catch(e){}
+    if(first){first=false;try{if(typeof autoBackup==='function')autoBackup(true);}catch(e){}}
+  }
+  try{
+    window.addEventListener('error',function(ev){recErr('error',ev.message,(ev.filename||'')+':'+(ev.lineno||''));});
+    window.addEventListener('unhandledrejection',function(ev){recErr('promise',(ev.reason&&ev.reason.message)||ev.reason);});
+  }catch(e){}
+})();
+function recentErrors(){try{return JSON.parse(localStorage.getItem('dtperrors')||'[]');}catch(e){return [];}}
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
     Object.keys(localStorage).forEach(function(k){if(k.indexOf('dtp_')===0)localStorage.removeItem(k);});
@@ -4653,6 +4676,16 @@ function scrBackups(){
   var list=loadBackups();
   var body='<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:14px;color:var(--ink)">'
     +'Automatic local snapshots, taken as you make changes and kept on this device (the last '+BACKUP_MAX+' unpinned ones). Pin one to keep it forever; restore one to roll back a bad sync or an accidental change. <span style="white-space:nowrap">Build '+BUILD+'</span></div>';
+  var errs=recentErrors();
+  if(errs.length){
+    var le=errs[errs.length-1];
+    body+='<div class="ov-card" style="margin:0 0 10px;border-left:3px solid #DC2626"><div style="padding:10px 14px">'
+      +'<div style="font-weight:700;font-size:13px">⚠️ '+errs.length+' app error'+(errs.length===1?'':'s')+' recorded on this device</div>'
+      +'<div style="font-size:12px;color:var(--muted);margin-top:2px">Latest: '+esc((le.m||'?').slice(0,140))+' — '+esc(new Date(le.t).toLocaleString())+'</div>'
+      +'<div style="font-size:12px;color:var(--muted);margin-top:2px">A safety snapshot was taken when the first error appeared. If something looks wrong, restore a snapshot from below.</div>'
+      +'<div style="margin-top:8px"><button class="btn-secondary" style="width:100%;margin:0" onclick="localStorage.removeItem(\'dtperrors\');render()">Dismiss error log</button></div>'
+      +'</div></div>';
+  }
   if(!list.length){
     body+='<div class="body-empty" style="text-align:left;padding:2px">No snapshots yet — they start saving automatically as you edit. Tap “Pinned backup now” to take one immediately.</div>';
   }else{
@@ -5527,6 +5560,31 @@ function emailInviteAll(ids){
    active tenant and adopts its data. Authorized owners get a "Start another
    group" affordance below the list so they can spin up their own even while
    contributing to someone else's. */
+/* Sync-health readout (audit F-10: failures were recorded but never shown).
+   One line, three states — green synced / amber connecting / red "a record
+   hasn't reached the cloud". Backed by the onSyncPushFailed toast below so
+   a failure is announced the moment it happens, not discovered days later. */
+function syncHealth(){
+  if(!(window.CLOUD&&window.CLOUD.enabled))return {c:'#5D6673',t:'Local only — no cloud sync on this build'};
+  if(!window.CLOUD.user)return {c:'#9A5B00',t:'Signed out — changes stay on this device until you sign in'};
+  var e=window.CLOUD._lastPushErr;
+  if(e)return {c:'#DC2626',t:'“'+e.key+'” hasn\'t reached the cloud yet — retrying automatically. If this persists, take a Pinned Backup.'};
+  if(!window.CLOUD.synced)return {c:'#9A5B00',t:'Connecting to the cloud…'};
+  return {c:'#16A34A',t:'Synced — every change uploads immediately'};
+}
+function syncHealthLine(){
+  var s=syncHealth();
+  return '<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 2px 4px;font-size:13px;color:var(--muted)">'
+    +'<span style="width:10px;height:10px;border-radius:50%;background:'+s.c+';flex-shrink:0;margin-top:3px"></span>'
+    +'<span>'+esc(s.t)+'</span></div>';
+}
+/* called by cloud.js the moment a key exhausts its upload retries */
+var _syncFailToasted={};
+function onSyncPushFailed(err){
+  if(!err||!err.key||_syncFailToasted[err.key])return;
+  _syncFailToasted[err.key]=1;
+  toast('Heads up: a change ('+err.key+') hasn\'t reached the cloud — it will keep retrying');
+}
 function cloudSection(){
   if(!(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user))return '';
   var st=window.CLOUD.synced?'<span style="color:#16A34A;font-weight:600">syncing</span>':'connecting…';
@@ -5768,6 +5826,7 @@ function scrPersona(){
     if(canCreateTrip())body+='<button class="btn-secondary green" onclick="openScreen({type:\'newtrip\'})">'+IC.plus+' Plan a new trip</button>';
     body+='<button class="btn-secondary" onclick="openScreen({type:\'persondetails\',pid:\''+S.persona+'\'})">My travel details</button>';
     body+='<button class="btn-secondary" onclick="openScreen({type:\'passes\'})">Annual passes</button>';
+    body+=syncHealthLine();
     body+=cloudSection();
     if(!(window.CLOUD&&window.CLOUD.enabled)){
       body+='<div class="hub-section-label" style="margin-left:0">Account</div>';

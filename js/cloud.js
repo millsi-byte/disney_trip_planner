@@ -185,9 +185,9 @@
       },function(e){
         var t=loadTimes(); if((t[k]||0)!==ts) return;   /* superseded by a newer edit */
         if(attempt<3){ setTimeout(function(){ var t2=loadTimes(); if((t2[k]||0)===ts) _pushKey(k,vs,ts,attempt+1); }, 1500*(attempt+1)); }
-        else { C._lastPushErr={key:k,msg:(e&&e.message)||'write failed',at:Date.now()}; console.warn('cloud push failed',k,e&&e.message); }
+        else { C._lastPushErr={key:k,msg:(e&&e.message)||'write failed',at:Date.now()}; console.warn('cloud push failed',k,e&&e.message); try{if(typeof onSyncPushFailed==='function')onSyncPushFailed(C._lastPushErr);}catch(_h){} }
       });
-    }catch(e){ C._lastPushErr={key:k,msg:(e&&e.message)||'write threw',at:Date.now()}; console.warn('cloud push',k,e&&e.message); }
+    }catch(e){ C._lastPushErr={key:k,msg:(e&&e.message)||'write threw',at:Date.now()}; console.warn('cloud push',k,e&&e.message); try{if(typeof onSyncPushFailed==='function')onSyncPushFailed(C._lastPushErr);}catch(_h){} }
   }
   /* AWAITED single-key push, for flows that must KNOW the write landed before
      moving on (backup restore). Unlike C.push (fire-and-forget), this returns a
@@ -203,6 +203,7 @@
     return kvCol().doc(k).set({v:vs,ts:ts}).then(function(){C._lastPushErr=null;return true;},function(e){
       C._lastPushErr={key:k,msg:(e&&e.message)||'write failed',at:Date.now()};
       console.warn('cloud pushNow failed',k,e&&e.message);
+      try{if(typeof onSyncPushFailed==='function')onSyncPushFailed(C._lastPushErr);}catch(_h){}
       return false;
     });
   };
