@@ -1,0 +1,12 @@
+{
+  "name": "baseline-tap",
+  "private": true,
+  "description": "Baseline Tap — Disney trip planner PWA. No build step; this package.json exists only for the headless test suite.",
+  "scripts": {
+    "test": "node tests/ci/run.js",
+    "check": "node --check js/app.js && node --check js/cloud.js && node --check js/data.js && node --check js/backup-hotfix.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0"
+  }
+}
