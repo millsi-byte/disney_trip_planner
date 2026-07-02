@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='341';   /* bumped each deploy — shown in Settings to spot stale caches */
+var BUILD='342';   /* bumped each deploy — shown in Settings to spot stale caches */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -529,7 +529,12 @@ function visible(who){
 }
 /* is any person filter currently narrowing the view? */
 function filterActive(){return !!((S.filter&&S.filter.size)||(S.fmode&&S.fmode!=='all'));}
-function esc(s){return (s==null?"":String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+/* Escape for BOTH element text and attribute values. Quotes MUST be escaped:
+   nearly every form field renders as value="'+esc(userText)+'", so an
+   unescaped double-quote in any user-entered name/note/label broke out of the
+   attribute — a stored-XSS vector shared with everyone the record syncs to.
+   &#39; for the apostrophe keeps names like "Scott's Pass" rendering intact. */
+function esc(s){return (s==null?"":String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 
 /* who display — person-initial circles everywhere something is assigned */
 /* an explicit list that already covers the whole trip is just "everyone" */
@@ -4088,7 +4093,10 @@ function downloadCSV(filename,text){downloadFile(filename,text,'text/csv','Templ
 function buildBackup(){
   persist();saveLists();   /* flush in-memory state first */
   var dump={app:'disney-trip-planner',dataVersion:DATA_VERSION,build:BUILD,exported:new Date().toISOString(),keys:{}};
-  try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf('dtp_')===0){
+  /* dtp__ (double underscore) is sync bookkeeping — per-device timestamps and
+     the account marker. Exporting it was harmless-looking but restoring it on
+     another device would corrupt that device's sync recency. Data keys only. */
+  try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf('dtp_')===0&&k.indexOf('dtp__')!==0){
     try{dump.keys[k]=JSON.parse(localStorage.getItem(k));}catch(e){dump.keys[k]=localStorage.getItem(k);}
   }}}catch(e){}
   return dump;
@@ -4182,25 +4190,52 @@ function manualSnapshotPrompt(){
   manualSnapshot(label);
 }
 /* pin/unpin toggles — a pinned entry is exempt from every auto-prune path (the
-   rolling list's BACKUP_MAX cap and byte budget above, and pruneArchive()'s
-   grandfather-father-son collapse below). Works on an existing entry too, so an
+   rolling list's BACKUP_MAX cap and byte budget above, pruneArchive()'s
+   grandfather-father-son collapse below, AND the cloud-side prune, which skips
+   any doc whose pinned flag is true). Pinning also UPLOADS the snapshot to the
+   cloud right away when signed in, so "pinned" always means "protected in both
+   places", not just on this device. Works on an existing entry too, so an
    already-good snapshot found later can be protected retroactively. */
+function pushPinnedCloud(b,cb){
+  if(!(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user&&window.CLOUD.saveBackup)){if(cb)cb(null);return;}
+  if(!b.id){if(cb)cb(null);return;}
+  window.CLOUD.saveBackup(b.id,b).then(function(ok){if(cb)cb(ok);});
+}
+function pinToastFor(b,cloudOk){
+  if(b.pinned){
+    if(cloudOk===true)return 'Pinned — protected on this device AND in the cloud';
+    if(cloudOk===false)return 'Pinned locally — cloud copy failed, will retry on the next pin toggle';
+    return 'Pinned — kept on this device until you unpin it (sign in to also protect it in the cloud)';
+  }
+  return 'Unpinned — now subject to normal cleanup again';
+}
 function toggleBackupPin(idx){
   var list=loadBackups();if(!list[idx])return;
-  list[idx].pinned=!list[idx].pinned;
+  var b=list[idx];
+  b.pinned=!b.pinned;
+  if(!b.id)b.id='bk'+(b.ts||Date.now());   /* older auto entries had no id — give one so a cloud doc can exist */
   saveBackups(list);
-  toast(list[idx].pinned?'Pinned — kept until you unpin it':'Unpinned');
-  if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();
+  pushPinnedCloud(b,function(ok){toast(pinToastFor(b,ok));if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();});
 }
 function toggleArchivePin(id){
   var list=loadArchive();
   for(var i=0;i<list.length;i++)if(list[i].id===id){
     list[i].pinned=!list[i].pinned;
     saveArchive(list);
-    toast(list[i].pinned?'Pinned — kept until you unpin it':'Unpinned');
-    break;
+    pushPinnedCloud(list[i],(function(b){return function(ok){toast(pinToastFor(b,ok));if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();};})(list[i]));
+    return;
   }
-  if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();
+}
+/* pin/unpin a CLOUD-list entry (one that may no longer exist locally) —
+   updates the cloud doc's own pinned flag, which the cloud prune honours */
+function toggleCloudPin(id){
+  var l=S._cloudBk||[];
+  for(var i=0;i<l.length;i++)if(l[i].id===id){
+    l[i].pinned=!l[i].pinned;
+    pushPinnedCloud(l[i],(function(b){return function(ok){toast(pinToastFor(b,ok));if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();};})(l[i]));
+    return;
+  }
+  toast('Backup not found');
 }
 function backupWhen(b){try{return new Date(b.ts||b.iso).toLocaleString();}catch(e){return b.iso||'';}}
 function backupSummary(b){
@@ -4258,7 +4293,14 @@ function archiveMirror(list){
   var newest=list[list.length-1],mk=null;
   try{mk=localStorage.getItem(ARCHIVE_MIRROR_KEY);}catch(e){}
   if(mk===newest.id)return;
+  /* keepIds must cover EVERY cloud doc we intend to keep — that includes
+     pinned manual snapshots from the ROLLING list (they live in a different
+     local list than the archive, which is exactly how the original bug
+     deleted a user's pinned cloud backup the day after they made it).
+     CLOUD.pruneBackups also independently refuses to delete any doc whose
+     own pinned flag is true, so either safeguard alone is sufficient. */
   var keepIds=list.map(function(x){return x.id;});
+  try{loadBackups().forEach(function(b){if(b.pinned&&b.id)keepIds.push(b.id);});}catch(e){}
   window.CLOUD.saveBackup(newest.id,newest).then(function(ok){
     if(ok){try{localStorage.setItem(ARCHIVE_MIRROR_KEY,newest.id);}catch(e){}
       if(window.CLOUD.pruneBackups)window.CLOUD.pruneBackups(keepIds);}
@@ -4283,18 +4325,32 @@ function runDailyArchive(force){
   }catch(e){}
 }
 function snapshotNow(){autoBackup(true);if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();toast('Snapshot saved');}
+/* Restore a snapshot DURABLY. The old version fired async cloud pushes and
+   never waited for them: sign out (or a listener-delivered remote value)
+   before they landed and the cloud kept its old copy — the restore held on
+   screen, then silently reverted on the next sync. Now the restore:
+     1. pauses live sync (no listener interleaving mid-restore),
+     2. writes every key locally,
+     3. AWAITS every cloud write and reports how many actually landed,
+     4. resumes sync via a full merge reconcile (re-pushes anything missed).
+   Signed out, it stamps local recency so the next sign-in's merge pushes the
+   restored data up instead of losing it to the stale cloud copy. */
 function applyBackupObj(b){
   if(!isAdmin()&&!(window.CLOUD&&window.CLOUD.isSuper)){toast('Admin only');return;}
   if(!b||!b.keys){toast('Backup not found');return;}
   if(!confirm('Restore the snapshot from '+backupWhen(b)+'?\n\nThis overwrites your current data with that snapshot and syncs it to the cloud.'))return;
   /* snapshot the CURRENT state first so a restore is itself undoable */
   autoBackup(true);
+  var cloudUp=!!(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user);
+  if(cloudUp&&window.CLOUD.pauseSync){try{window.CLOUD.pauseSync();}catch(e){}}
+  var restored=[];
   try{
     Object.keys(b.keys).forEach(function(k){
-      if(BACKUP_LOCAL_ONLY[k])return;   /* defensive: skip even an old backup that still has these */
-      var raw=b.keys[k],val;
-      try{val=JSON.parse(raw);}catch(e){val=raw;}
-      save(k,val);   /* localStorage + cloud push with a fresh (winning) timestamp */
+      if(BACKUP_LOCAL_ONLY[k]||k.indexOf('dtp__')===0)return;   /* never restore device selectors or sync bookkeeping */
+      var raw=b.keys[k];
+      if(typeof raw!=='string')raw=JSON.stringify(raw);          /* imported full-export files store parsed values */
+      try{localStorage.setItem(k,raw);}catch(e){}
+      restored.push({k:k,v:raw});
     });
   }catch(e){}
   /* selection (persona/trip/party/workspace) is this device's own and is never
@@ -4303,11 +4359,136 @@ function applyBackupObj(b){
   try{materializeAllDays();ensureActiveParty();ensureVisibleTrip();loadLists();}catch(e){}
   try{closeScreen();}catch(e){}
   S.tab='home';render();
-  toast('Restored snapshot from '+backupWhen(b));
+  if(cloudUp&&window.CLOUD.pushNow){
+    toast('Restored — uploading '+restored.length+' records to the cloud…');
+    Promise.all(restored.map(function(e){return window.CLOUD.pushNow(e.k,e.v);})).then(function(rs){
+      var ok=rs.filter(Boolean).length;
+      var finish=function(){
+        toast(ok===restored.length
+          ? 'Restore complete — all '+ok+' records confirmed in the cloud'
+          : 'Restored — '+ok+' of '+restored.length+' records reached the cloud; sync will keep retrying the rest');
+      };
+      if(window.CLOUD.resumeSync)window.CLOUD.resumeSync().then(finish,finish);else finish();
+    });
+  }else{
+    /* signed out / local mode: stamp recency so a future sign-in pushes these up */
+    restored.forEach(function(e){
+      try{if(window.CLOUD&&window.CLOUD.push)window.CLOUD.push(e.k,JSON.parse(e.v));}catch(err){}
+    });
+    toast('Restored snapshot from '+backupWhen(b)+((window.CLOUD&&window.CLOUD.enabled)?' — it will upload when you next sign in':''));
+  }
 }
 function restoreBackup(idx){applyBackupObj(loadBackups()[idx]);}
 function restoreArchive(id){var l=loadArchive();for(var i=0;i<l.length;i++)if(l[i].id===id){applyBackupObj(l[i]);return;}toast('Backup not found');}
 function restoreCloudBackup(id){var l=S._cloudBk||[];for(var i=0;i<l.length;i++)if(l[i].id===id){applyBackupObj(l[i]);return;}toast('Backup not found');}
+/* resolve a snapshot from any of the three stores by (src, ref) */
+function backupByRef(src,ref){
+  if(src==='archive'){var a=loadArchive();for(var i=0;i<a.length;i++)if(a[i].id===ref)return a[i];return null;}
+  if(src==='cloud'){var c=S._cloudBk||[];for(var j=0;j<c.length;j++)if(c[j].id===ref)return c[j];return null;}
+  return loadBackups()[ref]||null;   /* default: local rolling list by index */
+}
+/* ── Snapshot CONTENT inspection — actual item names, not counts. Counts lie:
+   the built-in seed data totals the same numbers as a real family's lists, so
+   the ONLY trustworthy way to identify "the good snapshot" is reading what's
+   actually in it. Resolves person + trip names from the snapshot's OWN family/
+   trips records so old snapshots with legacy ids still read correctly. */
+function backupContents(b){
+  var ks=(b&&b.keys)||{},fam={},tripName={};
+  try{(JSON.parse(ks.dtp_family||'[]')||[]).forEach(function(p){if(p&&p.id)fam[p.id]=p.name;});}catch(e){}
+  try{(JSON.parse(ks.dtp_trips||'[]')||[]).forEach(function(t){if(t&&t.id)tripName[t.id]=t.name;});}catch(e){}
+  var out=[];
+  Object.keys(ks).sort().forEach(function(k){
+    var m=k.match(/^dtp_(packing|todo|wishlist)_(.+)$/);
+    if(!m||m[2]==='tmpl')return;
+    var v;try{v=JSON.parse(ks[k]);}catch(e){return;}
+    var entry={key:k,kind:m[1],tripId:m[2],tripName:tripName[m[2]]||('trip "'+m[2]+'"'),rows:[]};
+    if(m[1]==='packing'&&v&&typeof v==='object'&&!Array.isArray(v)){
+      Object.keys(v).forEach(function(pid){
+        var items=(v[pid]||[]).reduce(function(a,c){
+          return a.concat((c.items||[]).map(function(it){return (it.n||'')+(it.done?' ✓':'');}));
+        },[]).filter(Boolean);
+        if(items.length)entry.rows.push({label:fam[pid]||pid,items:items});
+      });
+    }else if(Array.isArray(v)){
+      var items=v.map(function(it){return (it.n||it.title||'')+((it.done||it.booked)?' ✓':'');}).filter(function(s){return s&&s!==' ✓';});
+      if(items.length)entry.rows.push({label:'',items:items});
+    }
+    if(entry.rows.length)out.push(entry);
+  });
+  return out;
+}
+/* download any snapshot as a JSON file the user fully controls — the one form
+   of backup no app bug, sync race or quota eviction can ever touch */
+function downloadSnapshot(src,ref){
+  var b=backupByRef(src,ref);
+  if(!b||!b.keys){toast('Snapshot not found');return;}
+  var stamp=(b.iso||new Date(b.ts||Date.now()).toISOString()).slice(0,19).replace(/[:T]/g,'-');
+  downloadFile('dtp-snapshot-'+stamp+'.json',JSON.stringify(b,null,2),'application/json','Snapshot downloaded — keep this file somewhere safe');
+}
+/* import a previously downloaded snapshot (or a full-export file) back in.
+   NEVER auto-restores: the file lands as a pinned entry in the snapshot list
+   so its contents can be inspected first, then restored deliberately. */
+function importBackupText(text,fname){
+  var o=JSON.parse(text);
+  var srcKeys=o&&o.keys;
+  if(!srcKeys||typeof srcKeys!=='object')throw new Error('Not a Baseline Tap backup file');
+  var keys={},n=0;
+  Object.keys(srcKeys).forEach(function(k){
+    if(k.indexOf('dtp_')!==0||k.indexOf('dtp__')===0||BACKUP_LOCAL_ONLY[k])return;
+    var v=srcKeys[k];
+    keys[k]=(typeof v==='string')?v:JSON.stringify(v);
+    n++;
+  });
+  if(!n)throw new Error('No data records found in that file');
+  var now=Date.now();
+  var b={id:'bk'+now,ts:o.ts||now,iso:o.iso||new Date(o.ts||now).toISOString(),build:o.build||'?',
+         wid:o.wid||null,keys:keys,label:('From file: '+(fname||'import')).slice(0,120),pinned:true,kind:'imported'};
+  var list=loadBackups();
+  list.push(b);
+  saveBackups(list);
+  return b;
+}
+function importBackupPick(){var i=document.getElementById('import-backup-file');if(i)i.click();}
+function importBackupFile(ev){
+  var f=ev.target&&ev.target.files&&ev.target.files[0];
+  if(!f)return;
+  var r=new FileReader();
+  r.onload=function(){
+    try{
+      importBackupText(String(r.result||''),f.name);
+      toast('Imported as a pinned snapshot — open “View contents” to check it before restoring');
+    }catch(e){toast(e.message||'Could not read that file');}
+    try{ev.target.value='';}catch(e2){}
+    if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();
+  };
+  r.readAsText(f);
+}
+/* ── Orphaned trip data — per-trip keys whose trip id is no longer in TRIPS.
+   This is how "my lists vanished" actually looked on disk: the data was still
+   there, filed under a trip record that had been dropped, with nothing in the
+   UI able to reach it. Surface it instead of letting it hide. Read-only. */
+function orphanTripKeys(){
+  var live={};TRIPS.forEach(function(t){if(t&&t.id)live[t.id]=1;});
+  var out=[];
+  try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(!k)continue;
+    var m=k.match(/^dtp_(packing|todo|wishlist|days)_(.+)$/);
+    if(!m||m[2]==='tmpl'||live[m[2]])continue;
+    var n=0;
+    try{
+      var v=JSON.parse(localStorage.getItem(k));
+      if(m[1]==='days'&&Array.isArray(v))n=v.filter(function(d){return d&&(d.strategy||(d.itin&&d.itin.length));}).length;
+      else if(Array.isArray(v))n=v.length;
+      else if(v&&typeof v==='object')n=Object.keys(v).reduce(function(a,p){return a+(v[p]||[]).reduce(function(x,c){return x+((c.items||[]).length);},0);},0);
+    }catch(e){}
+    if(n>0)out.push({key:k,kind:m[1],tripId:m[2],count:n});
+  }}catch(e){}
+  return out;
+}
+function downloadOrphanKey(key){
+  var raw=null;try{raw=localStorage.getItem(key);}catch(e){}
+  if(raw==null){toast('Not found');return;}
+  downloadFile(key+'.json',JSON.stringify({app:'disney-trip-planner',exported:new Date().toISOString(),keys:(function(){var o={};o[key]=raw;return o;})()},null,2),'application/json','Orphaned data downloaded');
+}
 function loadCloudBackups(){
   if(!(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user&&window.CLOUD.listBackups)){toast('Sign in to load cloud backups');return;}
   S._cloudBkLoading=true;if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();
@@ -4330,19 +4511,37 @@ function scrBackups(){
   }else{
     for(var ri=list.length-1;ri>=0;ri--){var b=list[ri];
       body+='<div class="ov-card" style="margin:0 0 8px"><div style="padding:12px 14px">'
-        +'<div style="font-weight:700">'+esc(backupWhen(b))+'</div>'
+        +'<div style="font-weight:700">'+esc(backupWhen(b))+(b.kind==='imported'?' <span class="st-badge st-todo" style="margin-left:4px">From file</span>':'')+'</div>'
         +'<div style="font-size:13px;color:var(--muted);margin-top:2px">'+esc(backupSummary(b))+' · Build '+esc(b.build||'?')+'</div>'
         +backupPinLine(b)
         +'<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'
-        +'<button class="btn-secondary" style="flex:1;min-width:130px" onclick="openScreen({type:\'backupview\',idx:'+ri+'})">View strategies</button>'
+        +'<button class="btn-secondary" style="flex:1;min-width:130px" onclick="openScreen({type:\'backupview\',src:\'local\',ref:'+ri+'})">👁 View contents</button>'
         +'<button class="btn-secondary" style="flex:1;min-width:130px" onclick="toggleBackupPin('+ri+')">'+(b.pinned?'Unpin':'📌 Pin')+'</button>'
+        +'<button class="btn-secondary" style="flex:1;min-width:130px" onclick="downloadSnapshot(\'local\','+ri+')">⬇️ Download</button>'
         +'<button class="ri-btn" style="flex:1;min-width:130px" onclick="restoreBackup('+ri+')">Restore snapshot</button>'
         +'</div></div></div>';
     }
   }
   body+='<div style="display:flex;gap:8px"><button class="btn-secondary" style="flex:1" onclick="snapshotNow()">Snapshot now</button>'
     +'<button class="btn-secondary green" style="flex:1" onclick="manualSnapshotPrompt()">🔒 Pinned backup now</button></div>';
-  body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0;font-size:12px">“Pinned backup now” saves a labeled snapshot that\'s exempt from auto-cleanup'+((window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user)?' and pushes it to the cloud immediately':' — sign in to also push it to the cloud')+'.</div>';
+  body+='<button class="btn-secondary" onclick="importBackupPick()">📂 Import a backup file</button>'
+    +'<input type="file" id="import-backup-file" accept=".json,application/json" style="display:none" onchange="importBackupFile(event)">';
+  body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0;font-size:12px">“Pinned backup now” saves a labeled snapshot that\'s exempt from auto-cleanup'+((window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user)?' and pushes it to the cloud immediately':' — sign in to also push it to the cloud')+'. Imported files arrive pinned and are never restored automatically.</div>';
+
+  /* ── Orphaned trip data (data whose trip record no longer exists) ── */
+  var orphans=orphanTripKeys();
+  if(orphans.length){
+    body+='<div class="hub-section-label" style="margin-left:0">⚠️ Unlinked trip data on this device</div>';
+    body+='<div class="body-empty" style="text-align:left;padding:0 2px 10px;font-size:13px">These records belong to trips that are no longer in your trip list — the data is intact but nothing in the app can display it. It is never deleted automatically. Download a copy to keep it safe.</div>';
+    var OKIND={packing:'Packing',todo:'To Do',wishlist:'Wish List',days:'Day plans'};
+    orphans.forEach(function(o){
+      body+='<div class="ov-card" style="margin:0 0 8px"><div style="padding:12px 14px">'
+        +'<div style="font-weight:700">'+esc(OKIND[o.kind]||o.kind)+' · '+o.count+' item'+(o.count===1?'':'s')+'</div>'
+        +'<div style="font-size:12px;color:var(--muted);margin-top:1px">'+esc(o.key)+' — trip “'+esc(o.tripId)+'” is not in your trip list</div>'
+        +'<div style="margin-top:8px"><button class="btn-secondary" style="width:100%;margin:0" onclick="downloadOrphanKey(\''+esc(o.key)+'\')">⬇️ Download this data</button></div>'
+        +'</div></div>';
+    });
+  }
 
   /* ── Daily / Weekly / Monthly archive (kept ~1 year) ── */
   var arc=loadArchive();
@@ -4357,8 +4556,10 @@ function scrBackups(){
         +'<div style="font-size:13px;color:var(--muted);margin-top:2px">'+esc(backupSummary(ab))+' · Build '+esc(ab.build||'?')+'</div>'
         +backupPinLine(ab)
         +'<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'
-        +'<button class="btn-secondary" style="flex:1;min-width:130px" onclick="toggleArchivePin(\''+ab.id+'\')">'+(ab.pinned?'Unpin':'📌 Pin')+'</button>'
-        +'<button class="ri-btn" style="flex:1;min-width:130px" onclick="restoreArchive(\''+ab.id+'\')">Restore this</button>'
+        +'<button class="btn-secondary" style="flex:1;min-width:130px" onclick="openScreen({type:\'backupview\',src:\'archive\',ref:\''+esc(ab.id)+'\'})">👁 View contents</button>'
+        +'<button class="btn-secondary" style="flex:1;min-width:130px" onclick="toggleArchivePin(\''+esc(ab.id)+'\')">'+(ab.pinned?'Unpin':'📌 Pin')+'</button>'
+        +'<button class="btn-secondary" style="flex:1;min-width:130px" onclick="downloadSnapshot(\'archive\',\''+esc(ab.id)+'\')">⬇️ Download</button>'
+        +'<button class="ri-btn" style="flex:1;min-width:130px" onclick="restoreArchive(\''+esc(ab.id)+'\')">Restore this</button>'
         +'</div></div></div>';
     }
   }
@@ -4375,8 +4576,12 @@ function scrBackups(){
           +'<div style="font-weight:700">'+esc(backupWhen(cb))+' <span class="st-badge st-todo" style="margin-left:4px">'+archiveTier(cb)+'</span></div>'
           +'<div style="font-size:13px;color:var(--muted);margin-top:2px">'+esc(backupSummary(cb))+' · Build '+esc(cb.build||'?')+'</div>'
           +backupPinLine(cb)
-          +'<div style="margin-top:8px"><button class="ri-btn" style="width:100%" onclick="restoreCloudBackup(\''+cb.id+'\')">Restore from cloud</button></div>'
-          +'</div></div>';
+          +'<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'
+          +'<button class="btn-secondary" style="flex:1;min-width:130px" onclick="openScreen({type:\'backupview\',src:\'cloud\',ref:\''+esc(cb.id)+'\'})">👁 View contents</button>'
+          +'<button class="btn-secondary" style="flex:1;min-width:130px" onclick="toggleCloudPin(\''+esc(cb.id)+'\')">'+(cb.pinned?'Unpin':'📌 Pin')+'</button>'
+          +'<button class="btn-secondary" style="flex:1;min-width:130px" onclick="downloadSnapshot(\'cloud\',\''+esc(cb.id)+'\')">⬇️ Download</button>'
+          +'<button class="ri-btn" style="flex:1;min-width:130px" onclick="restoreCloudBackup(\''+esc(cb.id)+'\')">Restore from cloud</button>'
+          +'</div></div></div>';
       }}
       body+='<button class="btn-secondary" onclick="loadCloudBackups()">Refresh cloud list</button>';
     }else{
@@ -4400,11 +4605,33 @@ function backupDays(b){
 }
 function scrBackupView(){
   if(!isAdmin()&&!(window.CLOUD&&window.CLOUD.isSuper))return screenShell('Snapshot','<div class="body-empty" style="padding:24px 12px">This tool is admin-only.</div>',null,null,'Close');
-  var list=loadBackups(),b=list[S.screen.idx];
+  var src=S.screen.src||'local', ref=(S.screen.ref!==undefined?S.screen.ref:S.screen.idx);
+  var b=backupByRef(src,ref);
   if(!b)return screenShell('Snapshot','<div class="body-empty" style="padding:24px 12px">Snapshot not found.</div>',null,null,'Close');
-  var days=backupDays(b);
   var body='<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:14px;color:var(--ink)">'
-    +'Day strategies saved in the snapshot from <strong>'+esc(backupWhen(b))+'</strong>. Copy any day\'s text and paste it back into that day\'s Strategy &amp; Notes editor — nothing here changes your current data.</div>';
+    +'Everything stored in the snapshot from <strong>'+esc(backupWhen(b))+'</strong> (Build '+esc(b.build||'?')+(b.label?' · “'+esc(b.label)+'”':'')+'). '
+    +'Read-only — nothing here changes your current data. Check the actual item names below before restoring: item <em>counts</em> can look right while the contents are wrong.</div>';
+  /* ── lists: actual item names, grouped by trip and person ── */
+  var contents=backupContents(b);
+  body+='<div class="hub-section-label" style="margin-left:0">Lists in this snapshot</div>';
+  if(!contents.length){
+    body+='<div class="body-empty" style="text-align:left;padding:2px">No packing / to-do / wish-list data in this snapshot.</div>';
+  }else{
+    var KIND={packing:'Packing',todo:'To Do',wishlist:'Wish List'};
+    contents.forEach(function(entry){
+      body+='<div class="ov-card" style="margin:0 0 8px"><div style="padding:12px 14px">'
+        +'<div style="font-weight:700">'+esc(KIND[entry.kind]||entry.kind)+' · '+esc(entry.tripName)+'</div>'
+        +'<div style="font-size:12px;color:var(--muted);margin-top:1px">'+esc(entry.key)+'</div>';
+      entry.rows.forEach(function(row){
+        if(row.label)body+='<div style="font-weight:600;font-size:13px;margin-top:8px">'+esc(row.label)+' ('+row.items.length+')</div>';
+        body+='<div style="font-size:13px;color:var(--ink);margin-top:4px;line-height:1.7">'+row.items.map(function(s){return esc(s);}).join(' · ')+'</div>';
+      });
+      body+='</div></div>';
+    });
+  }
+  /* ── day strategies (the original viewer, kept) ── */
+  var days=backupDays(b);
+  body+='<div class="hub-section-label" style="margin-left:0">Day strategies in this snapshot</div>';
   if(!days.length){
     body+='<div class="body-empty" style="text-align:left;padding:2px">No day strategies in this snapshot.</div>';
   }else{
@@ -4417,7 +4644,8 @@ function scrBackupView(){
         +'</div></div>';
     }
   }
-  return screenShell('Snapshot strategies',body,null,null,'Back');
+  body+='<button class="btn-secondary" onclick="downloadSnapshot(\''+esc(src)+'\','+(src==='local'?ref:('\''+esc(String(ref))+'\''))+')">⬇️ Download this snapshot as a file</button>';
+  return screenShell('Snapshot contents',body,null,null,'Back');
 }
 function copyBackupStrat(i){
   var ta=document.getElementById('bv-'+i);if(!ta)return;
@@ -7177,6 +7405,12 @@ render();
    replaces this screen (or the destination it routes to) once the real sync
    completes. */
 if(awaitingFirstCloudSync())openScreen({type:'authwait'});
+/* Ask the browser to mark this origin's storage PERSISTENT. Without it, the
+   browser may silently evict localStorage under storage pressure or privacy
+   cleanup — which turns a device into the "no local cache" profile that every
+   sync accident this app has ever had starts from. Granted automatically for
+   installed PWAs on most browsers; a no-op where unsupported. */
+try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().then(function(g){try{console.log('[storage] persistent granted:',g);}catch(e){}});}catch(e){}
 /* automatic rolling backups: a first snapshot once data has settled, then a
    throttled check every minute (autoBackup itself skips if unchanged / too
    soon). A pure local safety net — see the backup engine above. */

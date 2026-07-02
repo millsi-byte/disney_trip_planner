@@ -82,8 +82,22 @@
   C.pruneBackups=function(keepIds){ if(!C.user)return Promise.resolve();
     var keep={};(keepIds||[]).forEach(function(i){keep[i]=1;});
     return db().collection('users/'+C.user.uid+'/backups').get().then(function(snap){
-      var dels=[];snap.forEach(function(d){if(!keep[d.id])dels.push(d.ref.delete());});return Promise.all(dels);
+      var dels=[];snap.forEach(function(d){
+        /* NEVER auto-delete a pinned cloud backup, regardless of what keepIds
+           says. Root cause of "my pinned backup vanished from the cloud":
+           keepIds was built ONLY from the daily-archive list, so a pinned
+           manual snapshot (which lives in the separate rolling list) was
+           deleted by the next day's archive mirror. The doc's own pinned flag
+           is the final authority here — belt-and-suspenders with the caller
+           now also including pinned ids in keepIds. */
+        var x=d.data()||{};
+        if(x.pinned)return;
+        if(!keep[d.id])dels.push(d.ref.delete());
+      });return Promise.all(dels);
     }).catch(function(){}); };
+  /* delete ONE cloud backup by id — explicit user action only (never automatic) */
+  C.deleteBackup=function(id){ if(!C.user||!id)return Promise.resolve(false);
+    return db().doc('users/'+C.user.uid+'/backups/'+id).delete().then(function(){return true;},function(){return false;}); };
 
   /* ── sync engine ───────────────────────────────────────── */
   /* keys that must stay device-local */
@@ -122,7 +136,24 @@
     if(extra)Object.keys(extra).forEach(function(k){p[k]=extra[k];});
     return profileRef().set(p,{merge:true}).catch(function(){});
   }
-  function newCode(){return (Math.random().toString(36).slice(2,6)+Math.random().toString(36).slice(2,6)).toUpperCase();}
+  /* Workspace join codes are the only secret protecting a tenant (the rules
+     allow self-join by anyone holding the code), so they must be strong. The
+     old Math.random().toString(36) version was predictable (non-crypto PRNG)
+     and often SHORTER than 8 chars (toString(36) drops trailing zeros) —
+     well under 41 bits. Now: crypto-random, 12 chars from an unambiguous
+     30-symbol alphabet (no 0/O/1/I/L) ≈ 59 bits. Existing codes keep working;
+     this only affects newly created tenants. */
+  function newCode(){
+    var AB='ABCDEFGHJKMNPQRSTUVWXYZ2345678',out='';
+    try{
+      var buf=new Uint32Array(12);crypto.getRandomValues(buf);
+      for(var i=0;i<12;i++)out+=AB[buf[i]%AB.length];
+      return out;
+    }catch(e){ /* ancient browser fallback — still better than 8 chars */
+      for(var j=0;j<12;j++)out+=AB[Math.floor(Math.random()*AB.length)];
+      return out;
+    }
+  }
 
   /* mirror a single local save up to the active target.
      CRITICAL: record the local recency for EVERY genuine local write, even when
@@ -158,6 +189,30 @@
       });
     }catch(e){ C._lastPushErr={key:k,msg:(e&&e.message)||'write threw',at:Date.now()}; console.warn('cloud push',k,e&&e.message); }
   }
+  /* AWAITED single-key push, for flows that must KNOW the write landed before
+     moving on (backup restore). Unlike C.push (fire-and-forget), this returns a
+     promise resolving true/false. `vs` is the already-serialized JSON string.
+     The local recency stamp happens unconditionally, exactly like C.push, so
+     even a failed upload is re-pushed by the next reconcile instead of losing
+     to the stale cloud copy. */
+  C.pushNow=function(k,vs){
+    if(!syncable(k))return Promise.resolve(true);   /* nothing to sync — not a failure */
+    var ts=Date.now();
+    var times=loadTimes(); times[k]=ts; saveTimes(times);
+    if(!C.user)return Promise.resolve(false);
+    return kvCol().doc(k).set({v:vs,ts:ts}).then(function(){C._lastPushErr=null;return true;},function(e){
+      C._lastPushErr={key:k,msg:(e&&e.message)||'write failed',at:Date.now()};
+      console.warn('cloud pushNow failed',k,e&&e.message);
+      return false;
+    });
+  };
+  /* Suspend live sync (listener + pushes) around a bulk local mutation like a
+     backup restore, so an in-flight remote snapshot can't interleave with (and
+     partially overwrite) the keys being written. resumeSync() runs a full merge
+     reconcile, which re-pushes anything whose local stamp is newest and then
+     restarts the listener. */
+  C.pauseSync=function(){ stopListener(); C.synced=false; };
+  C.resumeSync=function(){ if(!C.user)return Promise.resolve(); return reconcile('merge').catch(function(e){ console.warn('resumeSync reconcile failed:',e&&e.message); }); };
 
   /* sync the local store against the active target.
        mode 'merge'  → last-write-wins per key, both directions (device sync)
