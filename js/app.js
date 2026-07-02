@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='346-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='347-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 try{
   if(localStorage.getItem('dtp_ver')!==DATA_VERSION){
@@ -271,31 +271,133 @@ CHAT = load('dtp_chat', CHAT);
 })();
 function saveChat(){save('dtp_chat',CHAT);}
 
-/* per-trip packing / to-do (PACKING/TODO hold the active trip\'s lists) */
-function listKey(base){return 'dtp_'+base+'_'+S.tripId;}
+/* ── Per-trip lists: SHARDED sync (Build 347) ─────────────────────────────
+   Lists used to sync as ONE blob per trip (dtp_packing_<trip> holding every
+   person's list). With last-write-wins sync, two people editing their own
+   lists in the same window silently overwrote each other — audit F-01, the
+   "lists lost moving devices" class. Now each natural editing unit is its
+   own synced record, so people's edits can't collide:
+     packing  → dtp_packing_<trip>_<personId>   (one doc per person)
+     todo     → dtp_todo_<trip>_<creatorId>     (one doc per creator)
+     wishlist → dtp_wishlist_<trip>_<creatorId> (one doc per creator)
+   In memory nothing changes: PACKING stays {person:[cats]}, TODO/WISHLIST
+   stay flat arrays — only load/save shard and reassemble. saveIfChanged()
+   is the other half of the fix: a shard whose content didn't change is
+   never rewritten, so its sync timestamp stays honest and a device can
+   never clobber OTHER people's records just by saving its own edit.
+   ROLLOUT: migrateListShards() empties the legacy blob once shards exist —
+   a pre-347 build reading that emptied blob shows empty lists, so every
+   device must move to 347 together (the SW auto-update handles this within
+   ~a minute of the deploy; do not run mixed versions against one tenant). */
+function listKey(base){return 'dtp_'+base+'_'+S.tripId;}                 /* legacy combined key */
+function shardKey(base,tid,pid){return 'dtp_'+base+'_'+tid+'_'+pid;}
+/* write only if content actually changed — keeps sync timestamps honest */
+function saveIfChanged(k,v){
+  var s;try{s=JSON.stringify(v);}catch(e){return;}
+  var cur=null;try{cur=localStorage.getItem(k);}catch(e){}
+  if(cur===s)return;
+  save(k,v);
+}
+/* one-time (and idempotent) split of legacy combined list blobs into shards.
+   Runs on every loadLists so a legacy blob arriving from the cloud (older
+   device, old backup restore) is re-split on the spot. Merge rules:
+     packing — a person who already has a shard is never clobbered;
+     todo/wishlist — merged per creator, deduped by item id, shard wins. */
+function migrateListShards(){
+  try{for(var i=localStorage.length-1;i>=0;i--){var k=localStorage.key(i);if(!k)continue;
+    var m=k.match(/^dtp_(packing|todo|wishlist)_([^_]+)$/);
+    if(!m||m[2]==='tmpl')continue;
+    var base=m[1],tid=m[2],legacy=load(k,null);
+    if(base==='packing'){
+      if(!legacy||typeof legacy!=='object'||Array.isArray(legacy))continue;
+      var pids=Object.keys(legacy);if(!pids.length)continue;
+      pids.forEach(function(pid){
+        var sk=shardKey('packing',tid,pid);
+        var hasShard=null;try{hasShard=localStorage.getItem(sk);}catch(e){}
+        if(hasShard!=null)return;                    /* never clobber an existing shard */
+        save(sk,legacy[pid]||[]);
+      });
+      save(k,{});
+    }else{
+      if(!Array.isArray(legacy)||!legacy.length)continue;
+      var groups={};legacy.forEach(function(it){var by=(it&&it.by)||'_';(groups[by]=groups[by]||[]).push(it);});
+      Object.keys(groups).forEach(function(pid){
+        var sk=shardKey(base,tid,pid);
+        var cur=load(sk,null);
+        if(Array.isArray(cur)&&cur.length){
+          var have={};cur.forEach(function(it){if(it&&it.id)have[it.id]=1;});
+          var add=groups[pid].filter(function(it){return !(it&&it.id&&have[it.id]);});
+          if(add.length)save(sk,cur.concat(add));
+        }else save(sk,groups[pid]);
+      });
+      save(k,[]);
+    }
+  }}catch(e){}
+}
+function collectShards(base,tid){
+  var pre='dtp_'+base+'_'+tid+'_',out=[],pids=[];
+  try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);
+    if(k&&k.indexOf(pre)===0)pids.push(k.slice(pre.length));
+  }}catch(e){}
+  pids.sort();   /* deterministic cross-creator order */
+  pids.forEach(function(pid){out.push({pid:pid,arr:load(pre+pid,[])||[]});});
+  return out;
+}
 function loadLists(){
   if(!S.tripId){PACKING={};TODO=[];WISHLIST=[];return;}   /* no trip selected — nothing to load */
-  /* the demo seed (PACKING_SEED/TODO_SEED) is only a starting point for a
-     brand-new install that has never used cloud sync. Same guard as the
-     PARTIES "My Group" seed: once this device has ever signed in, a missing
-     local cache means "not pulled down yet", NOT "use the seed" — falling
-     back to the seed here would let it get saved (e.g. by switchTrip/
-     ntFinish calling saveLists() for the still-active trip) with a fresh
-     timestamp that wins the next reconcile, silently overwriting the real
-     synced list with the generic demo data. */
+  try{migrateListShards();}catch(e){}
+  /* the demo seed only ever applies to a brand-new install that has never
+     synced (same guard class as the PARTIES "My Group" seed — see audit F-02) */
   var seedOK=(S.tripId==='jul26');
   try{ if(localStorage.getItem('dtp__lastuid'))seedOK=false; }catch(e){}
-  PACKING=load(listKey('packing'),null)||(seedOK?PACKING_SEED:{});
-  TODO=load(listKey('todo'),null)||(seedOK?JSON.parse(JSON.stringify(TODO_SEED)):[]);
-  if(!Array.isArray(TODO))TODO=[];   /* guard against old per-person shape */
-  WISHLIST=load(listKey('wishlist'),null)||[];
-  if(!Array.isArray(WISHLIST))WISHLIST=[];
+  var pk={},pkFound=false;
+  collectShards('packing',S.tripId).forEach(function(s){if(Array.isArray(s.arr)){pk[s.pid]=s.arr;pkFound=true;}});
+  PACKING=pkFound?pk:(seedOK?PACKING_SEED:{});
+  var td=[],tdFound=false;
+  collectShards('todo',S.tripId).forEach(function(s){if(Array.isArray(s.arr)){td=td.concat(s.arr);tdFound=true;}});
+  TODO=tdFound?td:(seedOK?JSON.parse(JSON.stringify(TODO_SEED)):[]);
+  if(!Array.isArray(TODO))TODO=[];
+  var wl=[];
+  collectShards('wishlist',S.tripId).forEach(function(s){if(Array.isArray(s.arr))wl=wl.concat(s.arr);});
+  WISHLIST=wl;
   ensureLists();
 }
 function ensureLists(){tripMembers().forEach(function(id){if(!PACKING[id])PACKING[id]=[];});}
-function saveLists(){if(!S.tripId)return;save(listKey('packing'),PACKING);save(listKey('todo'),TODO);save(listKey('wishlist'),WISHLIST);}
-function saveTODO(){save(listKey('todo'),TODO);}
-function saveWish(){save(listKey('wishlist'),WISHLIST);}
+/* shard writers. Each also writes [] to any existing shard whose owner now
+   has nothing — that's how deletions propagate — but only via saveIfChanged,
+   so untouched shards are never re-stamped. */
+function existingShardPids(base,tid){
+  var pre='dtp_'+base+'_'+tid+'_',pids=[];
+  try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);
+    if(k&&k.indexOf(pre)===0)pids.push(k.slice(pre.length));
+  }}catch(e){}
+  return pids;
+}
+function savePacking(){
+  if(!S.tripId)return;
+  var seen={};
+  Object.keys(PACKING).forEach(function(pid){seen[pid]=1;saveIfChanged(shardKey('packing',S.tripId,pid),PACKING[pid]||[]);});
+  existingShardPids('packing',S.tripId).forEach(function(pid){if(!seen[pid])saveIfChanged(shardKey('packing',S.tripId,pid),[]);});
+}
+function saveByCreator(base,arr){
+  if(!S.tripId)return;
+  var groups={};
+  (arr||[]).forEach(function(it){var by=(it&&it.by)||'_';(groups[by]=groups[by]||[]).push(it);});
+  existingShardPids(base,S.tripId).forEach(function(pid){if(!groups[pid])groups[pid]=[];});
+  Object.keys(groups).forEach(function(pid){saveIfChanged(shardKey(base,S.tripId,pid),groups[pid]);});
+}
+function saveLists(){if(!S.tripId)return;savePacking();saveByCreator('todo',TODO);saveByCreator('wishlist',WISHLIST);}
+function saveTODO(){saveByCreator('todo',TODO);}
+function saveWish(){saveByCreator('wishlist',WISHLIST);}
+/* remove every list record (legacy + shards) for a deleted/cancelled trip */
+function removeTripListKeys(tid){
+  try{for(var i=localStorage.length-1;i>=0;i--){var k=localStorage.key(i);if(!k)continue;
+    if(k==='dtp_packing_'+tid||k==='dtp_todo_'+tid||k==='dtp_wishlist_'+tid
+       ||k.indexOf('dtp_packing_'+tid+'_')===0||k.indexOf('dtp_todo_'+tid+'_')===0||k.indexOf('dtp_wishlist_'+tid+'_')===0){
+      localStorage.removeItem(k);
+    }
+  }}catch(e){}
+}
 function saveTmpl(){save('dtp_todo_tmpl',TODO_TMPL);}
 
 /* generate day skeletons for any trip that has none, from its start/end */
@@ -4343,16 +4445,38 @@ function applyBackupObj(b){
   autoBackup(true);
   var cloudUp=!!(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user);
   if(cloudUp&&window.CLOUD.pauseSync){try{window.CLOUD.pauseSync();}catch(e){}}
-  var restored=[];
+  var restoredKeys={};
   try{
     Object.keys(b.keys).forEach(function(k){
       if(BACKUP_LOCAL_ONLY[k]||k.indexOf('dtp__')===0)return;   /* never restore device selectors or sync bookkeeping */
       var raw=b.keys[k];
       if(typeof raw!=='string')raw=JSON.stringify(raw);          /* imported full-export files store parsed values */
       try{localStorage.setItem(k,raw);}catch(e){}
-      restored.push({k:k,v:raw});
+      restoredKeys[k]=1;
     });
   }catch(e){}
+  /* A pre-347 snapshot holds legacy combined list blobs. Migrate BEFORE
+     computing what to push, so the cloud receives the same post-migration
+     shape this device will hold — pushing the raw legacy blob alongside its
+     migrated shards would leave the cloud one sync bounce behind. Migration
+     creates shard keys; fold every shard belonging to a restored list
+     collection into the push set with its CURRENT (post-migration) value. */
+  try{migrateListShards();}catch(e){}
+  try{
+    var listPrefixes={};
+    Object.keys(restoredKeys).forEach(function(k){
+      var m=k.match(/^dtp_(packing|todo|wishlist)_([^_]+)/);
+      if(m&&m[2]!=='tmpl')listPrefixes['dtp_'+m[1]+'_'+m[2]+'_']=1;
+    });
+    for(var si=0;si<localStorage.length;si++){var sk=localStorage.key(si);if(!sk)continue;
+      for(var pref in listPrefixes)if(sk.indexOf(pref)===0)restoredKeys[sk]=1;
+    }
+  }catch(e){}
+  var restored=[];
+  Object.keys(restoredKeys).forEach(function(k){
+    var v=null;try{v=localStorage.getItem(k);}catch(e){}
+    if(v!=null)restored.push({k:k,v:v});
+  });
   /* selection (persona/trip/party/workspace) is this device's own and is never
      touched by a restore — only the shared collections above are. */
   try{rehydrate();}catch(e){}
@@ -4398,11 +4522,19 @@ function backupContents(b){
   try{(JSON.parse(ks.dtp_trips||'[]')||[]).forEach(function(t){if(t&&t.id)tripName[t.id]=t.name;});}catch(e){}
   var out=[];
   Object.keys(ks).sort().forEach(function(k){
-    var m=k.match(/^dtp_(packing|todo|wishlist)_(.+)$/);
+    /* both storage generations: legacy combined (dtp_packing_<trip>) and
+       Build-347 shards (dtp_packing_<trip>_<person>) */
+    var m=k.match(/^dtp_(packing|todo|wishlist)_([^_]+)(?:_(.+))?$/);
     if(!m||m[2]==='tmpl')return;
     var v;try{v=JSON.parse(ks[k]);}catch(e){return;}
+    var shardPid=m[3]||null;
     var entry={key:k,kind:m[1],tripId:m[2],tripName:tripName[m[2]]||('trip "'+m[2]+'"'),rows:[]};
-    if(m[1]==='packing'&&v&&typeof v==='object'&&!Array.isArray(v)){
+    if(m[1]==='packing'&&shardPid&&Array.isArray(v)){
+      var pitems=v.reduce(function(a,c){
+        return a.concat((c.items||[]).map(function(it){return (it.n||'')+(it.done?' ✓':'');}));
+      },[]).filter(Boolean);
+      if(pitems.length)entry.rows.push({label:fam[shardPid]||shardPid,items:pitems});
+    }else if(m[1]==='packing'&&v&&typeof v==='object'&&!Array.isArray(v)){
       Object.keys(v).forEach(function(pid){
         var items=(v[pid]||[]).reduce(function(a,c){
           return a.concat((c.items||[]).map(function(it){return (it.n||'')+(it.done?' ✓':'');}));
@@ -4411,7 +4543,7 @@ function backupContents(b){
       });
     }else if(Array.isArray(v)){
       var items=v.map(function(it){return (it.n||it.title||'')+((it.done||it.booked)?' ✓':'');}).filter(function(s){return s&&s!==' ✓';});
-      if(items.length)entry.rows.push({label:'',items:items});
+      if(items.length)entry.rows.push({label:shardPid?(fam[shardPid]||shardPid):'',items:items});
     }
     if(entry.rows.length)out.push(entry);
   });
@@ -4471,12 +4603,15 @@ function orphanTripKeys(){
   var live={};TRIPS.forEach(function(t){if(t&&t.id)live[t.id]=1;});
   var out=[];
   try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(!k)continue;
-    var m=k.match(/^dtp_(packing|todo|wishlist|days)_(.+)$/);
+    /* matches legacy combined keys (dtp_packing_<trip>) AND Build-347 shards
+       (dtp_packing_<trip>_<person>) — the trip id is the first segment */
+    var m=k.match(/^dtp_(packing|todo|wishlist|days)_([^_]+)(?:_(.+))?$/);
     if(!m||m[2]==='tmpl'||live[m[2]])continue;
     var n=0;
     try{
       var v=JSON.parse(localStorage.getItem(k));
       if(m[1]==='days'&&Array.isArray(v))n=v.filter(function(d){return d&&(d.strategy||(d.itin&&d.itin.length));}).length;
+      else if(m[1]==='packing'&&m[3]&&Array.isArray(v))n=v.reduce(function(a,c){return a+((c.items||[]).length);},0);
       else if(Array.isArray(v))n=v.length;
       else if(v&&typeof v==='object')n=Object.keys(v).reduce(function(a,p){return a+(v[p]||[]).reduce(function(x,c){return x+((c.items||[]).length);},0);},0);
     }catch(e){}
@@ -4954,7 +5089,7 @@ function ntBack(){
     if(S._ntTripId){
       TRIPS=TRIPS.filter(function(x){return x.id!==S._ntTripId;});
       DAYS=DAYS.filter(function(d){return d.trip!==S._ntTripId;});
-      try{localStorage.removeItem('dtp_packing_'+S._ntTripId);localStorage.removeItem('dtp_todo_'+S._ntTripId);}catch(e){}
+      removeTripListKeys(S._ntTripId);
       save('dtp_trips',TRIPS);saveDays();S._ntTripId=null;S._members=null;
     }
     S._ntStep='who';S._ntWhoMode='existing';renderScreen_inplace2();return;
@@ -4968,8 +5103,11 @@ function ntMakeTrip(partyId,mem){
   var start=S._ntStart||'',end=S._ntEnd||'';
   var dates=(start&&end)?(monOf(start)+' '+(+start.slice(8))+' – '+monOf(end)+' '+(+end.slice(8))+', '+start.slice(0,4)):'Dates TBD';
   TRIPS.push({id:id,name:nm,sub:'Walt Disney World',notifyByDefault:false,start:start,end:end,dates:dates,color:col,members:mem,by:S.persona,parties:partyId?[partyId]:[]});
-  genDays(id);var np={},nt=[];mem.forEach(function(pid){np[pid]=[];});
-  save('dtp_packing_'+id,np);save('dtp_todo_'+id,nt);save('dtp_trips',TRIPS);saveDays();
+  genDays(id);
+  /* seed empty per-person packing shards so every member starts with a
+     synced record of their own (Build 347: lists are sharded, see loadLists) */
+  mem.forEach(function(pid){save(shardKey('packing',id,pid),[]);});
+  save('dtp_trips',TRIPS);saveDays();
   S._ntTripId=id;S._members=new Set(mem);
 }
 function ntCreateTripExisting(){
@@ -5037,7 +5175,7 @@ function ntCancel(){
   if(S._ntTripId){
     TRIPS=TRIPS.filter(function(x){return x.id!==S._ntTripId;});
     DAYS=DAYS.filter(function(d){return d.trip!==S._ntTripId;});
-    try{localStorage.removeItem('dtp_packing_'+S._ntTripId);localStorage.removeItem('dtp_todo_'+S._ntTripId);}catch(e){}
+    removeTripListKeys(S._ntTripId);
     save('dtp_trips',TRIPS);saveDays();
   }
   S._ntStep=null;S._ntWhoMode=null;S._ntPartyId=null;S._ntProvParty=null;
@@ -7325,7 +7463,7 @@ function doDelTrip(id){
   function drop(coll){for(var i=coll.length-1;i>=0;i--)if(coll[i].trip===id)coll.splice(i,1);}
   [DAYS,VISITS,PARKHOURS,DINING,LLS,SHOWS,PARADES,FLIGHTS,RESORTS,PARKRES,TICKETS,REBOOKS].forEach(drop);
   for(var c=CHAT.length-1;c>=0;c--)if(CHAT[c].trip===id)CHAT.splice(c,1);
-  try{localStorage.removeItem('dtp_packing_'+id);localStorage.removeItem('dtp_todo_'+id);}catch(e){}
+  removeTripListKeys(id);
   save(daysKey(id),[]);   /* empty the deleted trip's day record so the deletion syncs out */
   if(S.tripId===id){S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();}
   ensureVisibleTrip();saveTripId();persist();toast('Trip deleted');closeScreen();render();
