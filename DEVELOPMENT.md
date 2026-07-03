@@ -65,6 +65,18 @@ You get a separate URL (`…--dev-<hash>.web.app`) that:
   sign in with the test account (DisneyTripPlanner12@gmail.com) only, inside
   its own test tenant. Never the family account, never the family workspace.
 
+**One-time Google sign-in setup per channel domain.** firebase-config.js
+points authDomain at the preview host itself (otherwise the redirect result
+lands on the production origin and the preview bounces back to the login
+screen), which means Google must recognize the preview domain. Once per
+channel URL, in [Google Cloud console → APIs & Services → Credentials](https://console.cloud.google.com/apis/credentials?project=disney-trip-planner-447d7)
+open the auto-created **Web client** and add:
+- Authorized JavaScript origins: `https://<channel-domain>`
+- Authorized redirect URIs: `https://<channel-domain>/__/auth/handler`
+Also confirm the domain is in Firebase console → Authentication → Settings →
+Authorized domains (channel deploys usually add it automatically). The
+channel URL is stable across redeploys, so this really is one-time.
+
 ## Identity rules (the ones that matter)
 
 - The family workspace and the family Google accounts are **production data**.
