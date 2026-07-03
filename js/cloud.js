@@ -1042,6 +1042,11 @@
     try{
       var lastUid=localStorage.getItem('dtp__lastuid');
       if(C.user&&lastUid&&lastUid!==C.user.uid){ wipeLocalState(); C.adminWid=null; C.wid=null; C.wids=[]; C.partyName=null; }
+      /* DEMO GUARD: this device holds the sample dataset (loadDemoData sets
+         the marker). It must never merge-push into a real account's space —
+         wipe it before syncing; the account's real data is then adopted
+         cleanly from the cloud (empty local → pull-only path below). */
+      if(C.user&&localStorage.getItem('dtp__demo')){ wipeLocalState(); try{localStorage.removeItem('dtp__demo');}catch(e2){} }
       if(C.user)localStorage.setItem('dtp__lastuid',C.user.uid);
     }catch(e){}
     /* read both fields: wid = the user's ACTIVE tenant, wids = every tenant

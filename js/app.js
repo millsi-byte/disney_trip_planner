@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='351-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='352-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -5414,6 +5414,9 @@ function scrSignIn(){
   body+='<div class="hub-section-label" style="margin-left:0">Sign in with Google</div>';
   body+='<button class="btn-secondary green" onclick="cloudGoogleSignIn()">Sign in with Google</button>';
   body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0;font-size:12px;color:var(--muted)">A Google sign-in window will pop up. If your browser blocks pop-ups, allow it for this site.</div>';
+  body+='<div class="hub-section-label" style="margin-left:0;margin-top:18px">Just exploring?</div>';
+  body+='<button class="btn-secondary" onclick="loadDemoData()">Load the demo trip</button>';
+  body+='<div class="body-empty" style="text-align:left;padding:6px 2px 0;font-size:12px;color:var(--muted)">Fills the app with a sample vacation so you can click around — nothing is uploaded, and it\'s wiped automatically when a real account signs in.</div>';
   return screenShell('Sign in',body,null,null,false);
 }
 /* Locked "we're checking who you are" gate. Shown the instant sign-in completes
@@ -5526,6 +5529,11 @@ function loadDemoData(force){
     toast('Demo data is for signed-out exploration — it can\'t be loaded into a synced account');return;
   }
   if(force!==true&&!confirm('Load the demo trip? This replaces everything currently in the app with sample data.'))return;
+  /* CONTAMINATION GUARD: mark this device as holding demo data. If a real
+     account signs in later, cloud.js wipes local state BEFORE syncing, so
+     the demo can never merge-push into a real tenant (the exact leak class
+     that corrupted the family workspace pre-346). */
+  try{localStorage.setItem('dtp__demo','1');}catch(e){}
   try{autoBackup(true);}catch(e){}   /* current state stays recoverable */
   function cp(x){return JSON.parse(JSON.stringify(x));}
   FAMILY=cp(DEMO.FAMILY);ALL_IDS=FAMILY.map(function(p){return p.id;});

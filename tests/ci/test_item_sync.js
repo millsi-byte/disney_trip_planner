@@ -35,9 +35,12 @@ const WID = 'TESTWID123456';
     return page;
   };
 
-  /* ── boot: A seeds demo data locally, signs in, pushes up (blob mode) ── */
+  /* ── boot: A seeds demo data locally, signs in, pushes up (blob mode).
+        The dtp__demo marker is cleared first: it exists precisely so demo
+        data is WIPED at sign-in (guard tested at the bottom); clearing it
+        simulates a device holding REAL data. ── */
   const A = await newDevice('devA');
-  await A.evaluate(() => loadDemoData(true));
+  await A.evaluate(() => { loadDemoData(true); localStorage.removeItem('dtp__demo'); });
   await A.evaluate(() => __signIn('uidA', 'a@test.dev'));
   await A.waitForTimeout(1500);
   out.aSynced = await A.evaluate(() => !!(window.CLOUD.user && window.CLOUD.synced));
@@ -147,6 +150,22 @@ const WID = 'TESTWID123456';
         edits must NOT touch the cloud kv doc ── */
   const kvDining = await be.op({ op: 'getDoc', path: 'workspaces/' + WID + '/kv/dtp_dining' });
   out.kvBlobRetired = !(kvDining.data && (kvDining.data.v || '').includes('EDIT-FROM-A'));
+
+  /* ── demo contamination guard: a device that loaded the demo dataset and
+        then signs in must be WIPED and adopt the account's real cloud data —
+        never merge-push the sample vacation into the tenant ── */
+  const C = await newDevice('devC');
+  await C.evaluate(() => loadDemoData(true));
+  out.demoMarkerSet = await C.evaluate(() => localStorage.getItem('dtp__demo') === '1');
+  await C.evaluate(() => __signIn('uidB', 'b@test.dev'));
+  await C.waitForTimeout(1800);
+  out.demoMarkerClearedOnSignIn = await C.evaluate(() => localStorage.getItem('dtp__demo') === null);
+  /* C must hold the tenant's CURRENT state (A's edits + deletions), not its
+     own pristine demo copy — proving it adopted instead of merge-pushing */
+  out.cAdoptedTenantState = await C.evaluate(([dead, war]) =>
+    !DINING.some(d => d.id === dead) &&
+    DINING.some(d => d.id === war && d.conf === 'OFFLINE-EDIT-WINS'),
+    [delId, warId]);
 
   await browser.close();
   out.noPageErrors = errs.length === 0;
