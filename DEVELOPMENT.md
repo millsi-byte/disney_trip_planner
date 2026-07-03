@@ -10,7 +10,7 @@ family uses. Read this before changing anything.
 | Branch | What it is | What a push does |
 |---|---|---|
 | `claude/disney-trip-planner-design-p89zx9` | **PRODUCTION.** Frozen at Build 345 until after the trip. | Auto-deploys to disney-trip-planner-447d7.web.app within minutes. |
-| `dev` | All new work (audit roadmap items). Shows "(DEV)" in the title and `346-dev` as the build. | Deploys **nothing**. Ever. Preview deploys are manual-only. |
+| `dev` | All new work (audit roadmap items). Shows "(DEV)" in the title and `<n>-dev` as the build. | Deploys **nothing** automatically. Preview deploys are manual-only; every push runs the CI test suite. |
 
 Rules of the freeze:
 - **No pushes to the production branch until after the trip**, except a
@@ -75,20 +75,50 @@ You get a separate URL (`…--dev-<hash>.web.app`) that:
 ## Where the work queue lives
 
 The full audit (findings F-01..F-14, roadmap steps 1–6) is the plan of record.
-Suggested order on this branch:
+Status on this branch:
 
-1. Per-item sync engine (F-01/F-09/F-12) — one collection at a time, packing
-   first, each behind the headless test suite.
-2. Retire the fictional seed (F-02) — blank-first boot, demo behind a button.
-3. Rules hardening + CSP (F-05..F-08) — staged against a test workspace
-   before ever touching the live project's rules.
-4. Ops: CI test gate on this branch, sync-health chip, error hook (F-10/F-13).
-5. Housekeeping (F-14).
+1. ✅ Tests in-repo + CI gate (F-13 dev side) — `tests/ci/`, runs on every push.
+2. ✅ Sharded list sync (F-01 Tier A / F-09) — Build 347-dev. **ROLLOUT RULE:
+   all devices must update to ≥347 together when this merges to production —
+   the migration empties the legacy combined blobs, so a device left on ≤345
+   will see empty lists (it can't read shards). Nothing is lost (shards hold
+   everything), but don't mix builds across the family.**
+3. ✅ Blank-first boot (F-02) — Build 348-dev. The fictional seed lives in the
+   `DEMO` bundle (js/data.js); a fresh device boots EMPTY. `loadDemoData()` is
+   explicit, confirm-gated, and refuses to run while signed in. Tests that need
+   the demo dataset call `loadDemoData(true)` in-page after boot.
+4. ✅ Sync health + error surfacing (F-10) — Build 349-dev. `syncHealth()` line
+   on the profile screen, `onSyncPushFailed` toast, `dtperrors` ring buffer +
+   first-error protective snapshot, error card in Backups.
+5. ✅ CSP + security headers (F-08) — in `firebase.json` hosting headers (NOT a
+   meta tag, so `file://` tests are unaffected). **Deployed nowhere yet** — it
+   ships with the next manual dev-preview deploy; verify sign-in + Firestore
+   sync + Google Fonts all work on the preview URL before it ever merges.
+   Note: headers apply to the reserved `/__/auth/*` pages too, which is why
+   `apis.google.com` / `www.gstatic.com` are in `script-src`.
+6. 📋 Hardened Firestore rules — `firestore.rules.proposed` (NOT deployed).
+   Review the CHANGED markers, test against a throwaway workspace, then rename
+   over `firestore.rules` and `firebase deploy --only firestore:rules`.
+7. 📋 Per-item sync engine (F-01 Tier B) — designed, not built:
+   `docs/PER_ITEM_SYNC_DESIGN.md`. Needs human review + emulator time.
+8. Housekeeping (F-14) — open.
+
+## Tests
+
+- `tests/ci/` — strict suites; every assertion must be `true` or the process
+  exits nonzero. `npm test` (or `node tests/ci/run.js`) runs them all; CI does
+  this on every push to `dev` and every PR to production.
+- `tests/manual/` — older eyeball suites (print JSON, you read it). Run by
+  hand when touching their areas: passes, wishlist, wizard-skip, backups,
+  boot flows.
+- `tests/_env.js` resolves Chromium: system Playwright install, or
+  `PLAYWRIGHT_CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome`
+  in sandboxes.
 
 ## Verification habits (non-negotiable after this week)
 
 - `node --check js/app.js js/cloud.js` before every commit.
-- Run the headless suites (see scratchpad tests referenced in commit history;
-  they seed localStorage, drive the real page in Chromium, and assert on
-  behavior) before anything merges toward production.
-- Any change to sync, backups, or boot gets a new test, not just a manual look.
+- `npm test` green before every push.
+- Any change to sync, backups, or boot gets a new CI test, not just a manual
+  look — `test_durability.js`, `test_list_shards.js`, `test_blank_boot.js`,
+  and `test_sync_health.js` are the patterns to copy.
