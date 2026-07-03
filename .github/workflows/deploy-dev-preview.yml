@@ -1,0 +1,61 @@
+name: Deploy DEV preview channel (manual only)
+
+# DEV branch safety model: nothing on this branch ever deploys automatically.
+# The production workflow (firebase-deploy.yml) triggers only on pushes to the
+# production branch, so pushing to `dev` publishes nothing. When you want to
+# try a dev build on a real phone, run THIS workflow by hand (Actions tab →
+# "Deploy DEV preview channel" → Run workflow, from the dev branch). It
+# publishes to a Firebase Hosting PREVIEW CHANNEL — a separate URL like
+# disney-trip-planner-447d7--dev-<hash>.web.app — which:
+#   • never touches the live site or its service worker,
+#   • has its OWN localStorage (a different origin), so the phone's real app
+#     data is untouched,
+#   • BUT talks to the SAME live Firestore if you sign in. For anything that
+#     writes data, sign in with the TEST account only — never the family
+#     account. For sync-engine work, use the Firebase emulator locally
+#     instead (see DEVELOPMENT.md).
+
+# NOTE: workflow_dispatch only shows in the Actions UI for workflows on the
+# DEFAULT branch, which this file deliberately isn't on. The push trigger
+# below is the working path: it fires ONLY when a dev commit message contains
+# the literal tag [deploy-preview] — still a deliberate, opt-in act, never a
+# side effect of normal dev pushes.
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev]
+
+jobs:
+  preview:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.head_commit.message, '[deploy-preview]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Authenticate
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-sa.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-sa.json" >> "$GITHUB_ENV"
+
+      - name: Deploy to preview channel "dev"
+        run: |
+          n=0; max=5
+          until [ "$n" -ge "$max" ]; do
+            if npx -y firebase-tools@latest hosting:channel:deploy dev --expires 30d --project disney-trip-planner-447d7 --non-interactive; then
+              echo "Preview deploy succeeded on attempt $((n+1))."; exit 0
+            fi
+            n=$((n+1))
+            [ "$n" -lt "$max" ] && { w=$((n*15)); echo "Attempt $n failed; retrying in ${w}s..."; sleep "$w"; }
+          done
+          echo "All $max preview deploy attempts failed."; exit 1
+
+      - name: Clean up credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/firebase-sa.json"

@@ -1,0 +1,27 @@
+name: Dev branch tests
+
+# The CI gate for all roadmap work: every push to dev runs syntax checks and
+# the strict headless suite against the real app in Chromium. Nothing here
+# deploys anything. Merges toward production should require this to be green.
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [claude/disney-trip-planner-design-p89zx9]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Syntax check
+        run: npm run check
+      - name: Install test deps
+        run: npm install && npx playwright install --with-deps chromium
+      - name: Run CI test suites
+        run: npm test
