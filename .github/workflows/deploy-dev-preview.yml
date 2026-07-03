@@ -15,11 +15,21 @@ name: Deploy DEV preview channel (manual only)
 #     account. For sync-engine work, use the Firebase emulator locally
 #     instead (see DEVELOPMENT.md).
 
+# NOTE: workflow_dispatch only shows in the Actions UI for workflows on the
+# DEFAULT branch, which this file deliberately isn't on. The push trigger
+# below is the working path: it fires ONLY when a dev commit message contains
+# the literal tag [deploy-preview] — still a deliberate, opt-in act, never a
+# side effect of normal dev pushes.
 on:
   workflow_dispatch:
+  push:
+    branches: [dev]
 
 jobs:
   preview:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.head_commit.message, '[deploy-preview]')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
