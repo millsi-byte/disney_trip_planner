@@ -9,17 +9,12 @@ var FIREBASE_CONFIG = {
   messagingSenderId: "1017541221969",
   appId: "1:1017541221969:web:a496f13dd27c6dbfb7a270"
 };
-/* Preview channels (…--dev-<hash>.web.app): the redirect sign-in handshake
-   only survives when the auth handler runs on the SAME origin as the app —
-   with the production authDomain, Google finishes the sign-in on the live
-   site's origin and the preview page can never read the result (bounced
-   back to the login screen). Hosting serves the /__/auth/* helpers on every
-   channel domain, so pointing authDomain at ourselves fixes it. Production
-   is untouched: there location.hostname === the configured authDomain.
-   ONE-TIME console prerequisite per channel domain (documented in
-   DEVELOPMENT.md): add it to the OAuth client's authorized JS origins +
-   redirect URIs, or Google refuses with redirect_uri_mismatch. */
-try{
-  if(/^disney-trip-planner-447d7--[a-z0-9-]+\.web\.app$/.test(location.hostname))
-    FIREBASE_CONFIG.authDomain=location.hostname;
-}catch(e){}
+/* Preview channels (…--dev-<hash>.web.app) sign in with a POPUP instead of
+   the redirect flow — see CLOUD.signInGoogle. Keeping the production
+   authDomain here is deliberate: it's the origin Google already trusts, so
+   preview sign-in needs zero console setup. (A same-origin authDomain
+   override was tried first; it forces a per-channel OAuth-client
+   registration in the Google Cloud console — not worth it.) */
+function dtpIsPreviewHost(){
+  try{return /^disney-trip-planner-447d7--[a-z0-9-]+\.web\.app$/.test(location.hostname);}catch(e){return false;}
+}

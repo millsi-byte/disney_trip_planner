@@ -45,6 +45,22 @@
        prevention stalls (popup completed but the result never reached the app,
        so a fresh browser looped straight back to the sign-in screen). We flag
        that a redirect is in flight so the next load collects the result. */
+    /* Preview channels: the app origin differs from authDomain, so the
+       redirect flow completes on the PRODUCTION origin and the result never
+       reaches the preview page (silent bounce back to the login screen).
+       The popup flow relays its result by messaging (SDK ≥10.9), which
+       survives cross-origin, and Google already trusts the production
+       authDomain — zero console setup. Production keeps the redirect flow
+       (same-origin there, and popups historically stalled on Edge/Safari). */
+    if(typeof dtpIsPreviewHost==='function'&&dtpIsPreviewHost()){
+      return auth.signInWithPopup(provider).then(function(r){
+        if(r&&r.user&&typeof toast==='function')toast('Signed in');
+        return r;
+      },function(e){
+        if(typeof toast==='function')toast('Sign-in didn\'t complete ('+((e&&e.code)||'error')+') — if the popup was blocked, allow popups and retry, or test on a laptop browser');
+        throw e;
+      });
+    }
     try{sessionStorage.setItem('dtp_redirecting','1');}catch(_){}
     return auth.signInWithRedirect(provider);
   };
