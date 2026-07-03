@@ -103,6 +103,18 @@ service cloud.firestore {
       match /kv/{key} {
         allow read, write: if isMember() || isSuper();
       }
+
+      // Per-item sync engine (Build 350-dev): one doc per item + the
+      // per-collection mode flags. Same trust boundary as kv — the workspace
+      // is a shared family whiteboard. NOTE: the live rules do NOT have this
+      // block, so the engine stays dormant in production (its flag reads
+      // fail gracefully) until these rules are deployed.
+      match /items/{itemId} {
+        allow read, write: if isMember() || isSuper();
+      }
+      match /meta/{doc} {
+        allow read, write: if isMember() || isSuper();
+      }
     }
   }
 }

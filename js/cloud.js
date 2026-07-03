@@ -50,13 +50,20 @@
   };
   C.signOut=function(){return auth.signOut();};
 
-  /* delete every synced data doc in the active space (a clean slate) */
+  /* delete every synced data doc in the active space (a clean slate) —
+     kv blobs AND per-item docs (items would otherwise resurrect on the
+     next reconcile of any flagged collection) */
   C.wipe=function(){
     if(!C.user)return Promise.resolve();
     var col=kvCol();
     return col.get().then(function(snap){
       var dels=[];snap.forEach(function(d){dels.push(d.ref.delete());});
       return Promise.all(dels);
+    }).then(function(){
+      return itemsCol().get().then(function(snap){
+        var dels=[];snap.forEach(function(d){dels.push(d.ref.delete());});
+        return Promise.all(dels);
+      }).catch(function(){});
     });
   };
 
@@ -166,6 +173,14 @@
      next reconcile (which re-pushes every key whose local ts beats the cloud). */
   C.push=function(k,v){
     if(C.applyingRemote||!syncable(k))return;   /* never re-stamp remote-applied writes */
+    /* per-item mode: the blob is a local cache; sync the changed ITEMS instead.
+       No kv timestamp is stamped — reconcile's shadow diff is the recovery
+       path for edits made while offline/unsynced, not dtp__synctimes. */
+    var col=itemModeKey(k);
+    if(col){
+      if(C.synced&&C.user&&Array.isArray(v))pushAllDirty(col,v);
+      return;
+    }
     var ts=Date.now();
     var times=loadTimes(); times[k]=ts; saveTimes(times);
     if(!C.synced||!C.user)return;               /* recency recorded; reconcile will upload it */
@@ -197,6 +212,16 @@
      to the stale cloud copy. */
   C.pushNow=function(k,vs){
     if(!syncable(k))return Promise.resolve(true);   /* nothing to sync — not a failure */
+    /* per-item mode (restore path): the restore already wrote the blob to
+       localStorage; diff it against the shadow and await every item push +
+       tombstone, so the caller's durability guarantee holds per item. */
+    var colN=itemModeKey(k);
+    if(colN){
+      if(!C.user)return Promise.resolve(false);
+      var arr;try{arr=JSON.parse(vs);}catch(e){arr=null;}
+      if(!Array.isArray(arr))return Promise.resolve(false);
+      return pushAllDirty(colN,arr);
+    }
     var ts=Date.now();
     var times=loadTimes(); times[k]=ts; saveTimes(times);
     if(!C.user)return Promise.resolve(false);
@@ -215,6 +240,312 @@
   C.pauseSync=function(){ stopListener(); C.synced=false; };
   C.resumeSync=function(){ if(!C.user)return Promise.resolve(); return reconcile('merge').catch(function(e){ console.warn('resumeSync reconcile failed:',e&&e.message); }); };
 
+  /* ══ Per-item sync engine (audit F-01 Tier B) ═══════════════════════════
+     For flagged collections, the sync unit is ONE ITEM, not the whole blob:
+     each item lives in its own doc at <space>/items/<col>__<id>, so two
+     people editing DIFFERENT items can never overwrite each other. Only an
+     edit to the literal same item in the same window is still last-write-
+     wins — the accepted residual. The localStorage blob stays exactly as it
+     is (app code and rehydrate() are unchanged); it just becomes a local
+     cache instead of the thing that syncs.
+
+     Per-collection flags live in <space>/meta/itemsync {dining:true,...} —
+     read at every reconcile. Flag OFF (or unreadable, e.g. rules not yet
+     deployed) = engine dormant, blob mode exactly as before. Old-build
+     devices simply keep blob mode: they go stale on flagged collections but
+     can never corrupt them (reconcile here skips flagged keys in kv).
+
+     THE INVARIANT everything rests on: the shadow (dtp__itemshadow_<col>,
+     device-local) holds the last CLOUD-CONFIRMED state of each item. Shadow
+     entries are only ever updated by a confirmed push or an applied remote
+     doc — never optimistically. "Local item differs from shadow" therefore
+     means exactly "this device has an unsynced edit", and reconcile can
+     always recompute what to push after any offline gap, crash, or failed
+     write. Deletes are tombstones (del:true) so a stale offline copy can
+     never resurrect a deleted item; a genuine EDIT beats a delete in both
+     directions (family-friendly: content wins over absence). */
+  var ITEM_COLS={dining:'dtp_dining',lls:'dtp_lls',shows:'dtp_shows',parades:'dtp_parades',flights:'dtp_flights',resorts:'dtp_resorts',parkres:'dtp_parkres',tickets:'dtp_tickets',passes:'dtp_passes',rebooks:'dtp_rebooks'};
+  var KEY_TO_COL={}; Object.keys(ITEM_COLS).forEach(function(c){KEY_TO_COL[ITEM_COLS[c]]=c;});
+  C._itemFlags={};
+  C.itemCols=function(){return Object.keys(ITEM_COLS);};
+  C.itemMode=function(col){return !!C._itemFlags[col];};
+  function itemModeKey(k){var c=KEY_TO_COL[k];return (c&&C._itemFlags[c])?c:null;}
+  function anyItemMode(){for(var c in C._itemFlags)if(C._itemFlags[c]&&ITEM_COLS[c])return true;return false;}
+  function spacePath(){var w=C.adminWid||C.wid;return w?'workspaces/'+w:'users/'+C.user.uid;}
+  function itemsCol(){return db().collection(spacePath()+'/items');}
+  function itemDocRef(col,id){return db().doc(spacePath()+'/items/'+col+'__'+id);}
+  function itemFlagsRef(){return db().doc(spacePath()+'/meta/itemsync');}
+  function svTs(){try{return firebase.firestore.FieldValue.serverTimestamp();}catch(e){return Date.now();}}
+  function tsMillis(x){if(!x)return 0;if(typeof x==='number')return x;if(typeof x.toMillis==='function'){try{return x.toMillis();}catch(e){return 0;}}return 0;}
+  /* key-order-independent serialization — the equality test behind "dirty" */
+  function stableSer(o){
+    if(o===null||typeof o!=='object')return JSON.stringify(o);
+    if(Array.isArray(o)){var a=[];for(var i=0;i<o.length;i++)a.push(stableSer(o[i]===undefined?null:o[i]));return '['+a.join(',')+']';}
+    var ks=Object.keys(o).filter(function(k){return o[k]!==undefined;}).sort();
+    return '{'+ks.map(function(k){return JSON.stringify(k)+':'+stableSer(o[k]);}).join(',')+'}';
+  }
+  function shadowKey(col){return 'dtp__itemshadow_'+col;}
+  function loadShadow(col){try{return JSON.parse(localStorage.getItem(shadowKey(col))||'{}');}catch(e){return {};}}
+  function saveShadow(col,s){try{localStorage.setItem(shadowKey(col),JSON.stringify(s));}catch(e){}}
+  function readBlob(col){var a;try{a=JSON.parse(localStorage.getItem(ITEM_COLS[col])||'[]');}catch(e){a=[];}return Array.isArray(a)?a:[];}
+  function writeBlobRemote(col,arr){C.applyingRemote=true;try{localStorage.setItem(ITEM_COLS[col],JSON.stringify(arr));}catch(e){}C.applyingRemote=false;}
+  function newItemId(){
+    var AB='abcdefghjkmnpqrstuvwxyz23456789',out='i'+Date.now().toString(36);
+    try{var b=new Uint32Array(6);crypto.getRandomValues(b);for(var i=0;i<6;i++)out+=AB[b[i]%AB.length];}
+    catch(e){out+=Math.random().toString(36).slice(2,8);}
+    return out;
+  }
+  /* every synced item needs a stable id; backfill in place AND persist, so a
+     reload can never re-assign fresh ids (which would fork duplicates) */
+  function ensureItemIds(col,arr){
+    var changed=false;
+    for(var i=0;i<arr.length;i++){var it=arr[i];if(it&&typeof it==='object'&&!it.id){it.id=newItemId();changed=true;}}
+    if(changed){try{localStorage.setItem(ITEM_COLS[col],JSON.stringify(arr));}catch(e){}}
+    return arr;
+  }
+  function itemDocBody(col,it,del){
+    return {col:col,trip:(it&&it.trip)||null,v:del?null:JSON.stringify(it),del:!!del,
+            by:(C.user&&C.user.uid)||null,build:(typeof BUILD!=='undefined'?BUILD:null),ts:svTs()};
+  }
+  /* push ONE item, with retry; the shadow is updated ONLY on confirmation.
+     A retry re-reads the live blob first and aborts if the item changed
+     meanwhile (a newer save's own push supersedes this one). */
+  function pushItemDoc(col,it,attempt){
+    attempt=attempt||0;
+    if(!C.user||!it||!it.id)return Promise.resolve(false);
+    var s=stableSer(it);
+    if(attempt>0){
+      var cur=null,blob=readBlob(col);
+      for(var i=0;i<blob.length;i++)if(blob[i]&&blob[i].id===it.id){cur=blob[i];break;}
+      if(!cur||stableSer(cur)!==s)return Promise.resolve(false);   /* superseded */
+    }
+    return itemDocRef(col,it.id).set(itemDocBody(col,it,false)).then(function(){
+      var sh=loadShadow(col);sh[it.id]=s;saveShadow(col,sh);
+      C._lastPushErr=null;return true;
+    },function(e){
+      if(attempt<3)return new Promise(function(res){setTimeout(res,1500*(attempt+1));}).then(function(){return pushItemDoc(col,it,attempt+1);});
+      C._lastPushErr={key:'item:'+col+'/'+it.id,msg:(e&&e.message)||'write failed',at:Date.now()};
+      console.warn('item push failed',col,it.id,e&&e.message);
+      try{if(typeof onSyncPushFailed==='function')onSyncPushFailed(C._lastPushErr);}catch(_h){}
+      return false;
+    });
+  }
+  function pushTombstone(col,id,trip,attempt){
+    attempt=attempt||0;
+    if(!C.user||!id)return Promise.resolve(false);
+    if(attempt>0){
+      var blob=readBlob(col);
+      for(var i=0;i<blob.length;i++)if(blob[i]&&blob[i].id===id)return Promise.resolve(false);   /* re-added meanwhile */
+    }
+    return itemDocRef(col,id).set(itemDocBody(col,{id:id,trip:trip||null},true)).then(function(){
+      var sh=loadShadow(col);delete sh[id];saveShadow(col,sh);
+      C._lastPushErr=null;return true;
+    },function(e){
+      if(attempt<3)return new Promise(function(res){setTimeout(res,1500*(attempt+1));}).then(function(){return pushTombstone(col,id,trip,attempt+1);});
+      C._lastPushErr={key:'item:'+col+'/'+id,msg:(e&&e.message)||'tombstone failed',at:Date.now()};
+      try{if(typeof onSyncPushFailed==='function')onSyncPushFailed(C._lastPushErr);}catch(_h){}
+      return false;
+    });
+  }
+  /* diff the (just-saved) array against the shadow and push every unsynced
+     edit + a tombstone for every locally-deleted id. Called by C.push on
+     every save of a flagged key, and by pushNow (awaited) after a restore.
+     Safe to call repeatedly — confirmed pushes clear their own dirtiness. */
+  function pushAllDirty(col,arr){
+    ensureItemIds(col,arr);
+    var shadow=loadShadow(col),seen={},ops=[],i,it;
+    for(i=0;i<arr.length;i++){
+      it=arr[i];if(!it||!it.id)continue;seen[it.id]=1;
+      if(shadow[it.id]!==stableSer(it))ops.push(pushItemDoc(col,it));
+    }
+    Object.keys(shadow).forEach(function(id){
+      if(!seen[id]){
+        var trip=null;try{trip=(JSON.parse(shadow[id])||{}).trip||null;}catch(e){}
+        ops.push(pushTombstone(col,id,trip));
+      }
+    });
+    return Promise.all(ops).then(function(rs){return rs.every(function(r){return r!==false;});});
+  }
+  /* apply remote item docs (listener or reconcile pull) into the local blob.
+     Local-dirty items always win here and re-push; the cloud converges to
+     whoever wrote last, and no unsynced local edit is ever discarded. */
+  function applyItemDocs(docs){
+    var byCol={},changedCols=0;
+    docs.forEach(function(d){var x=d.data;if(x&&x.col&&C._itemFlags[x.col]&&ITEM_COLS[x.col])(byCol[x.col]=byCol[x.col]||[]).push(d);});
+    Object.keys(byCol).forEach(function(col){
+      var blob=readBlob(col),shadow=loadShadow(col),changed=false;
+      byCol[col].forEach(function(d){
+        var id=d.id.slice(col.length+2),x=d.data,idx=-1,i;
+        for(i=0;i<blob.length;i++)if(blob[i]&&blob[i].id===id){idx=i;break;}
+        var localDirty=idx>=0&&shadow[id]!==stableSer(blob[idx]);
+        if(x.del){
+          if(idx>=0){
+            if(localDirty){pushItemDoc(col,blob[idx]);return;}   /* edit beats delete */
+            blob.splice(idx,1);delete shadow[id];changed=true;
+          }else if(shadow[id]){delete shadow[id];}
+          return;
+        }
+        var rit;try{rit=JSON.parse(x.v);}catch(e){rit=null;}
+        if(!rit||!rit.id)return;
+        var rs=stableSer(rit);
+        if(idx>=0){
+          if(stableSer(blob[idx])===rs){shadow[id]=rs;return;}   /* already have it */
+          if(localDirty){pushItemDoc(col,blob[idx]);return;}     /* local unsynced edit wins */
+          blob[idx]=rit;shadow[id]=rs;changed=true;
+        }else{
+          if(shadow[id]===rs)return;      /* locally deleted, no remote edit since — deletion stands */
+          blob.push(rit);shadow[id]=rs;changed=true;   /* new remote item, or remote edit resurrecting a local delete */
+        }
+      });
+      saveShadow(col,shadow);
+      if(changed){writeBlobRemote(col,blob);changedCols++;}
+    });
+    return changedCols>0;
+  }
+  /* full two-way item reconcile for every flagged collection — the offline/
+     crash recovery path. merge: shadow-diff decides push vs pull per item.
+     adopt: cloud wins entirely (blob rebuilt from live docs). */
+  function reconcileItems(mode){
+    if(!anyItemMode()||!C.user)return Promise.resolve();
+    return itemsCol().get().then(function(snap){
+      var byCol={};
+      snap.forEach(function(d){var x=d.data()||{};if(x.col&&C._itemFlags[x.col]&&ITEM_COLS[x.col])(byCol[x.col]=byCol[x.col]||[]).push({id:d.id,data:x});});
+      var ops=[];
+      Object.keys(C._itemFlags).forEach(function(col){
+        if(!C._itemFlags[col]||!ITEM_COLS[col])return;
+        var docs=byCol[col]||[];
+        if(mode==='adopt'){
+          var arr=[],sh={};
+          docs.forEach(function(d){
+            if(d.data.del)return;
+            var it;try{it=JSON.parse(d.data.v);}catch(e){return;}
+            if(!it||!it.id)return;
+            arr.push(it);sh[it.id]=stableSer(it);
+          });
+          writeBlobRemote(col,arr);saveShadow(col,sh);
+          return;
+        }
+        var blob=readBlob(col);ensureItemIds(col,blob);
+        /* FIRST CONTACT with a flagged collection (no shadow on this device):
+           we cannot tell local blob differences from staleness — the blob was
+           kv-synced until now and the item docs were migrated from the group's
+           freshest merge. Remote wins per item; local-ONLY items (ids the
+           cloud has never seen) still push, so nothing added offline during
+           the transition window is lost. Nothing is tombstoned. */
+        var virgin=null;try{virgin=localStorage.getItem(shadowKey(col))===null;}catch(e){virgin=false;}
+        var shadow=loadShadow(col);
+        var remote={};docs.forEach(function(d){remote[d.id.slice(col.length+2)]=d.data;});
+        var out=[],outShadow={},seen={};
+        blob.forEach(function(it){
+          if(!it||!it.id)return;seen[it.id]=1;
+          var ls=stableSer(it),r=remote[it.id],dirty=!virgin&&shadow[it.id]!==ls;
+          if(!r){
+            if(shadow[it.id]&&!dirty)return;   /* was synced, doc purged remotely — treat as delete */
+            out.push(it);ops.push(pushItemDoc(col,it));return;   /* new/edited here, never uploaded */
+          }
+          if(r.del){
+            if(dirty){out.push(it);ops.push(pushItemDoc(col,it));}   /* edit beats delete */
+            return;
+          }
+          var rit;try{rit=JSON.parse(r.v);}catch(e){rit=null;}
+          var rs=rit?stableSer(rit):null;
+          if(dirty){
+            out.push(it);
+            if(shadow[it.id]!==undefined)outShadow[it.id]=shadow[it.id];   /* keep OLD confirmed state until push lands */
+            if(ls!==rs)ops.push(pushItemDoc(col,it));
+            else outShadow[it.id]=rs;   /* both sides made the identical edit */
+            return;
+          }
+          if(rit){out.push(rit);outShadow[it.id]=rs;}   /* clean here → remote wins */
+        });
+        Object.keys(remote).forEach(function(id){
+          if(seen[id])return;
+          var r=remote[id];
+          if(r.del)return;
+          var rit;try{rit=JSON.parse(r.v);}catch(e){return;}
+          if(!rit||!rit.id)return;
+          var rs=stableSer(rit);
+          if(shadow[id]){                       /* in shadow but not in blob = deleted locally since last sync */
+            if(shadow[id]===rs){outShadow[id]=shadow[id];ops.push(pushTombstone(col,id,rit.trip||null));return;}
+            out.push(rit);outShadow[id]=rs;return;   /* remote edited it meanwhile — edit beats delete */
+          }
+          out.push(rit);outShadow[id]=rs;       /* brand-new remote item */
+        });
+        writeBlobRemote(col,out);saveShadow(col,outShadow);
+      });
+      return Promise.all(ops);
+    });
+  }
+  function loadItemFlags(){
+    if(!C.user)return Promise.resolve();
+    return itemFlagsRef().get().then(function(s){
+      C._itemFlags=(s.exists&&s.data())||{};
+    },function(){/* unreadable (rules not deployed / offline) → keep last known; dormant if none */});
+  }
+  /* ── turning a collection on: the migration ─────────────────────────────
+     Writes one doc per existing blob item (batched), verifies count parity
+     by re-reading, and only THEN sets the flag. Interrupted halfway = flag
+     never set = every device stays in blob mode; re-running is idempotent
+     (same ids, same docs). The kv blob is left retired-but-present. */
+  C.enableItemSync=function(col){
+    if(!ITEM_COLS[col])return Promise.reject(new Error('Unknown collection: '+col));
+    if(!C.user)return Promise.reject(new Error('Sign in first'));
+    var blob=readBlob(col);ensureItemIds(col,blob);
+    var live=blob.filter(function(it){return it&&it.id;});
+    var batches=[],cur=db().batch(),n=0;
+    live.forEach(function(it){
+      cur.set(itemDocRef(col,it.id),itemDocBody(col,it,false));n++;
+      if(n>=400){batches.push(cur);cur=db().batch();n=0;}
+    });
+    if(n)batches.push(cur);
+    return batches.reduce(function(p,b){return p.then(function(){return b.commit();});},Promise.resolve())
+      .then(function(){return itemsCol().get();})
+      .then(function(snap){
+        var have=0;snap.forEach(function(d){var x=d.data()||{};if(x.col===col&&!x.del)have++;});
+        if(have<live.length)throw new Error('Parity check failed: '+have+' docs for '+live.length+' items — flag NOT set');
+        var upd={};upd[col]=true;
+        return itemFlagsRef().set(upd,{merge:true});
+      })
+      .then(function(){
+        C._itemFlags[col]=true;
+        var sh={};live.forEach(function(it){sh[it.id]=stableSer(it);});
+        saveShadow(col,sh);
+        stopListener();startListener();
+        return live.length;
+      });
+  };
+  /* turning a collection off: freshen the kv blob from local (it went stale
+     while item mode owned the collection), then clear the flag. Item docs
+     are left in place — harmless, and re-enabling reuses them. */
+  C.disableItemSync=function(col){
+    if(!ITEM_COLS[col])return Promise.reject(new Error('Unknown collection: '+col));
+    if(!C.user)return Promise.reject(new Error('Sign in first'));
+    var upd={};upd[col]=false;
+    return itemFlagsRef().set(upd,{merge:true}).then(function(){
+      C._itemFlags[col]=false;
+      try{localStorage.removeItem(shadowKey(col));}catch(e){}
+      var vs=null;try{vs=localStorage.getItem(ITEM_COLS[col]);}catch(e){}
+      return vs!=null?C.pushNow(ITEM_COLS[col],vs):true;
+    });
+  };
+  /* tombstones older than maxAgeMs have done their job (every device that
+     will ever sync has seen them) — clear them out. Called from the app's
+     once-a-day housekeeping. */
+  C.purgeTombstones=function(maxAgeMs){
+    if(!C.user||!anyItemMode())return Promise.resolve(0);
+    maxAgeMs=maxAgeMs||30*24*3600*1000;
+    var now=Date.now();
+    return itemsCol().get().then(function(snap){
+      var dels=[];
+      snap.forEach(function(d){
+        var x=d.data()||{};if(!x.del)return;
+        var t=tsMillis(x.ts);
+        if(t&&(now-t)>maxAgeMs)dels.push(d.ref.delete());
+      });
+      return Promise.all(dels).then(function(){return dels.length;});
+    }).catch(function(){return 0;});
+  };
+
   /* sync the local store against the active target.
        mode 'merge'  → last-write-wins per key, both directions (device sync)
        mode 'adopt'  → the target wins entirely (joining a family space) */
@@ -222,12 +553,16 @@
     attempt=attempt||0;
     C.synced=false; stopListener();
     var col=kvCol();
-    return col.get().then(function(snap){
+    /* flags first: everything below must know which keys are item-mode.
+       Flagged keys are EXCLUDED from the kv phase in both directions — their
+       kv blob is retired-but-present (never pulled over local, never pushed) —
+       and handled per item by reconcileItems() afterward. */
+    return loadItemFlags().then(function(){ return col.get(); }).then(function(snap){
       var times=loadTimes(), cloud={};
-      snap.forEach(function(d){ if(syncable(d.id))cloud[d.id]=d.data(); });
+      snap.forEach(function(d){ if(syncable(d.id)&&!itemModeKey(d.id))cloud[d.id]=d.data(); });
       C.applyingRemote=true;
       if(mode==='adopt'){
-        localKeys().forEach(function(k){ if(!(k in cloud)){ try{localStorage.removeItem(k);}catch(e){} delete times[k]; } });
+        localKeys().forEach(function(k){ if(itemModeKey(k))return; if(!(k in cloud)){ try{localStorage.removeItem(k);}catch(e){} delete times[k]; } });
         Object.keys(cloud).forEach(function(k){ try{localStorage.setItem(k,cloud[k].v);}catch(e){} times[k]=cloud[k].ts||Date.now(); });
         C.applyingRemote=false; saveTimes(times);
         return Promise.resolve();
@@ -235,12 +570,15 @@
       var union={}; localKeys().forEach(function(k){union[k]=1;}); Object.keys(cloud).forEach(function(k){union[k]=1;});
       var pushes=[];
       Object.keys(union).forEach(function(k){
+        if(itemModeKey(k))return;
         var c=cloud[k], cts=c?(c.ts||0):0, lts=times[k]||0, local=localStorage.getItem(k);
         if(c && cts>=lts){ try{localStorage.setItem(k,c.v);}catch(e){} times[k]=cts; }
         else if(local!=null){ var ts=lts||Date.now(); times[k]=ts; pushes.push(col.doc(k).set({v:local,ts:ts})); }
       });
       C.applyingRemote=false; saveTimes(times);
       return Promise.all(pushes);
+    }).then(function(){
+      return reconcileItems(mode);
     }).then(function(){
       C.synced=true; doRehydrate(); startListener();
     }).catch(function(e){
@@ -260,28 +598,45 @@
   }
 
   /* live updates from other devices / members on the active target */
-  var unsub=null, rht=null;
+  var unsub=null, unsubItems=null, rht=null;
   function scheduleRehydrate(){ clearTimeout(rht); rht=setTimeout(doRehydrate,150); }
   function startListener(){
-    if(unsub)return;
-    unsub=kvCol().onSnapshot(function(snap){
-      if(!C.synced)return;
-      var times=loadTimes(), changed=false;
-      snap.docChanges().forEach(function(ch){
-        if(ch.type==='removed')return;
-        var d=ch.doc;
-        if(d.metadata.hasPendingWrites)return;          /* skip our own write echoing back */
-        var k=d.id; if(!syncable(k))return;
-        var data=d.data(), cts=data.ts||0, lts=times[k]||0;
-        if(cts>lts){
-          C.applyingRemote=true; try{localStorage.setItem(k,data.v);}catch(e){} C.applyingRemote=false;
-          times[k]=cts; changed=true;
-        }
-      });
-      if(changed){ saveTimes(times); scheduleRehydrate(); }
-    },function(e){ console.warn('cloud listen',e&&e.message); });
+    if(!unsub){
+      unsub=kvCol().onSnapshot(function(snap){
+        if(!C.synced)return;
+        var times=loadTimes(), changed=false;
+        snap.docChanges().forEach(function(ch){
+          if(ch.type==='removed')return;
+          var d=ch.doc;
+          if(d.metadata.hasPendingWrites)return;          /* skip our own write echoing back */
+          var k=d.id; if(!syncable(k)||itemModeKey(k))return;   /* item-mode keys never sync as blobs */
+          var data=d.data(), cts=data.ts||0, lts=times[k]||0;
+          if(cts>lts){
+            C.applyingRemote=true; try{localStorage.setItem(k,data.v);}catch(e){} C.applyingRemote=false;
+            times[k]=cts; changed=true;
+          }
+        });
+        if(changed){ saveTimes(times); scheduleRehydrate(); }
+      },function(e){ console.warn('cloud listen',e&&e.message); });
+    }
+    if(!unsubItems&&anyItemMode()){
+      unsubItems=itemsCol().onSnapshot(function(snap){
+        if(!C.synced)return;
+        var docs=[];
+        snap.docChanges().forEach(function(ch){
+          if(ch.type==='removed')return;
+          var d=ch.doc;
+          if(d.metadata.hasPendingWrites)return;          /* our own item write echoing back */
+          docs.push({id:d.id,data:d.data()||{}});
+        });
+        if(docs.length&&applyItemDocs(docs))scheduleRehydrate();
+      },function(e){ console.warn('item listen',e&&e.message); });
+    }
   }
-  function stopListener(){ if(unsub){ try{unsub();}catch(e){} unsub=null; } }
+  function stopListener(){
+    if(unsub){ try{unsub();}catch(e){} unsub=null; }
+    if(unsubItems){ try{unsubItems();}catch(e){} unsubItems=null; }
+  }
 
   /* ── planning party (shared workspace) ─────────────────── */
   C.inParty=function(){return !!C.wid;};

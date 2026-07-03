@@ -99,8 +99,16 @@ Status on this branch:
 6. 📋 Hardened Firestore rules — `firestore.rules.proposed` (NOT deployed).
    Review the CHANGED markers, test against a throwaway workspace, then rename
    over `firestore.rules` and `firebase deploy --only firestore:rules`.
-7. 📋 Per-item sync engine (F-01 Tier B) — designed, not built:
-   `docs/PER_ITEM_SYNC_DESIGN.md`. Needs human review + emulator time.
+7. ✅ Per-item sync engine (F-01 Tier B) — Build 350-dev. One doc per item for
+   the ten global collections, flag-gated per collection (Backups → "Per-item
+   sync"), shadow-diff pushes, tombstoned deletes, parity-checked migration
+   with one-tap rollback. Design + implementation deltas:
+   `docs/PER_ITEM_SYNC_DESIGN.md`. Two-device behavioral suite:
+   `tests/ci/test_item_sync.js` against `tests/_fakefire.js`. **Dormant until
+   the proposed rules deploy** (items/meta match blocks) — flags unreadable =
+   blob mode, exactly as before. Before any production merge: run it against
+   the real emulator once (§2 above), then enable ONE collection (dining) for
+   a trial week.
 8. Housekeeping (F-14) — open.
 
 ## Tests

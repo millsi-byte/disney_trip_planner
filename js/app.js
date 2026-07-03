@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='349-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='350-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -4459,6 +4459,12 @@ function runDailyArchive(force){
       try{localStorage.setItem(ARCHIVE_DAY_KEY,tk);}catch(e){}
     }
     archiveMirror(list);
+    /* per-item sync housekeeping: tombstones older than 30 days have been
+       seen by every device that will ever sync — clear them (same once-a-day
+       cadence as the archive; the marker above already rate-limits us) */
+    if(window.CLOUD&&window.CLOUD.purgeTombstones&&(force||marker!==tk)){
+      try{window.CLOUD.purgeTombstones();}catch(e){}
+    }
   }catch(e){}
 }
 function snapshotNow(){autoBackup(true);if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();toast('Snapshot saved');}
@@ -4768,7 +4774,43 @@ function scrBackups(){
       body+='<button class="btn-secondary" onclick="loadCloudBackups()">Load cloud backups</button>';
     }
   }
+
+  /* ── Per-item sync (experimental — audit F-01 Tier B) ── */
+  if(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user&&window.CLOUD.itemCols){
+    body+='<div class="hub-section-label" style="margin-left:0">Per-item sync <span class="st-badge st-todo" style="margin-left:4px">Experimental</span></div>';
+    body+='<div class="body-empty" style="text-align:left;padding:0 2px 10px;font-size:13px">'
+      +'Collections switched ON here sync one record per item instead of one big blob — two people editing different items can never overwrite each other. '
+      +'<b>Turn a collection on only when every device in the group is on this build or newer</b>; older devices keep working but stop receiving changes to that collection until they update.</div>';
+    var ILBL={dining:'Dining',lls:'Lightning Lanes',shows:'Shows',parades:'Parades',flights:'Flights',resorts:'Resorts',parkres:'Park Reservations',tickets:'Tickets',passes:'Annual Passes',rebooks:'Rebooks'};
+    var IKEY={dining:'dtp_dining',lls:'dtp_lls',shows:'dtp_shows',parades:'dtp_parades',flights:'dtp_flights',resorts:'dtp_resorts',parkres:'dtp_parkres',tickets:'dtp_tickets',passes:'dtp_passes',rebooks:'dtp_rebooks'};
+    window.CLOUD.itemCols().forEach(function(c){
+      var on=window.CLOUD.itemMode(c),n=0;
+      try{var a=JSON.parse(localStorage.getItem(IKEY[c])||'[]');n=Array.isArray(a)?a.length:0;}catch(e){}
+      body+='<div style="display:flex;align-items:center;gap:8px;padding:7px 2px;border-bottom:1px solid var(--line)">'
+        +'<span style="width:9px;height:9px;border-radius:50%;background:'+(on?'#16A34A':'#5D6673')+';flex-shrink:0"></span>'
+        +'<span style="flex:1;font-size:14px">'+ILBL[c]+' <span style="color:var(--muted);font-size:12px">('+n+' item'+(n===1?'':'s')+')</span></span>'
+        +'<button class="btn-secondary" style="margin:0;padding:6px 12px;font-size:13px" onclick="itemSyncToggle(\''+c+'\')">'+(on?'Turn off':'Turn on')+'</button>'
+        +'</div>';
+    });
+  }
   return screenShell('Backups',body,null,null,'Close');
+}
+/* flip one collection between blob mode and per-item mode. Enabling runs the
+   migration (one doc per existing item, parity-checked) before the flag is
+   set; a failure anywhere leaves the flag off and blob mode untouched. */
+function itemSyncToggle(col){
+  if(!(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user)){toast('Sign in first');return;}
+  var on=window.CLOUD.itemMode(col);
+  if(on){
+    if(!confirm('Turn per-item sync OFF for this collection?\n\nIt goes back to syncing as one blob (the pre-350 behavior).'))return;
+    window.CLOUD.disableItemSync(col).then(function(){toast('Back to blob sync');renderScreen_inplace2();},
+      function(e){toast('Could not turn off: '+((e&&e.message)||'error'));});
+  }else{
+    if(!confirm('Turn per-item sync ON for this collection?\n\nEvery device in the group should be on this build or newer first. This migrates existing items to the new format (nothing is deleted).'))return;
+    autoBackup(true);   /* migration safety net */
+    window.CLOUD.enableItemSync(col).then(function(n){toast('Per-item sync on — '+n+' item'+(n===1?'':'s')+' migrated');renderScreen_inplace2();},
+      function(e){toast('Not enabled: '+((e&&e.message)||'error'));renderScreen_inplace2();});
+  }
 }
 /* Non-destructive recovery: list every day strategy stored in one snapshot so a
    single lost day can be copied back without overwriting current data. */

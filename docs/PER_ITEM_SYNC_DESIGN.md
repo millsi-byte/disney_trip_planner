@@ -1,10 +1,27 @@
 # Per-item sync engine — design (audit F-01 Tier B)
 
-**Status: DESIGN ONLY — deliberately not implemented in the unattended dev run.**
-A subtly-wrong merge engine silently corrupts data; this is the one piece of the
-roadmap that needs a human reviewing the design and watching the first migration
-run. Everything below is specified to the point where implementation is
-mechanical.
+**Status: IMPLEMENTED in Build 350-dev** (owner green-lit building it on dev:
+"go ahead and build your recommendations... I'm deferring to you"). The engine
+lives in js/cloud.js; the two-device behavioral suite is
+`tests/ci/test_item_sync.js` (24 assertions, runs in CI on every push). This
+document remains the design of record — the **Implementation deltas** section
+at the bottom records where the build deviated from the original plan and why.
+
+Key deltas at a glance:
+- Sync unit interception happens inside `CLOUD.push`/`CLOUD.pushNow` keyed on
+  a device-local **shadow** (last cloud-confirmed state per item) — zero app.js
+  call sites changed; the localStorage blob simply became a local cache.
+- The engine targets the ten still-whole-blob global collections (dining, lls,
+  shows, parades, flights, resorts, parkres, tickets, passes, rebooks).
+  Wishlist/todo/packing stay on their Build-347 shards, which already solved
+  their collision pattern per person/creator.
+- Doc `v` is a JSON **string**, not a Firestore map (dodges nested-array limits
+  and keeps serialization byte-identical both ways).
+- Conflict rule shipped: an unsynced local **edit beats a delete** in both
+  directions; same-item concurrent edits remain last-write-wins (the accepted
+  residual). First contact with a newly-flagged collection adopts per item
+  (remote wins, local-only additions still push, nothing tombstoned) — a
+  transition-window rule the original design missed.
 
 ## Why (recap from the audit)
 
@@ -168,3 +185,48 @@ strictly better than today, where one packing tick re-uploads a multi-KB blob.
 ~150 in app.js (route the 12 collections' save calls through itemPush),
 plus the test suite. 2–3 focused sessions with emulator time. Do not start it
 the week of a trip.
+
+---
+
+## Implementation deltas (Build 350-dev — what actually shipped)
+
+1. **The shadow, not a write-path rewrite.** Instead of routing every app save
+   call through a new `itemPush`, `CLOUD.push(k, v)` intercepts flagged keys
+   and diffs the saved array against `dtp__itemshadow_<col>` — a device-local
+   record of the last **cloud-confirmed** state of each item. Shadow entries
+   update only on confirmed push or applied remote doc, never optimistically,
+   so "differs from shadow" always means "unsynced local change" and
+   `reconcile()` can recompute pending work after any crash/offline gap. This
+   made the app.js diff zero lines at the call sites.
+2. **Scope: the ten global blob collections.** The design's wishlist→todo→
+   packing order predated Build 347; those three are already sharded per
+   person/creator, which solved their real collision pattern. The remaining
+   whole-blob arrays were the exposure, so the engine covers exactly those.
+   Packing's id-less nested shape (the hard case) never needed solving.
+3. **`v` is a JSON string**, not a map — no nested-array restrictions, and
+   equality checks compare the same bytes that were pushed. A key-order-
+   independent `stableSer()` is the dirtiness test.
+4. **Conflict rules shipped:** different items → both survive (the point);
+   same item → LWW (accepted residual, converges everywhere); edit vs delete
+   → edit wins in both directions; local delete while offline → tombstone on
+   reconnect; tombstone vs untouched stale copy → deletion stands. First
+   contact with a flagged collection (device has no shadow) adopts per item —
+   remote wins, local-only ids still push, nothing tombstoned. That last rule
+   is what makes a mixed fleet safe during the rollout window.
+5. **Migration is a UI action** (Backups → "Per-item sync", admin, confirm-
+   gated, auto-snapshot first): batch-writes docs, verifies parity by
+   re-reading, and only then sets the flag. An injected mid-migration failure
+   in the test suite leaves the flag off and blob mode fully working; a retry
+   succeeds. `disableItemSync` freshens the kv blob from local and clears the
+   flag — a one-tap rollback per collection.
+6. **Tombstone purge** (30 days) rides the existing once-a-day archive pass.
+7. **Tested against a Node-shared fake Firestore** (`tests/_fakefire.js`, the
+   exact compat API surface cloud.js uses) with two real app instances in two
+   browser contexts — not the emulator (no Java in the sandbox). The emulator
+   pass in DEVELOPMENT.md §2 is still worth doing before production, but the
+   behavioral matrix above is CI-enforced on every push.
+8. **Rules dependency:** `workspaces/<wid>/items/**` and `/meta/**` need the
+   match blocks now in `firestore.rules.proposed`. Until those deploy, flag
+   reads fail → `C._itemFlags` stays empty → the engine is dormant and blob
+   mode runs exactly as before. Personal spaces (`users/<uid>/…`) are already
+   covered by the recursive user rule.
