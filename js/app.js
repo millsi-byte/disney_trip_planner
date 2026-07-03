@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='352-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='354-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -4665,6 +4665,31 @@ function downloadOrphanKey(key){
   if(raw==null){toast('Not found');return;}
   downloadFile(key+'.json',JSON.stringify({app:'disney-trip-planner',exported:new Date().toISOString(),keys:(function(){var o={};o[key]=raw;return o;})()},null,2),'application/json','Orphaned data downloaded');
 }
+/* clear ONE orphaned record: a protective snapshot is taken first, then the
+   key is emptied THROUGH save() so the empty state also syncs to the cloud —
+   plain localStorage.removeItem would resurrect it on the next reconcile.
+   The zero-count record disappears from the orphan list (n>0 filter). */
+function _emptyFor(key){
+  var raw=null;try{raw=localStorage.getItem(key);}catch(e){}
+  try{var v=JSON.parse(raw);if(v&&typeof v==='object'&&!Array.isArray(v))return {};}catch(e){}
+  return [];
+}
+function deleteOrphanKey(key){
+  if(!confirm('Permanently clear this leftover data?\n\nA safety snapshot is taken first, so it stays recoverable from Backups.'))return;
+  try{autoBackup(true);}catch(e){}
+  save(key,_emptyFor(key));
+  toast('Cleared');renderScreen_inplace2();
+}
+/* clear EVERY orphaned record in one go — one confirm, one snapshot */
+function deleteAllOrphans(){
+  var orphans=orphanTripKeys();
+  if(!orphans.length){toast('Nothing to clear');return;}
+  if(!confirm('Clear all '+orphans.length+' leftover records?\n\nThey belong to trips that are no longer in your trip list. A safety snapshot is taken first, so everything stays recoverable from Backups.'))return;
+  try{autoBackup(true);}catch(e){}
+  orphans.forEach(function(o){save(o.key,_emptyFor(o.key));});
+  toast(orphans.length+' leftover record'+(orphans.length===1?'':'s')+' cleared');
+  renderScreen_inplace2();
+}
 function loadCloudBackups(){
   if(!(window.CLOUD&&window.CLOUD.enabled&&window.CLOUD.user&&window.CLOUD.listBackups)){toast('Sign in to load cloud backups');return;}
   S._cloudBkLoading=true;if(typeof renderScreen_inplace2==='function')renderScreen_inplace2();
@@ -4724,9 +4749,11 @@ function scrBackups(){
       body+='<div class="ov-card" style="margin:0 0 8px"><div style="padding:12px 14px">'
         +'<div style="font-weight:700">'+esc(OKIND[o.kind]||o.kind)+' · '+o.count+' item'+(o.count===1?'':'s')+'</div>'
         +'<div style="font-size:12px;color:var(--muted);margin-top:1px">'+esc(o.key)+' — trip “'+esc(o.tripId)+'” is not in your trip list</div>'
-        +'<div style="margin-top:8px"><button class="btn-secondary" style="width:100%;margin:0" onclick="downloadOrphanKey(\''+esc(o.key)+'\')">⬇️ Download this data</button></div>'
+        +'<div style="display:flex;gap:8px;margin-top:8px"><button class="btn-secondary" style="flex:1;margin:0" onclick="downloadOrphanKey(\''+esc(o.key)+'\')">⬇️ Download</button>'
+        +'<button class="ri-btn" style="flex:1;margin:0" onclick="deleteOrphanKey(\''+esc(o.key)+'\')">🗑 Delete</button></div>'
         +'</div></div>';
     });
+    body+='<button class="ri-btn" style="width:100%" onclick="deleteAllOrphans()">🗑 Clear all '+orphans.length+' leftover records</button>';
   }
 
   /* ── Daily / Weekly / Monthly archive (kept ~1 year) ── */

@@ -88,6 +88,20 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     out.orphanFindsShard = orphans.some(o => o.key === 'dtp_packing_ghostTrip_scott' && o.tripId === 'ghostTrip' && o.count === 1);
     out.orphanSkipsLiveShards = !orphans.some(o => o.tripId === 'testtrip' || o.tripId === 'jul26');
 
+    /* ── 6b. deleting an orphan empties it THROUGH sync + drops it from the list ── */
+    const delPushed = [];
+    window.CLOUD = { enabled:true, user:{uid:'u'}, synced:true,
+      push: (k) => delPushed.push(k), applyingRemote:false };
+    window.confirm = () => true;
+    deleteOrphanKey('dtp_packing_ghostTrip_scott');
+    out.orphanDeleteEmpties = localStorage.getItem('dtp_packing_ghostTrip_scott') === '[]';
+    out.orphanDeleteSyncs = delPushed.includes('dtp_packing_ghostTrip_scott');
+    out.orphanDeleteDropsFromList = !orphanTripKeys().some(o => o.key === 'dtp_packing_ghostTrip_scott');
+    /* clear-all sweeps the rest */
+    localStorage.setItem('dtp_todo_ghostTrip_x', JSON.stringify([{id:'g1', n:'Lost todo'}]));
+    deleteAllOrphans();
+    out.orphanClearAllEmpties = localStorage.getItem('dtp_todo_ghostTrip_x') === '[]' && orphanTripKeys().length === 0;
+
     /* ── 7. snapshot viewer renders shard-generation backups ── */
     const snap = { ts: Date.now(), iso:'', build:'347-dev', keys: {
       dtp_family: JSON.stringify([{id:'scott', name:'Scott'}]),
