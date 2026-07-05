@@ -1,7 +1,7 @@
 /* Baseline Tap — service worker
    Network-first so new versions show up on the next load; cache is the
    offline fallback only. */
-var CACHE = 'dtp-v354dev';
+var CACHE = 'dtp-v355dev';
 var ASSETS = [
   './',
   './index.html',
@@ -23,6 +23,9 @@ self.addEventListener('install', function(e){
   self.skipWaiting();
   e.waitUntil(caches.open(CACHE).then(function(c){ return c.addAll(ASSETS); }));
 });
+/* let the page force a waiting worker to take over immediately (the update
+   nudge in index.html) — harmless if install's skipWaiting already ran */
+self.addEventListener('message', function(e){ if(e.data==='skipWaiting')self.skipWaiting(); });
 
 self.addEventListener('activate', function(e){
   e.waitUntil(

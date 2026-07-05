@@ -55,11 +55,21 @@
 <script defer src="js/backup-hotfix.js"></script>
 <script>
 if('serviceWorker' in navigator){
+  /* Aggressive update: the faster an out-of-date device swaps to the current
+     build, the smaller the window in which its old code can run (and, on a
+     buggy old build, damage shared data). So: check for a new worker the
+     instant we register (not only every 60s), nudge any already-waiting worker
+     to activate immediately, and re-check every time the app regains focus. */
   window.addEventListener('load',function(){
-    var reg;
+    function nudge(r){ try{ if(r&&r.waiting)r.waiting.postMessage&&r.waiting.postMessage('skipWaiting'); }catch(e){} }
     navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(function(r){
-      reg=r;
+      try{r.update();}catch(e){}                 /* immediate check on this load */
+      nudge(r);
+      r.addEventListener('updatefound',function(){ nudge(r); });
       setInterval(function(){try{r.update();}catch(e){}},60000);
+      document.addEventListener('visibilitychange',function(){
+        if(document.visibilityState==='visible'){try{r.update();}catch(e){}}
+      });
     }).catch(function(){});
     navigator.serviceWorker.addEventListener('controllerchange',function(){
       if(document.visibilityState==='visible')location.reload();

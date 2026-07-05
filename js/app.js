@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='354-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='355-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -326,6 +326,26 @@ function saveIfChanged(k,v){
   if(cur===s)return;
   save(k,v);
 }
+/* migration writes are a GUESS at how to reshape data this device already had
+   locally, made BEFORE this device has verified anything against the cloud. A
+   plain save() would stamp dtp__synctimes with a fresh Date.now(), making that
+   guess look like a brand-new edit that wins the next reconcile — the exact
+   mechanism that let a stale legacy blob clobber another person's real shard.
+   saveLocalOnly writes localStorage WITHOUT CLOUD.push, so the key stays
+   unstamped and the next reconcile() decides honestly: if the cloud already
+   holds this shard it wins (lts defaults to 0), and the guess is only ever
+   pushed up if the cloud has nothing for it yet (a legitimate first write). */
+function saveLocalOnly(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+/* Per-pid baseline of list-shard content, captured at loadLists() the moment
+   in-memory arrays are known to equal disk. saveByCreator()/savePacking() only
+   write a pid's shard when THIS session actually changed that pid's content
+   (differs from the baseline) — so an unrelated save (e.g. adding your own
+   item) can never rewrite, and thus never clobber-with-a-fresh-timestamp,
+   another person's shard that a concurrent reconcile may have just corrected
+   on disk underneath us. Legitimate cross-person edits (admin oversight
+   toggles, tdUnassignMe, delPersona cascades) genuinely mutate the other
+   pid's array, so they still differ from baseline and still write. */
+var LIST_SNAP={packing:{},todo:{},wishlist:{}};
 /* one-time (and idempotent) split of legacy combined list blobs into shards.
    Runs on every loadLists so a legacy blob arriving from the cloud (older
    device, old backup restore) is re-split on the spot. Merge rules:
@@ -343,9 +363,9 @@ function migrateListShards(){
         var sk=shardKey('packing',tid,pid);
         var hasShard=null;try{hasShard=localStorage.getItem(sk);}catch(e){}
         if(hasShard!=null)return;                    /* never clobber an existing shard */
-        save(sk,legacy[pid]||[]);
+        saveLocalOnly(sk,legacy[pid]||[]);           /* unstamped — reconcile decides, see saveLocalOnly */
       });
-      save(k,{});
+      saveLocalOnly(k,{});
     }else{
       if(!Array.isArray(legacy)||!legacy.length)continue;
       var groups={};legacy.forEach(function(it){var by=(it&&it.by)||'_';(groups[by]=groups[by]||[]).push(it);});
@@ -355,10 +375,10 @@ function migrateListShards(){
         if(Array.isArray(cur)&&cur.length){
           var have={};cur.forEach(function(it){if(it&&it.id)have[it.id]=1;});
           var add=groups[pid].filter(function(it){return !(it&&it.id&&have[it.id]);});
-          if(add.length)save(sk,cur.concat(add));
-        }else save(sk,groups[pid]);
+          if(add.length)saveLocalOnly(sk,cur.concat(add));
+        }else saveLocalOnly(sk,groups[pid]);
       });
-      save(k,[]);
+      saveLocalOnly(k,[]);
     }
   }}catch(e){}
 }
@@ -372,21 +392,56 @@ function collectShards(base,tid){
   return out;
 }
 function loadLists(){
-  if(!S.tripId){PACKING={};TODO=[];WISHLIST=[];return;}   /* no trip selected — nothing to load */
+  if(!S.tripId){PACKING={};TODO=[];WISHLIST=[];LIST_SNAP={packing:{},todo:{},wishlist:{}};return;}   /* no trip selected */
   try{migrateListShards();}catch(e){}
   /* blank-first (audit F-02): no seed fallback of any kind — an empty store
      means empty lists, period. Demo data only ever arrives via the explicit
      loadDemoData() action. */
-  var pk={};
-  collectShards('packing',S.tripId).forEach(function(s){if(Array.isArray(s.arr))pk[s.pid]=s.arr;});
+  /* capture the per-pid baseline (raw shard content on disk right now) as we
+     load — this is the reference saveByCreator/savePacking compare against so
+     they only ever write a pid whose content this session actually changed. */
+  var pk={},pkSnap={};
+  collectShards('packing',S.tripId).forEach(function(s){if(Array.isArray(s.arr)){pk[s.pid]=s.arr;pkSnap[s.pid]=JSON.stringify(s.arr);}});
   PACKING=pk;
-  var td=[];
-  collectShards('todo',S.tripId).forEach(function(s){if(Array.isArray(s.arr))td=td.concat(s.arr);});
+  var td=[],tdSnap={};
+  collectShards('todo',S.tripId).forEach(function(s){if(Array.isArray(s.arr)){td=td.concat(s.arr);tdSnap[s.pid]=JSON.stringify(s.arr);}});
   TODO=td;
-  var wl=[];
-  collectShards('wishlist',S.tripId).forEach(function(s){if(Array.isArray(s.arr))wl=wl.concat(s.arr);});
+  var wl=[],wlSnap={};
+  collectShards('wishlist',S.tripId).forEach(function(s){if(Array.isArray(s.arr)){wl=wl.concat(s.arr);wlSnap[s.pid]=JSON.stringify(s.arr);}});
   WISHLIST=wl;
-  ensureLists();
+  LIST_SNAP={packing:pkSnap,todo:tdSnap,wishlist:wlSnap};
+  ensureLists();   /* runs AFTER snapshot: a brand-new member has no baseline, so their first write is always allowed */
+  if(S.tripId)_listCounts[S.tripId]=activeListItemCount();
+}
+/* total list items for the active trip (todo + wishlist + every person's
+   packing) — the number the safety net watches for a sudden remote drop */
+var _listCounts={};
+function activeListItemCount(){
+  var n=(Array.isArray(TODO)?TODO.length:0)+(Array.isArray(WISHLIST)?WISHLIST.length:0);
+  try{Object.keys(PACKING||{}).forEach(function(pid){(PACKING[pid]||[]).forEach(function(c){n+=((c&&c.items)||[]).length;});});}catch(e){}
+  return n;
+}
+/* Safety net (Build 355): if a sync FROM ANOTHER DEVICE sharply shrinks this
+   trip's lists, an old-build device may have clobbered a shard with stale data.
+   We can't undo it in place (the stale value already won by timestamp), but we
+   CAN preserve the last good snapshot from before it and tell the user. Gated
+   on applyingRemote so the user's own deletions never trip it; needs a
+   meaningful prior count so tiny lists don't false-alarm. */
+function listDropWatch(prev){
+  try{
+    if(!S.tripId)return;
+    var now=_listCounts[S.tripId];
+    if(prev==null||prev<8)return;                 /* no meaningful baseline yet */
+    if(!(window.CLOUD&&window.CLOUD.applyingRemote))return;   /* only a remote-applied change */
+    if(now>=Math.round(prev*0.75))return;         /* not a sharp (>25%) drop */
+    var list=loadBackups();
+    for(var i=list.length-1;i>=0;i--){            /* pin the most recent PRE-drop snapshot */
+      if(!list[i].pinned){list[i].pinned=true;if(!list[i].label)list[i].label='Auto-kept — lists shrank after a sync';break;}
+    }
+    saveBackups(list);
+    try{localStorage.setItem('dtp__listdrop',JSON.stringify({ts:Date.now(),tid:S.tripId,before:prev,after:now}));}catch(e){}
+    try{toast('⚠️ A sync from another device removed list items — a snapshot from before it was kept. Open Backups to restore if needed.');}catch(e){}
+  }catch(e){}
 }
 function ensureLists(){tripMembers().forEach(function(id){if(!PACKING[id])PACKING[id]=[];});}
 /* shard writers. Each also writes [] to any existing shard whose owner now
@@ -401,16 +456,35 @@ function existingShardPids(base,tid){
 }
 function savePacking(){
   if(!S.tripId)return;
-  var seen={};
-  Object.keys(PACKING).forEach(function(pid){seen[pid]=1;saveIfChanged(shardKey('packing',S.tripId,pid),PACKING[pid]||[]);});
-  existingShardPids('packing',S.tripId).forEach(function(pid){if(!seen[pid])saveIfChanged(shardKey('packing',S.tripId,pid),[]);});
+  var seen={},snap=LIST_SNAP.packing||(LIST_SNAP.packing={});
+  Object.keys(PACKING).forEach(function(pid){
+    seen[pid]=1;
+    var s=JSON.stringify(PACKING[pid]||[]);
+    if(snap[pid]===s)return;                 /* pid unchanged this session — never touch its shard */
+    saveIfChanged(shardKey('packing',S.tripId,pid),PACKING[pid]||[]);
+    snap[pid]=s;                             /* this session's new known-good baseline for pid */
+  });
+  existingShardPids('packing',S.tripId).forEach(function(pid){
+    if(seen[pid])return;
+    if(snap[pid]==='[]')return;
+    saveIfChanged(shardKey('packing',S.tripId,pid),[]);
+    snap[pid]='[]';
+  });
+  _listCounts[S.tripId]=activeListItemCount();   /* keep the safety-net baseline in step with our own edits */
 }
 function saveByCreator(base,arr){
   if(!S.tripId)return;
   var groups={};
   (arr||[]).forEach(function(it){var by=(it&&it.by)||'_';(groups[by]=groups[by]||[]).push(it);});
   existingShardPids(base,S.tripId).forEach(function(pid){if(!groups[pid])groups[pid]=[];});
-  Object.keys(groups).forEach(function(pid){saveIfChanged(shardKey(base,S.tripId,pid),groups[pid]);});
+  var snap=LIST_SNAP[base]||(LIST_SNAP[base]={});
+  Object.keys(groups).forEach(function(pid){
+    var s=JSON.stringify(groups[pid]);
+    if(snap[pid]===s)return;                 /* pid unchanged this session — never touch its shard */
+    saveIfChanged(shardKey(base,S.tripId,pid),groups[pid]);
+    snap[pid]=s;
+  });
+  _listCounts[S.tripId]=activeListItemCount();   /* keep the safety-net baseline in step with our own edits */
 }
 function saveLists(){if(!S.tripId)return;savePacking();saveByCreator('todo',TODO);saveByCreator('wishlist',WISHLIST);}
 function saveTODO(){saveByCreator('todo',TODO);}
@@ -540,7 +614,9 @@ function rehydrate(){
   try{ if(revalidateAfterSync())return; }catch(e){}
   try{ensureActiveParty();}catch(e){}
   try{ensureVisibleTrip();}catch(e){}
+  var _prevLC=(S.tripId!=null)?_listCounts[S.tripId]:null;   /* last-known count BEFORE this remote apply */
   try{loadLists();}catch(e){}
+  try{listDropWatch(_prevLC);}catch(e){}   /* preserve + alert if a remote sync sharply shrank the lists */
   try{render();}catch(e){}
   try{runDailyArchive();}catch(e){}   /* once-per-day archive + cloud mirror after a sync settles */
 }
@@ -4715,6 +4791,14 @@ function scrBackups(){
       +'<div style="font-size:12px;color:var(--muted);margin-top:2px">Latest: '+esc((le.m||'?').slice(0,140))+' — '+esc(new Date(le.t).toLocaleString())+'</div>'
       +'<div style="font-size:12px;color:var(--muted);margin-top:2px">A safety snapshot was taken when the first error appeared. If something looks wrong, restore a snapshot from below.</div>'
       +'<div style="margin-top:8px"><button class="btn-secondary" style="width:100%;margin:0" onclick="localStorage.removeItem(\'dtperrors\');render()">Dismiss error log</button></div>'
+      +'</div></div>';
+  }
+  var drop=null;try{drop=JSON.parse(localStorage.getItem('dtp__listdrop')||'null');}catch(e){}
+  if(drop&&drop.before){
+    body+='<div class="ov-card" style="margin:0 0 10px;border-left:3px solid #CA8A04"><div style="padding:10px 14px">'
+      +'<div style="font-weight:700;font-size:13px">⚠️ Your lists shrank after a sync</div>'
+      +'<div style="font-size:12px;color:var(--muted);margin-top:2px">A change from another device dropped this trip’s list items from '+drop.before+' to '+drop.after+' on '+esc(new Date(drop.ts).toLocaleString())+'. That can happen if a device on an older build overwrote a list. A snapshot from just before it has been pinned below — restore it if something’s missing.</div>'
+      +'<div style="margin-top:8px"><button class="btn-secondary" style="width:100%;margin:0" onclick="localStorage.removeItem(\'dtp__listdrop\');render()">Dismiss</button></div>'
       +'</div></div>';
   }
   if(!list.length){
