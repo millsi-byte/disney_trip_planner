@@ -49,8 +49,12 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.printHostFilled = document.getElementById('print-host').innerHTML.indexOf('To-Do List') >= 0;
     await new Promise(res => setTimeout(res, 160));
     r.printCalled = window.__printed === 1;
+    // content must SURVIVE an early iOS-style 'afterprint' (the blank-page bug)
     window.dispatchEvent(new Event('afterprint'));
-    r.printHostClears = document.getElementById('print-host').innerHTML === '';
+    r.printHostSurvivesAfterprint = document.getElementById('print-host').innerHTML.indexOf('To-Do List') >= 0;
+    // it's cleared when you leave the list
+    clearPrintHost();
+    r.printHostClearsOnLeave = document.getElementById('print-host').innerHTML === '';
 
     // print-host is hidden on screen (only shown by @media print)
     r.printHostHiddenOnScreen = getComputedStyle(document.getElementById('print-host')).display === 'none';

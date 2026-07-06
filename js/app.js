@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='359-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='360-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -1472,6 +1472,7 @@ function openScreen(def){
   renderOverlay();requestAnimationFrame(function(){var s=document.getElementById('screen-host').firstChild;if(s)s.classList.add('in');captureScreenSig();});
 }
 function closeScreen(){
+  clearPrintHost();   /* drop any print sheet content when leaving a list screen */
   var back=S._scrBack;S._scrBack=null;
   var finish=function(){ if(back)openScreen(back); else { S.screen=null;renderOverlay(); } };
   var host=document.getElementById('screen-host');var s=host&&host.firstChild;
@@ -3336,10 +3337,14 @@ function printCurrentList(kind){
   var html=kind==='packing'?prPackingHTML():kind==='todo'?prTodoHTML():kind==='wishlist'?prWishHTML():'';
   if(!html){toast('Nothing to print');return;}
   host.innerHTML=html;
-  var clear=function(){host.innerHTML='';window.removeEventListener('afterprint',clear);};
-  window.addEventListener('afterprint',clear);
+  /* Do NOT clear on 'afterprint': iOS Safari fires it the instant the print
+     sheet opens, which blanked the preview before it could render. #print-host
+     is display:none on screen, so leaving the content in place is invisible
+     and harmless — it's replaced on the next print and cleared when you leave
+     the list (clearPrintHost in closeScreen). */
   setTimeout(function(){try{window.print();}catch(e){toast('Printing not available on this device');host.innerHTML='';}},80);
 }
+function clearPrintHost(){try{var h=document.getElementById('print-host');if(h)h.innerHTML='';}catch(e){}}
 function scrTodo(){
   return screenShell('To Do List',listContext()+printBar('todo')+'<div id="todo-body">'+todoBody()+'</div>',null,null,'Done');
 }
