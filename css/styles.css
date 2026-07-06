@@ -4,7 +4,7 @@
    ============================================================ */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --ink:#1B2B4A;--cream:#F7F4EF;--card:#fff;--muted:#6B7280;--border:#E5E1D8;--r:14px;
+  --ink:#1B2B4A;--cream:#F7F4EF;--card:#fff;--muted:#4B5563;--border:#E5E1D8;--r:14px;
   --mk:#6B4FA0;--ep:#0077A8;--hs:#C24530;--ak:#3B7549;--trv:#8C9BAA;
   --gold:#B8892A;--gold-lt:#FEF3C7;--gold-dk:#78350F;
   /* Section header colors (the navigation system) */
@@ -32,7 +32,7 @@ button{font-family:inherit}
 .iam-name .pdot{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff}
 .hdr-trip-name{font-family:'Fraunces',Georgia,serif;font-size:19px;font-weight:600;letter-spacing:-.01em;display:flex;align-items:center;gap:6px;max-width:100%}
 .hdr-trip-name svg{opacity:.7;flex-shrink:0}
-.hdr-trip-sub{font-size:11px;color:rgba(255,255,255,.6);margin-top:1px;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.hdr-trip-sub{font-size:11px;color:rgba(255,255,255,.75);margin-top:1px;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .hdr-icon{width:44px;height:44px;border-radius:10px;border:none;background:rgba(255,255,255,.1);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
 .hdr-icon:active{background:rgba(255,255,255,.2)}
 
@@ -42,7 +42,7 @@ button{font-family:inherit}
 .strip{display:flex;gap:6px;flex-wrap:nowrap;width:max-content}
 .dpill{display:flex;flex-direction:column;align-items:center;padding:8px 10px 7px;border-radius:10px;cursor:pointer;border:2px solid transparent;background:rgba(255,255,255,.08);min-width:54px;flex-shrink:0;transition:all .15s;gap:2px}
 .dpill.on{border-color:rgba(255,255,255,.55);background:rgba(255,255,255,.18)}
-.p-day{font-size:11px;color:rgba(255,255,255,.65);text-transform:uppercase;letter-spacing:.08em;font-weight:700}
+.p-day{font-size:11px;color:rgba(255,255,255,.82);text-transform:uppercase;letter-spacing:.08em;font-weight:700}
 .p-date{font-size:19px;font-weight:700;color:#fff;line-height:1.1}
 .p-bar{width:22px;height:4px;border-radius:2px;margin-top:3px;display:flex;overflow:hidden}
 .p-bar span{flex:1}
@@ -81,7 +81,7 @@ button{font-family:inherit}
 .chk-who{font-size:12px;font-weight:600;color:var(--muted);flex-shrink:0;text-align:right}
 .tag-edit-wrap{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:8px}
 .tag-edit{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--ink);background:#F3F1EC;border:1px solid var(--border);border-radius:16px;padding:5px 6px 5px 11px}
-.tag-edit button{border:none;background:#E2DDD2;color:#6B7280;width:20px;height:20px;border-radius:50%;font-size:15px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+.tag-edit button{border:none;background:#E2DDD2;color:var(--muted);width:20px;height:20px;border-radius:50%;font-size:15px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
 .tag-restore-wrap{font-size:13px;color:var(--muted);padding:2px 0 4px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .tag-restore{border:1px dashed var(--border);background:none;color:#0077A8;border-radius:14px;padding:4px 10px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
 .tag-add-row{display:flex;gap:8px;align-items:center}
@@ -108,7 +108,7 @@ button{font-family:inherit}
 .h-park2{display:flex;align-items:center;gap:7px;margin-top:6px;font-size:13px;color:rgba(255,255,255,.9);font-weight:600}
 .h-park2 .p2dot{width:12px;height:12px;border-radius:3px;flex-shrink:0;box-shadow:0 0 0 2px rgba(255,255,255,.35)}
 .h-resort{font-size:14px;color:rgba(255,255,255,.78)}
-.h-res{font-size:12px;color:rgba(255,255,255,.6);margin-top:2px;letter-spacing:.03em}
+.h-res{font-size:12px;color:rgba(255,255,255,.74);margin-top:2px;letter-spacing:.03em}
 .h-badges{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
 .badge{font-size:12px;font-weight:700;padding:4px 10px;background:rgba(255,255,255,.22);border-radius:20px;letter-spacing:.04em;color:#fff;text-transform:uppercase}
 .hero-alert{background:#7F1D1D;padding:10px 16px;display:flex;align-items:flex-start;gap:8px}
@@ -151,7 +151,7 @@ button{font-family:inherit}
 .st-want{background:transparent;color:#92724A;border:1.5px dashed #C9A45E}
 .st-reserved{background:#DCFCE7;color:#15803D}
 .st-planned{background:#E0F2FE;color:#0369A1}
-.st-todo{background:#F3F4F6;color:#6B7280}
+.st-todo{background:#F3F4F6;color:var(--muted)}
 .st-done{background:#DCFCE7;color:#15803D}
 .st-na{background:#F3F4F6;color:#9CA3AF}
 /* small inline status pill inside white card body */
@@ -518,7 +518,7 @@ button{font-family:inherit}
 .inline-editor.pk-acc{margin:0;border-radius:0 0 14px 14px;border-top:none;box-shadow:none;animation:pkAcc .2s ease both;transform-origin:top}
 @keyframes pkAcc{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
 .inline-editor-title{font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#4338CA;display:flex;align-items:center;gap:6px}
-.priv-note{font-size:12px;color:#6B7280;line-height:1.45}
+.priv-note{font-size:12px;color:var(--muted);line-height:1.45}
 
 /* ── AI Import ───────────────────────────────────────────── */
 .import-drop{border:2px dashed #B6C2D6;border-radius:var(--r);background:#F1F5FB;padding:34px 20px;text-align:center;margin-bottom:16px}
@@ -577,7 +577,7 @@ button{font-family:inherit}
 
 /* ── Bottom nav ──────────────────────────────────────────── */
 .bnav{position:fixed;bottom:0;left:0;right:0;max-width:430px;margin:0 auto;display:flex;background:var(--cream);border-top:2px solid var(--navline);padding-bottom:env(safe-area-inset-bottom);z-index:200}
-.nbtn{flex:1;display:flex;flex-direction:column;align-items:center;padding:9px 4px 8px;cursor:pointer;color:#6B7280;font-size:11px;font-weight:600;letter-spacing:.03em;gap:3px;border:none;background:none;font-family:inherit;position:relative}
+.nbtn{flex:1;display:flex;flex-direction:column;align-items:center;padding:9px 4px 8px;cursor:pointer;color:var(--muted);font-size:11px;font-weight:600;letter-spacing:.03em;gap:3px;border:none;background:none;font-family:inherit;position:relative}
 .nbtn.on{color:#4B5563}
 .nbtn-dot{width:4px;height:4px;border-radius:50%;background:#4B5563;position:absolute;bottom:2px}
 .nbtn .nbadge{position:absolute;top:4px;right:50%;margin-right:-22px;background:var(--hs);color:#fff;font-size:10px;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 4px}
