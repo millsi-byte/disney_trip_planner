@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='360-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='361-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -3252,10 +3252,37 @@ function prSection(txt,count){
     +esc(txt)+(count!=null?' <span style="font-weight:400;color:#666">('+count+')</span>':'')+'</div>';
 }
 function prItem(name,done,meta){
-  return '<div style="display:flex;align-items:flex-start;gap:8px;padding:2px 0;font-size:14px;break-inside:avoid;-webkit-column-break-inside:avoid">'
-    +'<span style="font-size:15px;line-height:1.25">'+(done?'☑':'☐')+'</span>'
-    +'<span><span'+(done?' style="text-decoration:line-through;color:#777"':'')+'>'+esc(name)+'</span>'
-    +(meta?' <span style="color:#666;font-size:12px">— '+esc(meta)+'</span>':'')+'</span></div>';
+  return '<div style="display:flex;align-items:flex-start;gap:8px;padding:3px 0;font-size:14px;break-inside:avoid;-webkit-column-break-inside:avoid">'
+    +'<span style="font-size:16px;line-height:1.2">'+(done?'☑':'☐')+'</span>'
+    +'<span><span style="color:#111'+(done?';text-decoration:line-through':'')+'">'+esc(name)+'</span>'
+    +(meta?' <span style="color:#444;font-size:12px">— '+esc(meta)+'</span>':'')+'</span></div>';
+}
+/* packing items others assigned to `target` to pack — they live on the
+   enterer's list; mirror the in-app "Assigned to you to pack" section */
+function prPackAssigned(target){
+  var rows='',hide=pkHideDone();
+  tripMembers().forEach(function(owner){
+    if(owner===target)return;
+    (PACKING[owner]||[]).forEach(function(cat){
+      (cat.items||[]).forEach(function(it){
+        if(it.packFor!==target)return;
+        if(it.priv&&owner!==S.persona&&!listOversight())return;
+        if(hide&&it.done)return;
+        var frm=person(owner);
+        rows+=prItem(it.n,it.done,'From '+(frm?frm.name:'someone'));
+      });
+    });
+  });
+  return rows;
+}
+/* one packing item's detail line: storage + assignment + provenance */
+function prPackMeta(it,pid){
+  var m=[],st=pkStore(it);
+  m.push(st==='locker'?'Locker':st==='person'?'On me':('Suitcase'+((it.qty&&it.qty>1)?' ×'+it.qty:'')));
+  if(it.packFor&&person(it.packFor))m.push('Pack for '+person(it.packFor).name);
+  if(it.needBuy){var bs=(it.who&&it.who.length)?it.who.map(function(p){var pp=person(p);return pp?pp.name:'';}).filter(Boolean).join(', '):(person(pid)?person(pid).name:'');m.push('Buy'+(bs?' · '+bs:''));}
+  if(it.by&&it.by!==pid&&person(it.by))m.push('Added by '+person(it.by).name);
+  return m.join(' · ');
 }
 function prFoot(){return '<div style="margin-top:16px;padding-top:8px;border-top:1px solid #ccc;font-size:10px;color:#999">Baseline Tap · printed '+esc(new Date().toLocaleString())+'</div>';}
 function prWrap(inner){return '<div style="font-family:Inter,Arial,sans-serif;color:#000;line-height:1.4">'+inner+'</div>';}
@@ -3273,12 +3300,14 @@ function prPackingHTML(){
         if(!(owner||!it.priv))return;
         if(hide&&it.done)return;
         if(sf&&pkStore(it)!==sf)return;
-        rows+=prItem(it.n,it.done,(it.qty&&it.qty>1)?('×'+it.qty):'');
+        rows+=prItem(it.n,it.done,prPackMeta(it,pid));
       });
       if(rows)catHtml+=prSection(cat.cat)+rows;
     });
+    var asg=prPackAssigned(pid);
+    if(asg)catHtml+=prSection('Assigned to '+(pid===S.persona?'you':p.name)+' to pack')+asg;
     if(members.length>1)body+='<div style="font-size:17px;font-weight:700;margin:16px 0 2px">'+esc(p.name)+'</div>';
-    body+=catHtml||'<div style="color:#777;font-size:13px;padding:3px 0">No items.</div>';
+    body+=catHtml||'<div style="color:#555;font-size:13px;padding:3px 0">No items.</div>';
   });
   var mep=person(S.persona);
   var sub=members.length>1?'Everyone’s packing':(mep?mep.name+'’s packing':'');
@@ -3298,7 +3327,7 @@ function prTodoHTML(){
       var items=tdMine(pid).concat(tdAssignedTo(pid)).filter(tdCanSee);
       if(hide)items=items.filter(tdNotDone);
       body+='<div style="font-size:17px;font-weight:700;margin:16px 0 2px">'+esc(p.name)+'</div>';
-      if(!items.length)body+='<div style="color:#777;font-size:13px">No items.</div>';
+      if(!items.length)body+='<div style="color:#555;font-size:13px">No items.</div>';
       items.forEach(function(t){body+=prItem(t.n,t.done,prTodoMeta(t));});
     });
     sub='Everyone’s to-dos';
@@ -3306,7 +3335,7 @@ function prTodoHTML(){
     var me=S.persona,mine=tdMine(me),assigned=tdAssignedTo(me);
     if(hide){mine=mine.filter(tdNotDone);assigned=assigned.filter(tdNotDone);}
     body+=prSection('My to-dos',mine.length);
-    if(!mine.length)body+='<div style="color:#777;font-size:13px">Nothing here.</div>';
+    if(!mine.length)body+='<div style="color:#555;font-size:13px">Nothing here.</div>';
     mine.forEach(function(t){body+=prItem(t.n,t.done,prTodoMeta(t));});
     if(assigned.length){body+=prSection('Assigned to me',assigned.length);
       assigned.forEach(function(t){body+=prItem(t.n,t.done,prTodoMeta(t));});}
@@ -3320,7 +3349,7 @@ function prWishHTML(){
   var hide=wlHideDone();
   var open=items.filter(function(w){return !w.booked;}),booked=items.filter(function(w){return w.booked;});
   var body=prSection('Open',open.length);
-  if(!open.length)body+='<div style="color:#777;font-size:13px">Nothing here.</div>';
+  if(!open.length)body+='<div style="color:#555;font-size:13px">Nothing here.</div>';
   open.forEach(function(w){body+=prItem(w.title,false,prWishMeta(w));});
   if(booked.length&&!hide){body+=prSection('Booked',booked.length);
     booked.forEach(function(w){body+=prItem(w.title,true,prWishMeta(w));});}

@@ -21,11 +21,21 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.pkHeader = prPackingHTML().includes('Packing List') && prPackingHTML().includes(trip().name);
     r.pkCheckboxes = /[☐☑]/.test(prPackingHTML());
     // controlled hide-completed: a done item vanishes when "hide packed" is on
-    PACKING.scott[0].items.push({ n: 'ZZUNIQUEPACK', done: true, qty: 1 });
+    PACKING.scott[0].items.push({ n: 'ZZUNIQUEPACK', done: true, qty: 1, store: 'person', packFor: 'hayley' });
     localStorage.setItem('bt_pkHideDone', '1');
     r.pkHideExcludesDone = prPackingHTML().indexOf('ZZUNIQUEPACK') < 0;
     localStorage.setItem('bt_pkHideDone', '0');
-    r.pkShowIncludesDone = prPackingHTML().indexOf('ZZUNIQUEPACK') >= 0;
+    const pk = prPackingHTML();
+    r.pkShowIncludesDone = pk.indexOf('ZZUNIQUEPACK') >= 0;
+    r.pkShowsStorage = pk.indexOf('On me') >= 0;                              // storage label
+    r.pkShowsAssignment = pk.indexOf('Pack for ' + person('hayley').name) >= 0; // who it's packed for
+    r.pkNoFaintText = pk.indexOf('#777') < 0;                                 // completed text no longer too light
+    r.pkDoneReadable = pk.indexOf('color:#111') >= 0;                         // item names near-black
+    // an item someone else assigned to you to pack shows under "Assigned to you"
+    if (!PACKING.hayley) PACKING.hayley = [{ cat: 'Misc', items: [] }];
+    PACKING.hayley[0].items.push({ n: 'ZZASSIGNED', done: false, store: 'bag', qty: 1, packFor: 'scott', by: 'hayley' });
+    const pk2 = prPackingHTML();
+    r.pkAssignedToYou = pk2.indexOf('ZZASSIGNED') >= 0 && pk2.indexOf('Assigned to you to pack') >= 0;
 
     // ── To-Do ──
     r.tdHeader = prTodoHTML().includes('To-Do List') && prTodoHTML().includes('My to-dos');
