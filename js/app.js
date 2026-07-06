@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='355';
+var BUILD='356';
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -5538,8 +5538,8 @@ function scrSignIn(){
    was confusing for users who clearly don't have access. */
 function scrAuthWait(){
   var body='<div style="text-align:center;padding:48px 8px 32px">';
-  body+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:24px;font-weight:700;color:var(--ink)">Signing you in…</div>';
-  body+='<div class="body-empty" style="padding:14px 6px 0">Loading your trips. This should only take a moment.</div></div>';
+  body+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:24px;font-weight:700;color:var(--ink)">Loading the Magic ✨</div>';
+  body+='<div class="body-empty" style="padding:14px 6px 0">Getting your trips ready. This should only take a moment.</div></div>';
   return screenShell('',body,null,null,false);
 }
 /* The Firebase SDK loads in the background after the page paints, so window.CLOUD
