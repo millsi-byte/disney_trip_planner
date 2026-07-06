@@ -630,3 +630,16 @@ button{font-family:inherit}
 .who-opt.on .notif-sel-kind{color:var(--ink)}
 .who-opt.locked{cursor:default;border-color:var(--ink);background:#fff}
 .who-opt.locked .notif-sel-kind{color:#92400E}
+
+/* ── Print / Save-as-PDF ──────────────────────────────────────────────────
+   #print-host is hidden on screen; the print stylesheet hides the whole live
+   app and shows only the print-host, so a printed list is a clean paper sheet
+   with none of the app chrome. */
+#print-host{display:none}
+@media print{
+  #header-host,#strip-host,#filter-host,#app,.bnav,#sheet-host,#screen-host,#toast{display:none !important}
+  #root{display:none !important}
+  #print-host{display:block !important}
+  html,body{background:#fff !important;max-width:none !important;margin:0 !important;color:#000 !important}
+  @page{margin:14mm}
+}

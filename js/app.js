@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='358-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='359-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -3226,8 +3226,122 @@ function notifyPackAssign(it,target){
    TO DO  (per-trip, assignable, privacy-aware)
    ============================================================ */
 function listContext(){return '<div class="pg-sub" style="margin:-2px 0 12px">'+esc(trip().name)+'</div>';}
+
+/* ── Print / Save-as-PDF for the three lists (Build 359) ─────────────────
+   Builds a clean, paper-friendly version of whatever the list currently
+   shows (same mine/everyone scope, person filter, and hide-completed state)
+   into #print-host, then hands it to the browser's native print dialog —
+   which prints to a printer OR saves as PDF. #print-host is display:none on
+   screen and only revealed by the @media print rule, so nothing about the
+   live UI changes. */
+function printBar(kind){
+  return '<div style="display:flex;justify-content:flex-end;margin:0 2px 10px">'
+    +'<button class="btn-secondary" style="width:auto;margin:0;padding:7px 14px;font-size:13px" onclick="printCurrentList(\''+kind+'\')">🖨 Print / Save PDF</button></div>';
+}
+function prHead(listTitle,subtitle){
+  var t=trip();
+  return '<div style="padding:0 0 10px;border-bottom:2px solid #000;margin-bottom:10px">'
+    +'<div style="font-family:Georgia,\'Times New Roman\',serif;font-size:22px;font-weight:700">'+esc((t&&t.name)||'Trip')+'</div>'
+    +((t&&t.dates)?'<div style="font-size:13px;color:#333">'+esc(t.dates)+'</div>':'')
+    +'<div style="font-size:16px;font-weight:700;margin-top:6px">'+esc(listTitle)+'</div>'
+    +(subtitle?'<div style="font-size:12px;color:#555">'+esc(subtitle)+'</div>':'')+'</div>';
+}
+function prSection(txt,count){
+  return '<div style="font-size:14px;font-weight:700;margin:12px 0 3px;border-bottom:1px solid #999;padding-bottom:2px">'
+    +esc(txt)+(count!=null?' <span style="font-weight:400;color:#666">('+count+')</span>':'')+'</div>';
+}
+function prItem(name,done,meta){
+  return '<div style="display:flex;align-items:flex-start;gap:8px;padding:2px 0;font-size:14px;break-inside:avoid;-webkit-column-break-inside:avoid">'
+    +'<span style="font-size:15px;line-height:1.25">'+(done?'☑':'☐')+'</span>'
+    +'<span><span'+(done?' style="text-decoration:line-through;color:#777"':'')+'>'+esc(name)+'</span>'
+    +(meta?' <span style="color:#666;font-size:12px">— '+esc(meta)+'</span>':'')+'</span></div>';
+}
+function prFoot(){return '<div style="margin-top:16px;padding-top:8px;border-top:1px solid #ccc;font-size:10px;color:#999">Baseline Tap · printed '+esc(new Date().toLocaleString())+'</div>';}
+function prWrap(inner){return '<div style="font-family:Inter,Arial,sans-serif;color:#000;line-height:1.4">'+inner+'</div>';}
+function prPackingHTML(){
+  var oversight=listOversight(),members;
+  if(oversight&&S.pkScope==='all'){members=tripMembers();if(S.listWho)members=members.filter(function(p){return p===S.listWho;});}
+  else members=[S.persona];
+  var hide=pkHideDone(),sf=S.pkStoreFilter,body='';
+  members.forEach(function(pid){
+    var p=person(pid);if(!p)return;
+    var owner=(pid===S.persona),cats=PACKING[pid]||[],catHtml='';
+    cats.forEach(function(cat){
+      var rows='';
+      (cat.items||[]).forEach(function(it){
+        if(!(owner||!it.priv))return;
+        if(hide&&it.done)return;
+        if(sf&&pkStore(it)!==sf)return;
+        rows+=prItem(it.n,it.done,(it.qty&&it.qty>1)?('×'+it.qty):'');
+      });
+      if(rows)catHtml+=prSection(cat.cat)+rows;
+    });
+    if(members.length>1)body+='<div style="font-size:17px;font-weight:700;margin:16px 0 2px">'+esc(p.name)+'</div>';
+    body+=catHtml||'<div style="color:#777;font-size:13px;padding:3px 0">No items.</div>';
+  });
+  var mep=person(S.persona);
+  var sub=members.length>1?'Everyone’s packing':(mep?mep.name+'’s packing':'');
+  return prWrap(prHead('Packing List',sub)+body+prFoot());
+}
+function prTodoMeta(t){
+  var m=[];
+  if(t.who&&t.who.length)m.push('for '+t.who.map(function(p){var pp=person(p);return pp?pp.name:'';}).filter(Boolean).join(', '));
+  var by=person(t.by);if(by&&t.by!==S.persona)m.push('by '+by.name);
+  return m.join(' · ');
+}
+function prTodoHTML(){
+  var oversight=listOversight(),hide=tdHideDone(),body='',sub='';
+  if(oversight&&S.tdScope==='all'){
+    var mem=tripMembers();if(S.listWho)mem=mem.filter(function(p){return p===S.listWho;});
+    mem.forEach(function(pid){var p=person(pid);if(!p)return;
+      var items=tdMine(pid).concat(tdAssignedTo(pid)).filter(tdCanSee);
+      if(hide)items=items.filter(tdNotDone);
+      body+='<div style="font-size:17px;font-weight:700;margin:16px 0 2px">'+esc(p.name)+'</div>';
+      if(!items.length)body+='<div style="color:#777;font-size:13px">No items.</div>';
+      items.forEach(function(t){body+=prItem(t.n,t.done,prTodoMeta(t));});
+    });
+    sub='Everyone’s to-dos';
+  }else{
+    var me=S.persona,mine=tdMine(me),assigned=tdAssignedTo(me);
+    if(hide){mine=mine.filter(tdNotDone);assigned=assigned.filter(tdNotDone);}
+    body+=prSection('My to-dos',mine.length);
+    if(!mine.length)body+='<div style="color:#777;font-size:13px">Nothing here.</div>';
+    mine.forEach(function(t){body+=prItem(t.n,t.done,prTodoMeta(t));});
+    if(assigned.length){body+=prSection('Assigned to me',assigned.length);
+      assigned.forEach(function(t){body+=prItem(t.n,t.done,prTodoMeta(t));});}
+    var mep=person(me);sub=mep?mep.name+'’s to-dos':'';
+  }
+  return prWrap(prHead('To-Do List',sub)+body+prFoot());
+}
+function prWishHTML(){
+  var items=WISHLIST.filter(function(w){return w.trip===S.tripId&&wishCanSee(w);});
+  if(S.listWho)items=items.filter(function(w){return w.by===S.listWho;});
+  var hide=wlHideDone();
+  var open=items.filter(function(w){return !w.booked;}),booked=items.filter(function(w){return w.booked;});
+  var body=prSection('Open',open.length);
+  if(!open.length)body+='<div style="color:#777;font-size:13px">Nothing here.</div>';
+  open.forEach(function(w){body+=prItem(w.title,false,prWishMeta(w));});
+  if(booked.length&&!hide){body+=prSection('Booked',booked.length);
+    booked.forEach(function(w){body+=prItem(w.title,true,prWishMeta(w));});}
+  return prWrap(prHead('Wish List','')+body+prFoot());
+}
+function prWishMeta(w){
+  var m=[];if(w.kind)m.push(String(wishKindLabel(w.kind)).replace(/<[^>]+>/g,'').trim());
+  var by=person(w.by);if(by)m.push('by '+by.name);
+  return m.filter(Boolean).join(' · ');
+}
+function printCurrentList(kind){
+  var host=document.getElementById('print-host');
+  if(!host){toast('Printing not available here');return;}
+  var html=kind==='packing'?prPackingHTML():kind==='todo'?prTodoHTML():kind==='wishlist'?prWishHTML():'';
+  if(!html){toast('Nothing to print');return;}
+  host.innerHTML=html;
+  var clear=function(){host.innerHTML='';window.removeEventListener('afterprint',clear);};
+  window.addEventListener('afterprint',clear);
+  setTimeout(function(){try{window.print();}catch(e){toast('Printing not available on this device');host.innerHTML='';}},80);
+}
 function scrTodo(){
-  return screenShell('To Do List',listContext()+'<div id="todo-body">'+todoBody()+'</div>',null,null,'Done');
+  return screenShell('To Do List',listContext()+printBar('todo')+'<div id="todo-body">'+todoBody()+'</div>',null,null,'Done');
 }
 function todoBody(){
   var me=S.persona;
@@ -3462,7 +3576,7 @@ function wlSendChat(id){var w=wishById(id);if(!w)return;
   S._chatRef=null;S.screen=null;S.tab='chat';renderOverlay();render();   /* clear the wish-list screen; show the Chat tab with the posted message */
   toast('Posted to chat');
 }
-function scrWishList(){return screenShell('Wish List',listContext()+'<div id="wish-body">'+wishBody()+'</div>',null,null,'Done');}
+function scrWishList(){return screenShell('Wish List',listContext()+printBar('wishlist')+'<div id="wish-body">'+wishBody()+'</div>',null,null,'Done');}
 function wishBody(){
   var items=WISHLIST.filter(function(w){return w.trip===S.tripId&&wishCanSee(w);});
   /* individual filter — by who entered the wish (parity with Need to Buy) */
@@ -6646,7 +6760,7 @@ function scrLists(){
   return screenShell('Packing', '<div id="lists-body">'+listScreenBody('packing')+'</div>', null, null, 'Done');
 }
 function scrPackList(){
-  return screenShell('Packing List', listContext()+'<div id="lists-body">'+packingBody()+'</div>', null, null, 'Done');
+  return screenShell('Packing List', listContext()+printBar('packing')+'<div id="lists-body">'+packingBody()+'</div>', null, null, 'Done');
 }
 
 /* trip-wide Need to Buy — shared shopping list, grouped by buyer */
