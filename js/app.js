@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='357-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='358-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -1469,7 +1469,7 @@ function openScreen(def){
   if(def.type==='addflight'){S.formLegs=def.edit?((FLIGHTS.filter(function(f){return f.id===def.edit;})[0]||{legs:[0]}).legs.length):1;}
   else{S.formLegs=1;}
   if(def.type==='import'||def.type==='csvimport'){S.importStep=1;S._importItems=null;S._importCount=0;S._importEdit=null;}
-  renderOverlay();requestAnimationFrame(function(){var s=document.getElementById('screen-host').firstChild;if(s)s.classList.add('in');});
+  renderOverlay();requestAnimationFrame(function(){var s=document.getElementById('screen-host').firstChild;if(s)s.classList.add('in');captureScreenSig();});
 }
 function closeScreen(){
   var back=S._scrBack;S._scrBack=null;
@@ -1477,6 +1477,80 @@ function closeScreen(){
   var host=document.getElementById('screen-host');var s=host&&host.firstChild;
   if(s){s.classList.remove('in');setTimeout(finish,260);}else{finish();}
 }
+
+/* ── Swipe-back + unsaved-changes guard (Build 358) ──────────────────────
+   Screens slide in from the right; a left-edge swipe drags the current one
+   back off. ANY user-initiated close (the swipe OR the top-left button) runs
+   through closeScreenGuarded, which warns if the open editor has unsaved
+   edits. Detection is generic: snapshot every form control's value when the
+   screen finishes opening, diff on close — so it covers all ~15 editors at
+   once, AND fixes the old top-left button silently discarding edits. Save
+   handlers call closeScreen() directly and are never prompted (the save just
+   made the form match its saved state). */
+function screenFormSig(){
+  var host=document.getElementById('screen-host');
+  if(!host)return '';
+  var els=host.querySelectorAll('input,select,textarea'),out=[],i,e,key;
+  for(i=0;i<els.length;i++){e=els[i];key=e.id||e.name||('#'+i);
+    if(e.type==='checkbox'||e.type==='radio')out.push(key+'='+(e.checked?1:0));
+    else out.push(key+'='+(e.value||''));
+  }
+  return out.join('\n');
+}
+var _screenSig=null;   /* baseline captured when a screen finishes opening; null = don't guard */
+function captureScreenSig(){ _screenSig=S.screen?screenFormSig():null; }
+function screenDirty(){ return _screenSig!==null && screenFormSig()!==_screenSig; }
+/* user-initiated close: warn if edits are unsaved, else close normally */
+function closeScreenGuarded(){
+  if(screenDirty()&&!confirm('Discard your changes?\n\nAnything you haven\'t saved will be lost.')){
+    var host=document.getElementById('screen-host');var s=host&&host.firstChild;   /* snap back if a swipe left it mid-drag */
+    if(s){s.style.transition='';s.style.transform='';s.classList.add('in');}
+    return false;
+  }
+  _screenSig=null;
+  closeScreen();
+  return true;
+}
+/* left-edge drag to go back. Attaches once to the persistent #screen-host so
+   it works for every screen without re-binding. Edge-only start + vertical
+   lockout keep it from fighting page scroll or the day-strip's own sideways
+   scroll (that lives outside screen-host anyway). */
+(function initSwipeBack(){
+  var host=null;try{host=document.getElementById('screen-host');}catch(e){}
+  if(!host||!('ontouchstart' in window))return;
+  var startX=0,startY=0,curDx=0,W=320,tracking=false,dragging=false;
+  function panel(){return host.firstChild;}
+  host.addEventListener('touchstart',function(ev){
+    if(!S.screen||ev.touches.length!==1)return;
+    var t=ev.touches[0];
+    if(t.clientX>28)return;                       /* iOS-style: only from the left edge */
+    startX=t.clientX;startY=t.clientY;curDx=0;tracking=true;dragging=false;
+    var p=panel();W=(p?p.getBoundingClientRect().width:window.innerWidth)||320;
+  },{passive:true});
+  host.addEventListener('touchmove',function(ev){
+    if(!tracking)return;
+    var t=ev.touches[0],dx=t.clientX-startX,dy=t.clientY-startY;
+    if(!dragging){
+      if(Math.abs(dx)<8&&Math.abs(dy)<8)return;
+      if(Math.abs(dy)>Math.abs(dx)){tracking=false;return;}   /* vertical intent → let it scroll */
+      dragging=true;
+    }
+    curDx=dx<0?0:dx;
+    var p=panel();if(p){p.style.transition='none';p.style.transform='translateX('+curDx+'px)';}
+    if(ev.cancelable)ev.preventDefault();
+  },{passive:false});
+  function release(){
+    if(!tracking)return;tracking=false;
+    var p=panel();
+    if(p){p.style.transition='';
+      if(dragging&&curDx>Math.min(90,W*0.33)){ p.style.transform=''; closeScreenGuarded(); }
+      else { p.style.transform=''; p.classList.add('in'); }        /* snap back */
+    }
+    dragging=false;curDx=0;
+  }
+  host.addEventListener('touchend',release,{passive:true});
+  host.addEventListener('touchcancel',release,{passive:true});
+})();
 
 /* PIN entry — custom modal so we get a numeric keypad + auto-focused cursor
    (the native prompt() can\'t do either). Async: calls cb(value) or cb(null). */
@@ -3664,7 +3738,7 @@ function scrLimitedItem(it){
 function screenShell(title,bodyHtml,saveLabel,saveAction,cancelLabel,footerHtml,cancelAction){
   var h='<div class="screen"><div class="screen-hd">';
   /* cancelLabel===false → no dismiss button (e.g. the forced choose-persona screen) */
-  h+=(cancelLabel===false)?'<div style="min-width:60px"></div>':('<button class="sh-btn" onclick="'+(cancelAction||'closeScreen()')+'">'+(cancelLabel||'Cancel')+'</button>');
+  h+=(cancelLabel===false)?'<div style="min-width:60px"></div>':('<button class="sh-btn" onclick="'+(cancelAction||'closeScreenGuarded()')+'">'+(cancelLabel||'Cancel')+'</button>');
   h+='<div class="sh-title">'+esc(title)+'</div>';
   h+=saveAction?('<button class="sh-btn right save" onclick="'+saveAction+'">'+(saveLabel||'Save')+'</button>'):'<div style="min-width:60px"></div>';
   h+='</div><div class="screen-body">'+bodyHtml+'</div>';
