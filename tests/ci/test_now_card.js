@@ -6,10 +6,10 @@
    big-number countdown with trip-week weather + First-up), the countdown,
    graceful weather-fail, refreshNowCard() touching only #now-card-host, the
    collapse chevron (expanded by default, collapsible, chevron never triggers
-   navigation), and that tapping into the agenda always visibly responds —
-   including the regression case where the previewed day was ALREADY selected
-   (a bare selDay() would silently no-op there; nowOpenAgenda() must still
-   reset/open the Daily Agenda card so the tap is never a dead end). */
+   navigation), and that tapping the card jumps to AND FLASHES the exact
+   "Next up"/"First up" item in the Daily Agenda list (mirrors chat's
+   jump-to-item mechanism) — not just a scroll to the top of the day, which
+   is barely distinguishable from doing nothing. */
 const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
 
 (async () => {
@@ -99,16 +99,35 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.c_preCollapsedKeepsNumber = preCollapsed.indexOf('>13<') >= 0 && preCollapsed.indexOf('now-wxweek') < 0;
     S.open = defOpen();
 
-    // ── Tap-to-open-agenda regression: already on the previewed day, the tap
-    //    must STILL visibly respond (reset/open the Daily Agenda card) rather
-    //    than silently no-op because dayIdx didn't change ──
+    // ── Tap-to-open-agenda: must jump to and flash the EXACT "Next up" item
+    //    in the Daily Agenda list (same data-dpkey + flash mechanism chat's
+    //    jump-to-item uses), not just land near the top of the day — a scroll
+    //    to the hero proves nothing happened; landing on the actual item does.
+    //    Start on a different day AND a different planView so the jump is
+    //    unambiguous, and confirm it still works even when dayIdx doesn't change. ──
     window.__nowOverride = { date: DAY, mins: 9 * 60 };
-    S.dayIdx = 1; S.open = defOpen(); S.open.itin = false; render();
-    r.t_itinClosedBeforeTap = S.open.itin === false;
-    document.querySelector('#now-card-host .now-tap').click();
-    r.t_dayIdxStillCorrect = S.dayIdx === 1;
-    r.t_itinReopenedByTap = S.open.itin === true;
+    S.dayIdx = 0; S.planView = 'strategy'; S.open = defOpen(); render();
+    r.t_rowAbsentBeforeClick = !document.querySelector('.t-row[data-dpkey]');
+    document.querySelector('#now-card-host .now').click();
+    await new Promise(res => setTimeout(res, 150));   // nowOpenAgenda's scroll+flash runs on a setTimeout(80)
+    r.t_dayIdxJumped = S.dayIdx === 1;
+    r.t_planViewSwitchedToDayplan = S.planView === 'dayplan';
     r.t_stillOnHomeTab = S.tab === 'home';
+    r.t_rideRowFlashed = Array.from(document.querySelectorAll('.t-row.dp-flash')).some(el => el.textContent.indexOf('ZZNOWRIDE') >= 0);
+
+    // tapping again while ALREADY on that day/item must still flash it (no silent no-op)
+    document.querySelectorAll('.t-row.dp-flash').forEach(el => el.classList.remove('dp-flash'));
+    document.querySelector('#now-card-host .now').click();
+    await new Promise(res => setTimeout(res, 150));
+    r.t_reflashesWhenAlreadyThere = Array.from(document.querySelectorAll('.t-row.dp-flash')).some(el => el.textContent.indexOf('ZZNOWRIDE') >= 0);
+
+    // ── Pre-trip "First up" tap jumps to and flashes ITS item too ──
+    window.__nowOverride = { date: '2026-07-01', mins: 10 * 60 };
+    S.dayIdx = 3; S.planView = 'strategy'; S.open = defOpen(); render();
+    document.querySelector('#now-card-host .now-pre').click();
+    await new Promise(res => setTimeout(res, 150));
+    r.pre_planViewSwitchedToDayplan = S.planView === 'dayplan';
+    r.pre_someRowFlashed = document.querySelectorAll('.t-row.dp-flash').length > 0;
 
     return r;
   });
