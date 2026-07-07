@@ -63,7 +63,7 @@ var S = {
   newTmpl:"blank",
   formLegs:1
 };
-function defOpen(){return {flight:true,itin:true,ll:true,strat:false,din:true,shows:true};}
+function defOpen(){return {flight:true,itin:true,ll:true,strat:false,din:true,shows:true,now:true};}
 S.open = defOpen();
 
 /* persistence */
@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='365-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='366-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -791,6 +791,10 @@ function npApply(){
   if(!date){toast('No trip days to preview');return;}
   var t=val('np-time')||'9:00 AM';
   nowPreviewSet(date,mins(t),sel);
+  /* keep the underlying agenda coherent with what the NOW card is showing —
+     jump the selected day to match whenever it's a real trip day */
+  var days=tripDays();
+  for(var i=0;i<days.length;i++)if(days[i].date===date){S.dayIdx=i;break;}
   S.tab='home';closeScreen();render();
   toast('Previewing '+fmtDay(date)+' · '+t);
 }
@@ -889,30 +893,53 @@ function nowFirstUp(days){
   return '';
 }
 /* the card itself — one of three states, or '' (auto-hides) */
+/* the little header chevron that collapses/expands the NOW card. Must stop
+   propagation — the card's own onclick jumps into the agenda, and a tap on
+   the chevron should only toggle, never also navigate. */
+function nowChevron(){
+  return '<span class="chev now-chev'+(S.open.now?' open':'')+'" onclick="event.stopPropagation();toggleCard(\'now\')">'+IC.chev+'</span>';
+}
+/* jump into the selected day's agenda with the Daily Agenda card guaranteed
+   open, and scroll it into view — so the tap is visibly effective even when
+   that day was ALREADY selected (selDay() alone would silently no-op then). */
+function nowOpenAgenda(i){
+  S.tab='home';S.dayIdx=i;S.open=defOpen();render();
+  setTimeout(function(){
+    var el=document.querySelector('.hero');
+    if(el&&el.scrollIntoView)el.scrollIntoView({behavior:'smooth',block:'start'});
+  },60);
+}
 function nowCardHtml(){
   try{wxFetch();}catch(e){}
   var np=nowParts(),days=tripDays();
   if(!days.length)return '';
   var t=trip(),today=dayByDate(np.date);
+  var openNow=S.open.now!==false;   /* expanded by default; collapsible via the chevron */
   if(!today){
-    /* before the trip → big-number hype countdown */
+    /* before the trip -> big-number hype countdown */
     var first=days[0].date,last=days[days.length-1].date;
     if(np.date<first){
       var nd=Math.max(1,Math.round((Date.parse(first+'T00:00:00')-Date.parse(np.date+'T00:00:00'))/86400000));
-      var o='<div class="now now-pre" onclick="go(\'home\')">';
-      o+='<div class="now-hd"><span class="now-t">✨ The countdown is on ✨</span></div>';
-      o+='<div class="now-cbody">';
-      o+='<div class="now-big">days until Disney World</div>';
-      o+='<div class="now-num">'+nd+'</div>';
-      o+='<div class="now-datesub">'+esc(nowDateRange(first,last))+(t&&t.name?' · '+esc(t.name):'')+'</div>';
-      var ww=wxWeekSummary(days);if(ww)o+='<div class="now-wxweek">'+ww+'</div>';
-      var fu=nowFirstUp(days);if(fu)o+='<div class="now-first">'+fu+'</div>';
-      o+='</div></div>';
+      var firstIdx=0;for(var fi=0;fi<days.length;fi++)if(days[fi].date===first){firstIdx=fi;break;}
+      var o='<div class="now now-pre" onclick="nowOpenAgenda('+firstIdx+')">';
+      o+='<div class="now-hd"><span class="now-t">✨ The countdown is on ✨</span>'+nowChevron()+'</div>';
+      if(openNow){
+        o+='<div class="now-cbody">';
+        o+='<div class="now-big">days until Disney World</div>';
+        o+='<div class="now-num">'+nd+'</div>';
+        o+='<div class="now-datesub">'+esc(nowDateRange(first,last))+(t&&t.name?' · '+esc(t.name):'')+'</div>';
+        var ww=wxWeekSummary(days);if(ww)o+='<div class="now-wxweek">'+ww+'</div>';
+        var fu=nowFirstUp(days);if(fu)o+='<div class="now-first">'+fu+'</div>';
+        o+='</div>';
+      }else{
+        o+='<div class="now-cbody now-cbody-collapsed"><div class="now-num now-num-sm">'+nd+'</div><div class="now-datesub">days until Disney World</div></div>';
+      }
+      o+='</div>';
       return o;
     }
     return '';   /* after the trip / a non-trip gap day */
   }
-  /* today IS a trip day → live agenda card */
+  /* today IS a trip day -> live agenda card */
   var pkKey=dayPrimaryPark(np.date),pk=pkOf(np.date),h=pkKey?hoursFor(pkKey,np.date):null;
   var nm=np.mins,items=dayPlanItems(today);
   var todayIdx=0;for(var i=0;i<days.length;i++)if(days[i].date===np.date){todayIdx=i;break;}
@@ -922,13 +949,15 @@ function nowCardHtml(){
   if(h&&h.crowd!=null&&h.crowd!=='')segs.push('<span>Crowd '+h.crowd+'/10</span>');
   wxTags(np.date).forEach(function(x){segs.push(x);});
   var sub=segs.join('<span class="now-sep">·</span>');
-  /* next up + later today */
+  /* next up + later today, plus a plain-text one-line summary for the
+     collapsed state so collapsing never loses the headline info */
   var up=items.filter(function(e){return mins(e.t)>=nm;});
-  var body='';
+  var body='',headline='';
   if(up.length){
     var e0=up[0],m0=mins(e0.t),n2=[];
     if(e0.t)n2.push(esc(e0.t));
     var cx=nowCtx(e0);if(cx)n2.push(esc(cx));
+    headline=e0.x+(m0<99999?(' — in '+nowFmtCd(m0-nm)):'');
     body+='<div class="now-nextwrap"><div class="now-nlabel">Next up</div>';
     body+='<div class="now-next"><span class="now-ico">'+nowIcon(e0.type)+'</span>';
     body+='<div class="now-body"><div class="now-n1">'+esc(e0.x)+'</div><div class="now-n2">'+n2.join(' · ')+'</div></div>';
@@ -943,15 +972,21 @@ function nowCardHtml(){
     }
     body+='</div>';
   }else if(h&&h.open&&nm<mins(h.open)){
+    headline='Park opens '+h.open+' — in '+nowFmtCd(mins(h.open)-nm);
     body+='<div class="now-nextwrap"><div class="now-nlabel">Next up</div><div class="now-next"><span class="now-ico">🎢</span><div class="now-body"><div class="now-n1">Park opens '+esc(h.open)+'</div><div class="now-n2">Get ready</div></div><div class="now-cd2"><div class="now-cdn">'+nowFmtCd(mins(h.open)-nm)+'</div><div class="now-cdl">until</div></div></div></div>';
   }else{
-    body+='<div class="now-nextwrap"><div class="now-empty">Nothing else scheduled'+(h&&h.close?' — park closes '+esc(h.close):'')+'.</div></div>';
+    headline='Nothing else scheduled'+(h&&h.close?' — park closes '+h.close:'')+'.';
+    body+='<div class="now-nextwrap"><div class="now-empty">'+esc(headline)+'</div></div>';
   }
-  var out='<div class="now" onclick="selDay('+todayIdx+')">';
-  out+='<div class="now-hd"><span class="now-live"></span><span class="now-t">Now</span><span class="now-park">'+esc(pk.name)+'</span></div>';
+  var out='<div class="now" onclick="nowOpenAgenda('+todayIdx+')">';
+  out+='<div class="now-hd"><span class="now-live"></span><span class="now-t">Now</span><span class="now-park">'+esc(pk.name)+'</span>'+nowChevron()+'</div>';
   if(sub)out+='<div class="now-sub">'+sub+'</div>';
-  out+=body;
-  out+='<div class="now-tap"><span>Open today’s agenda</span><span>→</span></div>';
+  if(openNow){
+    out+=body;
+    out+='<div class="now-tap"><span>Open today\u2019s agenda</span><span>\u2192</span></div>';
+  }else{
+    out+='<div class="now-nextwrap now-nextwrap-collapsed"><div class="now-headline">'+esc(headline)+'</div></div>';
+  }
   return out+'</div>';
 }
 /* targeted refresh so the ticking countdown never disrupts scroll (mirrors

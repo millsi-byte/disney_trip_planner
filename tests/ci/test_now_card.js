@@ -1,10 +1,15 @@
-/* Build 363: NOW card — live day-of companion at the top of the Agenda.
+/* Build 363/365: NOW card — live day-of companion at the top of the Agenda.
    Drives the REAL app with a pinned "now" via window.__nowOverride over the
    jul26 demo trip (days 2026-07-14 … 2026-07-19). Verifies the approved mockup
    structure for both states (live park-day card with LIVE header, weather AFTER
    hours+crowd, Next-up + countdown pill, Later-today, tap footer; pre-trip
    big-number countdown with trip-week weather + First-up), the countdown,
-   graceful weather-fail, and that refreshNowCard() touches only #now-card-host. */
+   graceful weather-fail, refreshNowCard() touching only #now-card-host, the
+   collapse chevron (expanded by default, collapsible, chevron never triggers
+   navigation), and that tapping into the agenda always visibly responds —
+   including the regression case where the previewed day was ALREADY selected
+   (a bare selDay() would silently no-op there; nowOpenAgenda() must still
+   reset/open the Daily Agenda card so the tap is never a dead end). */
 const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
 
 (async () => {
@@ -73,6 +78,37 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     refreshNowCard();
     r.rf_updatedInPlace = host.innerHTML.indexOf('Nothing else scheduled') >= 0;
     r.rf_hostStillPresent = !!document.getElementById('now-card-host');
+
+    // ── Collapse chevron: expanded by default; toggling never navigates ──
+    window.__nowOverride = { date: DAY, mins: 9 * 60 };
+    S.dayIdx = 1; S.open = defOpen(); render();
+    r.c_expandedByDefault = document.getElementById('now-card-host').innerHTML.indexOf('now-nlabel') >= 0;
+    document.querySelector('#now-card-host .now-hd .chev').click();
+    r.c_collapsedAfterChevron = document.getElementById('now-card-host').innerHTML.indexOf('now-headline') >= 0
+      && document.getElementById('now-card-host').innerHTML.indexOf('now-nlabel') < 0;
+    r.c_headlineKeepsInfo = document.getElementById('now-card-host').innerHTML.indexOf('ZZNOWRIDE') >= 0;
+    r.c_chevronDidNotNavigate = S.tab === 'home' && S.dayIdx === 1;
+    document.querySelector('#now-card-host .now-hd .chev').click();
+    r.c_reexpands = document.getElementById('now-card-host').innerHTML.indexOf('now-nlabel') >= 0;
+
+    // ── Pre-trip card also collapses without losing its headline number ──
+    window.__nowOverride = { date: '2026-07-01', mins: 10 * 60 };
+    S.open = defOpen(); render();
+    document.querySelector('#now-card-host .now-hd .chev').click();
+    const preCollapsed = document.getElementById('now-card-host').innerHTML;
+    r.c_preCollapsedKeepsNumber = preCollapsed.indexOf('>13<') >= 0 && preCollapsed.indexOf('now-wxweek') < 0;
+    S.open = defOpen();
+
+    // ── Tap-to-open-agenda regression: already on the previewed day, the tap
+    //    must STILL visibly respond (reset/open the Daily Agenda card) rather
+    //    than silently no-op because dayIdx didn't change ──
+    window.__nowOverride = { date: DAY, mins: 9 * 60 };
+    S.dayIdx = 1; S.open = defOpen(); S.open.itin = false; render();
+    r.t_itinClosedBeforeTap = S.open.itin === false;
+    document.querySelector('#now-card-host .now-tap').click();
+    r.t_dayIdxStillCorrect = S.dayIdx === 1;
+    r.t_itinReopenedByTap = S.open.itin === true;
+    r.t_stillOnHomeTab = S.tab === 'home';
 
     return r;
   });
