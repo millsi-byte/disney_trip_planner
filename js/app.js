@@ -63,7 +63,7 @@ var S = {
   newTmpl:"blank",
   formLegs:1
 };
-function defOpen(){return {flight:true,itin:true,ll:true,strat:false,din:true,shows:true};}
+function defOpen(){return {flight:true,itin:true,ll:true,strat:false,din:true,shows:true,now:true};}
 S.open = defOpen();
 
 /* persistence */
@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='362';
+var BUILD='367';
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -715,6 +715,288 @@ function parkHoursFor(ds){return PARKHOURS.filter(function(h){return h.trip===S.
 function hoursFor(park,ds){var l=parkHoursFor(ds);for(var i=0;i<l.length;i++)if(l[i].park===park)return l[i];return null;}
 var TIMING={morning:'Morning',day:'Day',evening:'Evening',late:'Late'};
 function timingLbl(t){return TIMING[t]||'Day';}
+
+/* ── NOW card — a live day-of companion pinned to the top of the Agenda ──────
+   Built entirely from existing data (dayPlanItems / hoursFor / tripDays) + the
+   clock. Three states: today-is-a-trip-day (live "what's next" + live
+   countdown), before-the-trip (hype countdown), after/none (renders nothing).
+   Weather is woven into the info line via Open-Meteo (cached in dtp__wx, fails
+   invisibly) — it never blocks or breaks the card. */
+function nowParts(){
+  if(window.__nowOverride)return window.__nowOverride;   /* CI/test seam */
+  var pv=nowPreviewGet();if(pv)return pv;                 /* dev-only manual "preview day" override */
+  var n=new Date();
+  return {date:n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0'),mins:n.getHours()*60+n.getMinutes()};
+}
+/* ── NOW-card preview override (dev builds only) ──────────────────────────
+   Lets a tester jump the NOW card to any trip day/time on their own device
+   without a console. Stored under a double-underscore key so it NEVER syncs
+   to other family members and never leaks into a shared trip. The BUILD gate
+   means production always ignores this key even if one lingered on a device
+   that was on a -dev build before an update. */
+function nowPreviewGet(){
+  if(BUILD.indexOf('-dev')<0)return null;
+  try{
+    var s=localStorage.getItem('dtp__nowpreview');if(!s)return null;
+    var o=JSON.parse(s);
+    if(!o||!o.date||typeof o.mins!=='number')return null;
+    return o;
+  }catch(e){return null;}
+}
+function nowPreviewSet(date,m,sel){try{localStorage.setItem('dtp__nowpreview',JSON.stringify({date:date,mins:m,sel:sel||date}));}catch(e){}}
+function nowPreviewClear(){try{localStorage.removeItem('dtp__nowpreview');}catch(e){}}
+/* the amber banner shown app-wide while a preview is active, so it can never
+   be mistaken for real data (mirrors impersonationBanner's pattern) */
+function nowPreviewBanner(){
+  if(BUILD.indexOf('-dev')<0)return '';
+  var pv=nowPreviewGet();if(!pv)return '';
+  return '<div style="background:#B45309;color:#fff;padding:calc(8px + env(safe-area-inset-top)) 12px 8px;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;font-weight:600;position:sticky;top:0;z-index:200">'
+    +'<span style="flex:1;min-width:0">⏰ Previewing NOW as '+esc(fmtDay(pv.date))+' · '+esc(minsToClock(pv.mins))+'</span>'
+    +'<button onclick="npClear()" style="background:#fff;color:#B45309;border:0;border-radius:8px;padding:8px 16px;font-weight:700;flex-shrink:0">Exit</button></div>';
+}
+/* 0-1439 -> "9:00 AM" for the banner/status line */
+function minsToClock(m){
+  var h=Math.floor(m/60),mm=m%60,ap=h>=12?'PM':'AM',h12=h%12;if(h12===0)h12=12;
+  return h12+':'+('0'+mm).slice(-2)+' '+ap;
+}
+
+/* day-picker options for the preview screen: real trip days plus two
+   pseudo-states to exercise the other two NOW-card branches */
+function npDayOptions(sel){
+  var h='<option value="__before"'+(sel==='__before'?' selected':'')+'>— Before the trip (countdown) —</option>';
+  h+=dayOptions(sel);
+  h+='<option value="__after"'+(sel==='__after'?' selected':'')+'>— After the trip (card hidden) —</option>';
+  return h;
+}
+function npFmtDate(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function npResolveDate(sel){
+  var days=tripDays();if(!days.length)return null;
+  if(sel==='__before'){var db=new Date(days[0].date+'T00:00:00');db.setDate(db.getDate()-5);return npFmtDate(db);}
+  if(sel==='__after'){var da=new Date(days[days.length-1].date+'T00:00:00');da.setDate(da.getDate()+5);return npFmtDate(da);}
+  return sel;   /* a real trip day's date */
+}
+function scrNowPreview(){
+  var days=tripDays();
+  if(!days.length)return screenShell('Preview NOW card','<div class="body-empty" style="padding:24px 12px">This trip has no days yet — add days before previewing.</div>',null,null,'Close');
+  var pv=nowPreviewGet(),curSel=pv?(pv.sel||pv.date):'',curTime=pv?minsToClock(pv.mins):'9:00 AM';
+  var body='<div class="body-empty" style="text-align:left;padding:0 2px 14px;font-size:14px;color:var(--ink)">Dev-only tool — jump the NOW card to any day/time to see how it looks before shipping to production. Nothing else in the app changes; it never syncs to other devices and never appears in production.</div>';
+  if(pv)body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:13px;color:#B45309;font-weight:600">⏰ Currently previewing '+esc(fmtDay(pv.date))+' · '+esc(curTime)+'</div>';
+  body+='<div class="field"><label class="field-label">Day</label><select class="field-select" id="np-day">'+npDayOptions(curSel)+'</select></div>';
+  body+='<div class="field"><label class="field-label">Time</label>'+timeField('np-time',curTime)+'</div>';
+  var foot=pv?'<button class="btn-danger-link" onclick="npClear()">Exit preview — back to real time</button>':'';
+  return screenShell('Preview NOW card',body,'Preview','npApply()','Close',foot);
+}
+function npApply(){
+  var sel=val('np-day'),date=npResolveDate(sel);
+  if(!date){toast('No trip days to preview');return;}
+  var t=val('np-time')||'9:00 AM';
+  nowPreviewSet(date,mins(t),sel);
+  /* keep the underlying agenda coherent with what the NOW card is showing —
+     jump the selected day to match whenever it's a real trip day */
+  var days=tripDays();
+  for(var i=0;i<days.length;i++)if(days[i].date===date){S.dayIdx=i;break;}
+  S.tab='home';closeScreen();render();
+  toast('Previewing '+fmtDay(date)+' · '+t);
+}
+function npClear(){
+  nowPreviewClear();
+  S.tab='home';closeScreen();render();
+  toast('Back to real time');
+}
+
+/* minutes-from-now → "1h 20m" / "45m" / "now" */
+function nowCountdown(delta){
+  if(delta<=0)return 'now';
+  var h=Math.floor(delta/60),m=delta%60;
+  return h?(h+'h'+(m?' '+m+'m':'')):(m+'m');
+}
+/* Open-Meteo weathercode → emoji (the compact line shows emoji + temps only) */
+var WX_CODE={0:'☀️',1:'🌤',2:'⛅',3:'☁️',45:'🌫',48:'🌫',51:'🌦',53:'🌦',55:'🌦',56:'🌧',57:'🌧',61:'🌧',63:'🌧',65:'🌧',66:'🌧',67:'🌧',71:'🌨',73:'🌨',75:'🌨',77:'🌨',80:'🌦',81:'🌧',82:'⛈',85:'🌨',86:'🌨',95:'⛈',96:'⛈',99:'⛈'};
+function wxEmoji(c){return WX_CODE[c]||'';}
+/* Park coordinates. WDW parks share one point; Disneyland is a fallback if a
+   trip is ever tagged for it. Defaults to WDW — this app is WDW-first. */
+function wxCoords(){
+  var t=trip(),s=((t&&(t.sub||t.name))||'').toLowerCase();
+  if(s.indexOf('land')>=0||s.indexOf('california')>=0||s.indexOf('anaheim')>=0)return {lat:33.808,lon:-117.919,tz:'America/Los_Angeles',k:'dlr'};
+  return {lat:28.385,lon:-81.563,tz:'America/New_York',k:'wdw'};
+}
+function wxData(){try{return JSON.parse(localStorage.getItem('dtp__wx')||'null');}catch(e){return null;}}
+/* fetch once per day per resort; guarded so the 30s refresh never re-hits it.
+   dtp__wx is a double-underscore key → never syncs (see cloud.js syncable). */
+function wxFetch(){
+  try{
+    if(typeof fetch!=='function')return;
+    var np=nowParts(),c=wxCoords(),cur=wxData();
+    if(cur&&cur.day===np.date&&cur.k===c.k)return;   /* already fresh today */
+    if(window.__wxInflight===np.date+c.k)return;
+    window.__wxInflight=np.date+c.k;
+    var url='https://api.open-meteo.com/v1/forecast?latitude='+c.lat+'&longitude='+c.lon
+      +'&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max'
+      +'&temperature_unit=fahrenheit&timezone='+encodeURIComponent(c.tz)+'&forecast_days=16';
+    fetch(url).then(function(r){return r.json();}).then(function(j){
+      window.__wxInflight=null;
+      if(!j||!j.daily||!j.daily.time)return;
+      var d=j.daily,by={};
+      for(var i=0;i<d.time.length;i++)by[d.time[i]]={c:d.weather_code[i],hi:Math.round(d.temperature_2m_max[i]),lo:Math.round(d.temperature_2m_min[i]),p:d.precipitation_probability_max[i]};
+      try{localStorage.setItem('dtp__wx',JSON.stringify({day:np.date,k:c.k,by:by}));}catch(e){}
+      try{refreshNowCard();}catch(e){}
+    }).catch(function(){window.__wxInflight=null;});
+  }catch(e){}
+}
+/* weather tag segments for a date (temp + rain), styled; [] when uncached.
+   Rendered AFTER hours + crowd on the live card's sub-line. */
+function wxTags(date){
+  var w=wxData();if(!w||!w.by||!w.by[date])return [];
+  var d=w.by[date],em=wxEmoji(d.c),out=[];
+  out.push('<span class="now-wtag now-wx">'+(em?em+' ':'')+d.hi+'°/'+d.lo+'°</span>');
+  if(d.p!=null&&d.p>=20)out.push('<span class="now-wtag now-rain">🌧 '+d.p+'%</span>');
+  return out;
+}
+/* one-line trip-week weather summary for the pre-trip card, or '' */
+function wxWeekSummary(days){
+  var w=wxData();if(!w||!w.by)return '';
+  var his=[],rainDays=[],em='';
+  for(var i=0;i<days.length;i++){var d=w.by[days[i].date];if(!d)continue;
+    if(d.hi!=null)his.push(d.hi);
+    if(!em)em=wxEmoji(d.c);
+    if(d.p!=null&&d.p>=40)rainDays.push(days[i].dl||'');
+  }
+  if(!his.length)return '';
+  var hiMax=Math.max.apply(null,his),hiMin=Math.min.apply(null,his);
+  var s=(em||'🌤')+' Trip week: highs '+(hiMin===hiMax?('~'+hiMax+'°'):(hiMin+'–'+hiMax+'°'));
+  if(rainDays.length)s+=' · showers '+rainDays.filter(Boolean).join(', ');
+  return esc(s);
+}
+/* type → emoji + human context for a plan item */
+function nowIcon(t){return ({dining:'🍽',ll:'⚡',show:'🎭',parade:'🎭',flight:'✈️',resort:'🏨',rebook:'🔁',manual:'📍'})[t]||'•';}
+function nowCtx(e){
+  if(e.park&&PARKS[e.park])return PARKS[e.park].name;
+  return ({dining:'Dining',ll:'Lightning Lane',show:'Show',parade:'Parade',flight:'Flight',resort:'Resort',rebook:'Re-book',manual:'Plans'})[e.type]||'';
+}
+/* countdown formatter for the "until" pill: "1h 20m" / "45 min" / "now" */
+function nowFmtCd(m){if(m<=0)return 'now';if(m>=60){var h=Math.floor(m/60);return h+'h '+(m%60)+'m';}return m+' min';}
+/* "Jul 14 – 20" across the trip's first/last day */
+function nowDateRange(a,b){
+  var ma=MON[parseInt(a.slice(5,7),10)-1],da=parseInt(a.slice(8,10),10);
+  var mb=MON[parseInt(b.slice(5,7),10)-1],db=parseInt(b.slice(8,10),10);
+  return ma+' '+da+' – '+(ma===mb?db:(mb+' '+db));
+}
+/* first scheduled item across the whole trip (the flight, usually) */
+function nowFirstUp(days){
+  for(var i=0;i<days.length;i++){
+    var d=dayByDate(days[i].date);if(!d)continue;
+    var its=dayPlanItems(d).filter(function(e){return mins(e.t)<99999;});
+    if(its.length){var e=its[0];
+      return nowIcon(e.type)+' First up: '+esc(e.x)+' — '+esc(e.t)+' ('+MON[parseInt(days[i].date.slice(5,7),10)-1]+' '+parseInt(days[i].date.slice(8,10),10)+')';
+    }
+  }
+  return '';
+}
+/* the card itself — one of three states, or '' (auto-hides) */
+/* the little header chevron that collapses/expands the NOW card. Must stop
+   propagation — the card's own onclick jumps into the agenda, and a tap on
+   the chevron should only toggle, never also navigate. */
+function nowChevron(){
+  return '<span class="chev now-chev'+(S.open.now?' open':'')+'" onclick="event.stopPropagation();toggleCard(\'now\')">'+IC.chev+'</span>';
+}
+/* jump into the selected day's agenda with the Daily Agenda card guaranteed
+   open, and scroll it into view — so the tap is visibly effective even when
+   that day was ALREADY selected (selDay() alone would silently no-op then). */
+function nowOpenAgenda(i){
+  S.tab='home';S.dayIdx=i;S.open=defOpen();render();
+  setTimeout(function(){
+    var el=document.querySelector('.hero');
+    if(el&&el.scrollIntoView)el.scrollIntoView({behavior:'smooth',block:'start'});
+  },60);
+}
+function nowCardHtml(){
+  try{wxFetch();}catch(e){}
+  var np=nowParts(),days=tripDays();
+  if(!days.length)return '';
+  var t=trip(),today=dayByDate(np.date);
+  var openNow=S.open.now!==false;   /* expanded by default; collapsible via the chevron */
+  if(!today){
+    /* before the trip -> big-number hype countdown */
+    var first=days[0].date,last=days[days.length-1].date;
+    if(np.date<first){
+      var nd=Math.max(1,Math.round((Date.parse(first+'T00:00:00')-Date.parse(np.date+'T00:00:00'))/86400000));
+      var firstIdx=0;for(var fi=0;fi<days.length;fi++)if(days[fi].date===first){firstIdx=fi;break;}
+      var o='<div class="now now-pre" onclick="nowOpenAgenda('+firstIdx+')">';
+      o+='<div class="now-hd"><span class="now-t">✨ The countdown is on ✨</span>'+nowChevron()+'</div>';
+      if(openNow){
+        o+='<div class="now-cbody">';
+        o+='<div class="now-big">days until Disney World</div>';
+        o+='<div class="now-num">'+nd+'</div>';
+        o+='<div class="now-datesub">'+esc(nowDateRange(first,last))+(t&&t.name?' · '+esc(t.name):'')+'</div>';
+        var ww=wxWeekSummary(days);if(ww)o+='<div class="now-wxweek">'+ww+'</div>';
+        var fu=nowFirstUp(days);if(fu)o+='<div class="now-first">'+fu+'</div>';
+        o+='</div>';
+      }else{
+        o+='<div class="now-cbody now-cbody-collapsed"><div class="now-num now-num-sm">'+nd+'</div><div class="now-datesub">days until Disney World</div></div>';
+      }
+      o+='</div>';
+      return o;
+    }
+    return '';   /* after the trip / a non-trip gap day */
+  }
+  /* today IS a trip day -> live agenda card */
+  var pkKey=dayPrimaryPark(np.date),pk=pkOf(np.date),h=pkKey?hoursFor(pkKey,np.date):null;
+  var nm=np.mins,items=dayPlanItems(today);
+  var todayIdx=0;for(var i=0;i<days.length;i++)if(days[i].date===np.date){todayIdx=i;break;}
+  /* sub-line: hours · crowd · weather (weather AFTER hours + crowd) */
+  var segs=[];
+  if(h&&(h.open||h.close))segs.push('<span>Open '+esc(h.open||'—')+' – '+esc(h.close||'—')+'</span>');
+  if(h&&h.crowd!=null&&h.crowd!=='')segs.push('<span>Crowd '+h.crowd+'/10</span>');
+  wxTags(np.date).forEach(function(x){segs.push(x);});
+  var sub=segs.join('<span class="now-sep">·</span>');
+  /* next up + later today, plus a plain-text one-line summary for the
+     collapsed state so collapsing never loses the headline info */
+  var up=items.filter(function(e){return mins(e.t)>=nm;});
+  var body='',headline='';
+  if(up.length){
+    var e0=up[0],m0=mins(e0.t),n2=[];
+    if(e0.t)n2.push(esc(e0.t));
+    var cx=nowCtx(e0);if(cx)n2.push(esc(cx));
+    headline=e0.x+(m0<99999?(' — in '+nowFmtCd(m0-nm)):'');
+    body+='<div class="now-nextwrap"><div class="now-nlabel">Next up</div>';
+    body+='<div class="now-next"><span class="now-ico">'+nowIcon(e0.type)+'</span>';
+    body+='<div class="now-body"><div class="now-n1">'+esc(e0.x)+'</div><div class="now-n2">'+n2.join(' · ')+'</div></div>';
+    if(m0<99999)body+='<div class="now-cd2"><div class="now-cdn">'+nowFmtCd(m0-nm)+'</div><div class="now-cdl">until</div></div>';
+    body+='</div>';
+    if(up.length>1){
+      body+='<div class="now-later">';
+      for(var k=1;k<up.length&&k<4;k++){var ek=up[k],mk=mins(ek.t);
+        body+='<div class="now-lrow"><span class="now-li">'+nowIcon(ek.type)+'</span><span class="now-lx">'+esc(ek.x)+'</span><span class="now-lt">'+(mk<99999?esc(ek.t):'')+'</span></div>';
+      }
+      body+='</div>';
+    }
+    body+='</div>';
+  }else if(h&&h.open&&nm<mins(h.open)){
+    headline='Park opens '+h.open+' — in '+nowFmtCd(mins(h.open)-nm);
+    body+='<div class="now-nextwrap"><div class="now-nlabel">Next up</div><div class="now-next"><span class="now-ico">🎢</span><div class="now-body"><div class="now-n1">Park opens '+esc(h.open)+'</div><div class="now-n2">Get ready</div></div><div class="now-cd2"><div class="now-cdn">'+nowFmtCd(mins(h.open)-nm)+'</div><div class="now-cdl">until</div></div></div></div>';
+  }else{
+    headline='Nothing else scheduled'+(h&&h.close?' — park closes '+h.close:'')+'.';
+    body+='<div class="now-nextwrap"><div class="now-empty">'+esc(headline)+'</div></div>';
+  }
+  var out='<div class="now" onclick="nowOpenAgenda('+todayIdx+')">';
+  out+='<div class="now-hd"><span class="now-live"></span><span class="now-t">Now</span><span class="now-park">'+esc(pk.name)+'</span>'+nowChevron()+'</div>';
+  if(sub)out+='<div class="now-sub">'+sub+'</div>';
+  if(openNow){
+    out+=body;
+    out+='<div class="now-tap"><span>Open today\u2019s agenda</span><span>\u2192</span></div>';
+  }else{
+    out+='<div class="now-nextwrap now-nextwrap-collapsed"><div class="now-headline">'+esc(headline)+'</div></div>';
+  }
+  return out+'</div>';
+}
+/* targeted refresh so the ticking countdown never disrupts scroll (mirrors
+   refreshLists etc.) — only ever rewrites #now-card-host on the home tab */
+function refreshNowCard(){
+  if(S.tab!=='home')return;
+  var el=document.getElementById('now-card-host');
+  if(el)el.innerHTML=nowCardHtml();
+}
+
 
 /* person-filter visibility.
    A non-empty S.filter (specific people picked) always wins; otherwise the
@@ -2289,6 +2571,11 @@ function renderAgenda(){
   var p2=sec?(PARKS[sec.park]||null):null;
   var WDF={Mon:'Monday',Tue:'Tuesday',Wed:'Wednesday',Thu:'Thursday',Fri:'Friday',Sat:'Saturday',Sun:'Sunday'};
   var o='';
+  /* People filter sits above NOW: NOW's own "next up" content is generated
+     through the same visible(who) filter, so the control that explains why
+     an item might be missing belongs before the card it affects. */
+  o+=renderFilter();
+  o+='<div id="now-card-host">'+nowCardHtml()+'</div>';   /* NOW card — pinned live day-of companion */
 
   /* Hero */
   o+='<div class="hero fadein">';
@@ -2307,8 +2594,6 @@ function renderAgenda(){
   if(d.alert) o+='<div class="hero-alert">'+IC.warn+'<div class="hero-alert-txt">'+esc(d.alert)+'</div></div>';
   o+='</div>';
 
-  /* Only the people filter sits below the hero now (the view switch is in the hero) */
-  o+=renderFilter();
 
   if(S.planView==='dayplan'){
     /* Daily Agenda: hero + strategy + the timed day plan only */
@@ -2745,6 +3030,11 @@ function renderAdminHub(){
   if(!isAdmin())return '<div class="body-empty" style="margin-top:40px">Admin only.</div>';
   var _t0=trip();
   var o='<div class="pg-title">Admin</div><div class="pg-sub">Power-user tools for '+esc((_t0&&_t0.name)||partyLabel())+'.</div>';
+  if(BUILD.indexOf('-dev')>=0){
+    o+='<div class="hub-section-label">Testing (dev build only)</div>';
+    o+='<button class="hub-row" onclick="openScreen({type:\'nowpreview\'})"><div class="hub-icon" style="background:#B45309">'+IC.clock+'</div>'
+      +'<div class="hub-main"><div class="hub-title">Preview NOW card</div><div class="hub-sub">'+(nowPreviewGet()?'Currently previewing a day':'Jump the day/time to test any state')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
+  }
   o+='<div class="hub-section-label">Manage</div>';
   o+='<button class="hub-row" onclick="openScreen({type:\'parties\'})"><div class="hub-icon" style="background:#6B4FA0">'+IC.home+'</div>'
     +'<div class="hub-main"><div class="hub-title">Groups</div><div class="hub-sub">'+PARTIES.length+' '+(PARTIES.length===1?'group':'groups')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
@@ -3848,6 +4138,7 @@ function renderScreen(){
   if(t==='notifs')    return scrNotifs();
   if(t==='backups')   return scrBackups();
   if(t==='backupview')return scrBackupView();
+  if(t==='nowpreview') return scrNowPreview();
   return scrGeneric();
 }
 function scrNotifs(){
@@ -8005,7 +8296,7 @@ function impersonationBanner(){
 function render(){
   /* normalise stale/unauthorised tabs (Overview removed; Admin is admin-only) */
   if(S.tab==='overview'||(S.tab==='admin'&&!isAdmin()))S.tab='home';
-  document.getElementById('header-host').innerHTML=impersonationBanner()+renderHeader();
+  document.getElementById('header-host').innerHTML=impersonationBanner()+nowPreviewBanner()+renderHeader();
   if(noTripSelected()){
     document.getElementById('strip-host').innerHTML='';
     document.getElementById('filter-host').innerHTML='';
@@ -8061,6 +8352,7 @@ try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().
 try{
   setTimeout(function(){try{autoBackup();}catch(e){}try{runDailyArchive();}catch(e){}},20000);
   setInterval(function(){try{autoBackup();}catch(e){}try{runDailyArchive();}catch(e){}},60000);
+  setInterval(function(){try{refreshNowCard();}catch(e){}},30000);   /* NOW card live countdown */
 }catch(e){}
 /* an invite link (#join=CODE&as=PERSON) — stash it so onCloudSynced can act
    on it after sign-in, then strip it from the URL */
