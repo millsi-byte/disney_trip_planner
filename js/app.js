@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='364-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='365-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -724,9 +724,82 @@ function timingLbl(t){return TIMING[t]||'Day';}
    invisibly) — it never blocks or breaks the card. */
 function nowParts(){
   if(window.__nowOverride)return window.__nowOverride;   /* CI/test seam */
+  var pv=nowPreviewGet();if(pv)return pv;                 /* dev-only manual "preview day" override */
   var n=new Date();
   return {date:n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0'),mins:n.getHours()*60+n.getMinutes()};
 }
+/* ── NOW-card preview override (dev builds only) ──────────────────────────
+   Lets a tester jump the NOW card to any trip day/time on their own device
+   without a console. Stored under a double-underscore key so it NEVER syncs
+   to other family members and never leaks into a shared trip. The BUILD gate
+   means production always ignores this key even if one lingered on a device
+   that was on a -dev build before an update. */
+function nowPreviewGet(){
+  if(BUILD.indexOf('-dev')<0)return null;
+  try{
+    var s=localStorage.getItem('dtp__nowpreview');if(!s)return null;
+    var o=JSON.parse(s);
+    if(!o||!o.date||typeof o.mins!=='number')return null;
+    return o;
+  }catch(e){return null;}
+}
+function nowPreviewSet(date,m,sel){try{localStorage.setItem('dtp__nowpreview',JSON.stringify({date:date,mins:m,sel:sel||date}));}catch(e){}}
+function nowPreviewClear(){try{localStorage.removeItem('dtp__nowpreview');}catch(e){}}
+/* the amber banner shown app-wide while a preview is active, so it can never
+   be mistaken for real data (mirrors impersonationBanner's pattern) */
+function nowPreviewBanner(){
+  if(BUILD.indexOf('-dev')<0)return '';
+  var pv=nowPreviewGet();if(!pv)return '';
+  return '<div style="background:#B45309;color:#fff;padding:calc(8px + env(safe-area-inset-top)) 12px 8px;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;font-weight:600;position:sticky;top:0;z-index:200">'
+    +'<span style="flex:1;min-width:0">⏰ Previewing NOW as '+esc(fmtDay(pv.date))+' · '+esc(minsToClock(pv.mins))+'</span>'
+    +'<button onclick="npClear()" style="background:#fff;color:#B45309;border:0;border-radius:8px;padding:8px 16px;font-weight:700;flex-shrink:0">Exit</button></div>';
+}
+/* 0-1439 -> "9:00 AM" for the banner/status line */
+function minsToClock(m){
+  var h=Math.floor(m/60),mm=m%60,ap=h>=12?'PM':'AM',h12=h%12;if(h12===0)h12=12;
+  return h12+':'+('0'+mm).slice(-2)+' '+ap;
+}
+
+/* day-picker options for the preview screen: real trip days plus two
+   pseudo-states to exercise the other two NOW-card branches */
+function npDayOptions(sel){
+  var h='<option value="__before"'+(sel==='__before'?' selected':'')+'>— Before the trip (countdown) —</option>';
+  h+=dayOptions(sel);
+  h+='<option value="__after"'+(sel==='__after'?' selected':'')+'>— After the trip (card hidden) —</option>';
+  return h;
+}
+function npFmtDate(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function npResolveDate(sel){
+  var days=tripDays();if(!days.length)return null;
+  if(sel==='__before'){var db=new Date(days[0].date+'T00:00:00');db.setDate(db.getDate()-5);return npFmtDate(db);}
+  if(sel==='__after'){var da=new Date(days[days.length-1].date+'T00:00:00');da.setDate(da.getDate()+5);return npFmtDate(da);}
+  return sel;   /* a real trip day's date */
+}
+function scrNowPreview(){
+  var days=tripDays();
+  if(!days.length)return screenShell('Preview NOW card','<div class="body-empty" style="padding:24px 12px">This trip has no days yet — add days before previewing.</div>',null,null,'Close');
+  var pv=nowPreviewGet(),curSel=pv?(pv.sel||pv.date):'',curTime=pv?minsToClock(pv.mins):'9:00 AM';
+  var body='<div class="body-empty" style="text-align:left;padding:0 2px 14px;font-size:14px;color:var(--ink)">Dev-only tool — jump the NOW card to any day/time to see how it looks before shipping to production. Nothing else in the app changes; it never syncs to other devices and never appears in production.</div>';
+  if(pv)body+='<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:13px;color:#B45309;font-weight:600">⏰ Currently previewing '+esc(fmtDay(pv.date))+' · '+esc(curTime)+'</div>';
+  body+='<div class="field"><label class="field-label">Day</label><select class="field-select" id="np-day">'+npDayOptions(curSel)+'</select></div>';
+  body+='<div class="field"><label class="field-label">Time</label>'+timeField('np-time',curTime)+'</div>';
+  var foot=pv?'<button class="btn-danger-link" onclick="npClear()">Exit preview — back to real time</button>':'';
+  return screenShell('Preview NOW card',body,'Preview','npApply()','Close',foot);
+}
+function npApply(){
+  var sel=val('np-day'),date=npResolveDate(sel);
+  if(!date){toast('No trip days to preview');return;}
+  var t=val('np-time')||'9:00 AM';
+  nowPreviewSet(date,mins(t),sel);
+  S.tab='home';closeScreen();render();
+  toast('Previewing '+fmtDay(date)+' · '+t);
+}
+function npClear(){
+  nowPreviewClear();
+  S.tab='home';closeScreen();render();
+  toast('Back to real time');
+}
+
 /* minutes-from-now → "1h 20m" / "45m" / "now" */
 function nowCountdown(delta){
   if(delta<=0)return 'now';
@@ -2920,6 +2993,11 @@ function renderAdminHub(){
   if(!isAdmin())return '<div class="body-empty" style="margin-top:40px">Admin only.</div>';
   var _t0=trip();
   var o='<div class="pg-title">Admin</div><div class="pg-sub">Power-user tools for '+esc((_t0&&_t0.name)||partyLabel())+'.</div>';
+  if(BUILD.indexOf('-dev')>=0){
+    o+='<div class="hub-section-label">Testing (dev build only)</div>';
+    o+='<button class="hub-row" onclick="openScreen({type:\'nowpreview\'})"><div class="hub-icon" style="background:#B45309">'+IC.clock+'</div>'
+      +'<div class="hub-main"><div class="hub-title">Preview NOW card</div><div class="hub-sub">'+(nowPreviewGet()?'Currently previewing a day':'Jump the day/time to test any state')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
+  }
   o+='<div class="hub-section-label">Manage</div>';
   o+='<button class="hub-row" onclick="openScreen({type:\'parties\'})"><div class="hub-icon" style="background:#6B4FA0">'+IC.home+'</div>'
     +'<div class="hub-main"><div class="hub-title">Groups</div><div class="hub-sub">'+PARTIES.length+' '+(PARTIES.length===1?'group':'groups')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
@@ -4023,6 +4101,7 @@ function renderScreen(){
   if(t==='notifs')    return scrNotifs();
   if(t==='backups')   return scrBackups();
   if(t==='backupview')return scrBackupView();
+  if(t==='nowpreview') return scrNowPreview();
   return scrGeneric();
 }
 function scrNotifs(){
@@ -8180,7 +8259,7 @@ function impersonationBanner(){
 function render(){
   /* normalise stale/unauthorised tabs (Overview removed; Admin is admin-only) */
   if(S.tab==='overview'||(S.tab==='admin'&&!isAdmin()))S.tab='home';
-  document.getElementById('header-host').innerHTML=impersonationBanner()+renderHeader();
+  document.getElementById('header-host').innerHTML=impersonationBanner()+nowPreviewBanner()+renderHeader();
   if(noTripSelected()){
     document.getElementById('strip-host').innerHTML='';
     document.getElementById('filter-host').innerHTML='';
