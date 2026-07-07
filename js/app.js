@@ -2855,7 +2855,7 @@ function renderChat(){
       if(m.wishId){var _nw=wishById(m.wishId);if(_nw&&_nw.note)h+='<div class="msg-wishnote">'+esc(_nw.note)+'</div>';}
       h+='</div>';
       h+='<div class="msg-time">'+esc(chatTime(m))+(m.edited?' · edited':'')+'</div>';
-      if(m.wishId){var _vw=wishById(m.wishId);if(_vw)h+='<div class="wl-voterow"><span class="msg-votelbl">Vote</span>'+wishVoteBtns(_vw)+'</div>';}
+      if(m.wishId){var _vw=wishById(m.wishId);if(_vw)h+='<div class="wl-voterow"><span class="msg-votelbl">Vote</span>'+wishVoteBtns(_vw)+'</div>'+wishVoteNames(_vw);}
     }
     h+='</div></div>';   /* close msg-col, msg — avatar now bottom-aligns to the bubble */
     if(S._editMsg!==m.id) h+='<div class="rxnrow">'+chatReactions(m)+'</div>';
@@ -2899,14 +2899,6 @@ function chatReactions(m){
     }
   }
   o+='</div>';
-  /* who reacted — the hover title only works on desktop, so on a phone there
-     was no way to tell who left a reaction. Show the names as a small line. */
-  if(keys.length){
-    var cap=keys.map(function(e){
-      return e+' '+rx[e].map(function(id){return person(id)?esc(person(id).name):'?';}).join(', ');
-    }).join('   ');
-    o+='<div class="rxn-names">'+cap+'</div>';
-  }
   if(S._reactFor===m.id){
     o+='<div class="rxn-bar">';
     for(var k=0;k<CHAT_RXNS.length;k++)o+='<button onclick="chatReact(\''+m.id+'\',\''+CHAT_RXNS[k]+'\')">'+CHAT_RXNS[k]+'</button>';
@@ -3662,7 +3654,18 @@ function wishVoteBtns(w){
   return '<button class="wl-vote'+(my==='up'?' on':'')+'" onclick="event.stopPropagation();wlVote(\''+w.id+'\',\'up\')">👍 '+up+'</button>'
     +'<button class="wl-vote down'+(my==='down'?' on':'')+'" onclick="event.stopPropagation();wlVote(\''+w.id+'\',\'down\')">👎 '+dn+'</button>';
 }
-function wishVoteRow(w){return '<div class="wl-voterow">'+wishVoteBtns(w)+'</div>';}
+/* who voted which way — the buttons only showed a count, so you couldn't tell
+   who left the 👍/👎. Small names line under the vote buttons. */
+function wishVoteNames(w){
+  var v=w.votes||{},up=[],dn=[];
+  Object.keys(v).forEach(function(k){var p=person(k);if(!p)return;if(v[k]==='up')up.push(p.name);else if(v[k]==='down')dn.push(p.name);});
+  if(!up.length&&!dn.length)return '';
+  var parts=[];
+  if(up.length)parts.push('👍 '+up.map(function(n){return esc(n);}).join(', '));
+  if(dn.length)parts.push('👎 '+dn.map(function(n){return esc(n);}).join(', '));
+  return '<div class="wl-votenames">'+parts.join('   ')+'</div>';
+}
+function wishVoteRow(w){return '<div class="wl-voterow">'+wishVoteBtns(w)+'</div>'+wishVoteNames(w);}
 function wishRow(w,expanded){
   var canEdit=wishCanEdit(w),pend=S._delwl==='wlrm_'+w.id;
   var sub=[];
