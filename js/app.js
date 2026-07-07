@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='361';
+var BUILD='362';
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -2855,7 +2855,7 @@ function renderChat(){
       if(m.wishId){var _nw=wishById(m.wishId);if(_nw&&_nw.note)h+='<div class="msg-wishnote">'+esc(_nw.note)+'</div>';}
       h+='</div>';
       h+='<div class="msg-time">'+esc(chatTime(m))+(m.edited?' · edited':'')+'</div>';
-      if(m.wishId){var _vw=wishById(m.wishId);if(_vw)h+='<div class="wl-voterow"><span class="msg-votelbl">Vote</span>'+wishVoteBtns(_vw)+'</div>';}
+      if(m.wishId){var _vw=wishById(m.wishId);if(_vw)h+='<div class="wl-voterow"><span class="msg-votelbl">Vote</span>'+wishVoteBtns(_vw)+'</div>'+wishVoteNames(_vw);}
     }
     h+='</div></div>';   /* close msg-col, msg — avatar now bottom-aligns to the bubble */
     if(S._editMsg!==m.id) h+='<div class="rxnrow">'+chatReactions(m)+'</div>';
@@ -3654,7 +3654,18 @@ function wishVoteBtns(w){
   return '<button class="wl-vote'+(my==='up'?' on':'')+'" onclick="event.stopPropagation();wlVote(\''+w.id+'\',\'up\')">👍 '+up+'</button>'
     +'<button class="wl-vote down'+(my==='down'?' on':'')+'" onclick="event.stopPropagation();wlVote(\''+w.id+'\',\'down\')">👎 '+dn+'</button>';
 }
-function wishVoteRow(w){return '<div class="wl-voterow">'+wishVoteBtns(w)+'</div>';}
+/* who voted which way — the buttons only showed a count, so you couldn't tell
+   who left the 👍/👎. Small names line under the vote buttons. */
+function wishVoteNames(w){
+  var v=w.votes||{},up=[],dn=[];
+  Object.keys(v).forEach(function(k){var p=person(k);if(!p)return;if(v[k]==='up')up.push(p.name);else if(v[k]==='down')dn.push(p.name);});
+  if(!up.length&&!dn.length)return '';
+  var parts=[];
+  if(up.length)parts.push('👍 '+up.map(function(n){return esc(n);}).join(', '));
+  if(dn.length)parts.push('👎 '+dn.map(function(n){return esc(n);}).join(', '));
+  return '<div class="wl-votenames">'+parts.join('   ')+'</div>';
+}
+function wishVoteRow(w){return '<div class="wl-voterow">'+wishVoteBtns(w)+'</div>'+wishVoteNames(w);}
 function wishRow(w,expanded){
   var canEdit=wishCanEdit(w),pend=S._delwl==='wlrm_'+w.id;
   var sub=[];
