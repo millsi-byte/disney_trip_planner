@@ -21,6 +21,12 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     const r = {};
     window.fetch = () => Promise.reject(new Error('offline-test'));
     loadDemoData(true); S.persona = 'scott'; S.tripId = 'jul26'; S.tab = 'admin'; loadLists();
+    // This suite must pass identically whether it runs against a real -dev
+    // build (dev branch) OR the stripped production BUILD string (release
+    // branch / prod CI) — force dev-mode explicitly rather than relying on
+    // whatever BUILD happens to be baked into the file under test.
+    const realBuild = window.BUILD;
+    window.BUILD = realBuild.indexOf('-dev') >= 0 ? realBuild : (realBuild + '-dev');
     render();
 
     r.devHubShowsRow = document.getElementById('app').innerHTML.indexOf('Preview NOW card') >= 0;
@@ -64,7 +70,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
 
     // production build: the feature must be fully inert, even with a stale key
     localStorage.setItem('dtp__nowpreview', JSON.stringify({ date: day, mins: 540, sel: day }));
-    window.BUILD = '364'; // strip -dev, as the real prod build does
+    window.BUILD = realBuild.replace('-dev', ''); // strip -dev, as the real prod build does
     render();
     r.prodHidesBanner = document.getElementById('header-host').innerHTML.indexOf('Previewing NOW as') < 0;
     S.tab = 'admin'; render();
@@ -73,7 +79,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     const np = nowParts();
     r.prodIgnoresStoredOverride = !(np.date === day && np.mins === 540);
     localStorage.removeItem('dtp__nowpreview');
-    window.BUILD = '364-dev';
+    window.BUILD = realBuild;
 
     return r;
   });
