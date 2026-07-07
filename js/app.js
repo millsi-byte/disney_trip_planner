@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='366-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='367-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -2571,6 +2571,10 @@ function renderAgenda(){
   var p2=sec?(PARKS[sec.park]||null):null;
   var WDF={Mon:'Monday',Tue:'Tuesday',Wed:'Wednesday',Thu:'Thursday',Fri:'Friday',Sat:'Saturday',Sun:'Sunday'};
   var o='';
+  /* People filter sits above NOW: NOW's own "next up" content is generated
+     through the same visible(who) filter, so the control that explains why
+     an item might be missing belongs before the card it affects. */
+  o+=renderFilter();
   o+='<div id="now-card-host">'+nowCardHtml()+'</div>';   /* NOW card — pinned live day-of companion */
 
   /* Hero */
@@ -2590,8 +2594,6 @@ function renderAgenda(){
   if(d.alert) o+='<div class="hero-alert">'+IC.warn+'<div class="hero-alert-txt">'+esc(d.alert)+'</div></div>';
   o+='</div>';
 
-  /* Only the people filter sits below the hero now (the view switch is in the hero) */
-  o+=renderFilter();
 
   if(S.planView==='dayplan'){
     /* Daily Agenda: hero + strategy + the timed day plan only */
