@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='367';
+var BUILD='368';
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -881,16 +881,22 @@ function nowDateRange(a,b){
   var mb=MON[parseInt(b.slice(5,7),10)-1],db=parseInt(b.slice(8,10),10);
   return ma+' '+da+' – '+(ma===mb?db:(mb+' '+db));
 }
-/* first scheduled item across the whole trip (the flight, usually) */
-function nowFirstUp(days){
+/* first scheduled item across the whole trip (the flight, usually) — returns
+   the raw {dayIdx,item} so the caller can both format the text AND target the
+   exact item (and its actual day, which may differ from the trip's first
+   calendar day if that day has nothing scheduled yet). */
+function nowFirstUpInfo(days){
   for(var i=0;i<days.length;i++){
     var d=dayByDate(days[i].date);if(!d)continue;
     var its=dayPlanItems(d).filter(function(e){return mins(e.t)<99999;});
-    if(its.length){var e=its[0];
-      return nowIcon(e.type)+' First up: '+esc(e.x)+' — '+esc(e.t)+' ('+MON[parseInt(days[i].date.slice(5,7),10)-1]+' '+parseInt(days[i].date.slice(8,10),10)+')';
-    }
+    if(its.length)return {dayIdx:i,date:days[i].date,item:its[0]};
   }
-  return '';
+  return null;
+}
+function nowFirstUpText(info){
+  if(!info)return '';
+  var e=info.item;
+  return nowIcon(e.type)+' First up: '+esc(e.x)+' — '+esc(e.t)+' ('+MON[parseInt(info.date.slice(5,7),10)-1]+' '+parseInt(info.date.slice(8,10),10)+')';
 }
 /* the card itself — one of three states, or '' (auto-hides) */
 /* the little header chevron that collapses/expands the NOW card. Must stop
@@ -899,15 +905,27 @@ function nowFirstUp(days){
 function nowChevron(){
   return '<span class="chev now-chev'+(S.open.now?' open':'')+'" onclick="event.stopPropagation();toggleCard(\'now\')">'+IC.chev+'</span>';
 }
-/* jump into the selected day's agenda with the Daily Agenda card guaranteed
-   open, and scroll it into view — so the tap is visibly effective even when
-   that day was ALREADY selected (selDay() alone would silently no-op then). */
-function nowOpenAgenda(i){
-  S.tab='home';S.dayIdx=i;S.open=defOpen();render();
+/* the exact key dayPlanCard() stamps on each row — mirror it so we can find
+   and flash the SAME item the NOW card is pointing at */
+function nowDpKey(e){return encodeURIComponent(e.x+(e.t?' · '+e.t:''));}
+/* jump into the selected day's agenda and scroll straight to (and flash) the
+   specific item NOW is showing — matching chatJumpRef's pattern — rather than
+   just landing on the hero, which is barely a scroll away and proves nothing
+   happened. Falls back to a hero scroll only when there's no specific item
+   (e.g. "nothing else scheduled"). Always visibly effective, even when that
+   day/item combination hasn't changed (selDay() alone would silently no-op). */
+function nowOpenAgenda(i,dpkey){
+  S.tab='home';S.dayIdx=i;S.open=defOpen();S.planView='dayplan';render();
   setTimeout(function(){
-    var el=document.querySelector('.hero');
-    if(el&&el.scrollIntoView)el.scrollIntoView({behavior:'smooth',block:'start'});
-  },60);
+    var row=dpkey?document.querySelector('.t-row[data-dpkey="'+dpkey+'"]'):null;
+    if(row){
+      try{row.scrollIntoView({block:'center',behavior:'smooth'});}catch(e){row.scrollIntoView();}
+      row.classList.add('dp-flash');setTimeout(function(){row.classList.remove('dp-flash');},1800);
+    }else{
+      var el=document.querySelector('.hero');
+      if(el&&el.scrollIntoView)el.scrollIntoView({behavior:'smooth',block:'start'});
+    }
+  },80);
 }
 function nowCardHtml(){
   try{wxFetch();}catch(e){}
@@ -920,8 +938,10 @@ function nowCardHtml(){
     var first=days[0].date,last=days[days.length-1].date;
     if(np.date<first){
       var nd=Math.max(1,Math.round((Date.parse(first+'T00:00:00')-Date.parse(np.date+'T00:00:00'))/86400000));
-      var firstIdx=0;for(var fi=0;fi<days.length;fi++)if(days[fi].date===first){firstIdx=fi;break;}
-      var o='<div class="now now-pre" onclick="nowOpenAgenda('+firstIdx+')">';
+      var fuInfo=nowFirstUpInfo(days);
+      var firstIdx=fuInfo?fuInfo.dayIdx:0;   /* the day the first-up item ACTUALLY falls on, not always day 1 */
+      var firstItem=fuInfo?fuInfo.item:null;
+      var o='<div class="now now-pre" onclick="nowOpenAgenda('+firstIdx+(firstItem?',\''+nowDpKey(firstItem)+'\'':'')+')">';
       o+='<div class="now-hd"><span class="now-t">✨ The countdown is on ✨</span>'+nowChevron()+'</div>';
       if(openNow){
         o+='<div class="now-cbody">';
@@ -929,7 +949,7 @@ function nowCardHtml(){
         o+='<div class="now-num">'+nd+'</div>';
         o+='<div class="now-datesub">'+esc(nowDateRange(first,last))+(t&&t.name?' · '+esc(t.name):'')+'</div>';
         var ww=wxWeekSummary(days);if(ww)o+='<div class="now-wxweek">'+ww+'</div>';
-        var fu=nowFirstUp(days);if(fu)o+='<div class="now-first">'+fu+'</div>';
+        var fu=nowFirstUpText(fuInfo);if(fu)o+='<div class="now-first">'+fu+'</div>';
         o+='</div>';
       }else{
         o+='<div class="now-cbody now-cbody-collapsed"><div class="now-num now-num-sm">'+nd+'</div><div class="now-datesub">days until Disney World</div></div>';
@@ -952,9 +972,10 @@ function nowCardHtml(){
   /* next up + later today, plus a plain-text one-line summary for the
      collapsed state so collapsing never loses the headline info */
   var up=items.filter(function(e){return mins(e.t)>=nm;});
-  var body='',headline='';
+  var body='',headline='',nextDpKey=null;
   if(up.length){
     var e0=up[0],m0=mins(e0.t),n2=[];
+    nextDpKey=nowDpKey(e0);
     if(e0.t)n2.push(esc(e0.t));
     var cx=nowCtx(e0);if(cx)n2.push(esc(cx));
     headline=e0.x+(m0<99999?(' — in '+nowFmtCd(m0-nm)):'');
@@ -978,7 +999,7 @@ function nowCardHtml(){
     headline='Nothing else scheduled'+(h&&h.close?' — park closes '+h.close:'')+'.';
     body+='<div class="now-nextwrap"><div class="now-empty">'+esc(headline)+'</div></div>';
   }
-  var out='<div class="now" onclick="nowOpenAgenda('+todayIdx+')">';
+  var out='<div class="now" onclick="nowOpenAgenda('+todayIdx+(nextDpKey?',\''+nextDpKey+'\'':'')+')">';
   out+='<div class="now-hd"><span class="now-live"></span><span class="now-t">Now</span><span class="now-park">'+esc(pk.name)+'</span>'+nowChevron()+'</div>';
   if(sub)out+='<div class="now-sub">'+sub+'</div>';
   if(openNow){
