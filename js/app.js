@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='361-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='362-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -2899,6 +2899,14 @@ function chatReactions(m){
     }
   }
   o+='</div>';
+  /* who reacted — the hover title only works on desktop, so on a phone there
+     was no way to tell who left a reaction. Show the names as a small line. */
+  if(keys.length){
+    var cap=keys.map(function(e){
+      return e+' '+rx[e].map(function(id){return person(id)?esc(person(id).name):'?';}).join(', ');
+    }).join('   ');
+    o+='<div class="rxn-names">'+cap+'</div>';
+  }
   if(S._reactFor===m.id){
     o+='<div class="rxn-bar">';
     for(var k=0;k<CHAT_RXNS.length;k++)o+='<button onclick="chatReact(\''+m.id+'\',\''+CHAT_RXNS[k]+'\')">'+CHAT_RXNS[k]+'</button>';
