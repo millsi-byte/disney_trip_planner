@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='362-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='363-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -715,6 +715,121 @@ function parkHoursFor(ds){return PARKHOURS.filter(function(h){return h.trip===S.
 function hoursFor(park,ds){var l=parkHoursFor(ds);for(var i=0;i<l.length;i++)if(l[i].park===park)return l[i];return null;}
 var TIMING={morning:'Morning',day:'Day',evening:'Evening',late:'Late'};
 function timingLbl(t){return TIMING[t]||'Day';}
+
+/* ── NOW card — a live day-of companion pinned to the top of the Agenda ──────
+   Built entirely from existing data (dayPlanItems / hoursFor / tripDays) + the
+   clock. Three states: today-is-a-trip-day (live "what's next" + live
+   countdown), before-the-trip (hype countdown), after/none (renders nothing).
+   Weather is woven into the info line via Open-Meteo (cached in dtp__wx, fails
+   invisibly) — it never blocks or breaks the card. */
+function nowParts(){
+  if(window.__nowOverride)return window.__nowOverride;   /* CI/test seam */
+  var n=new Date();
+  return {date:n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0'),mins:n.getHours()*60+n.getMinutes()};
+}
+/* minutes-from-now → "1h 20m" / "45m" / "now" */
+function nowCountdown(delta){
+  if(delta<=0)return 'now';
+  var h=Math.floor(delta/60),m=delta%60;
+  return h?(h+'h'+(m?' '+m+'m':'')):(m+'m');
+}
+/* Open-Meteo weathercode → emoji (the compact line shows emoji + temps only) */
+var WX_CODE={0:'☀️',1:'🌤',2:'⛅',3:'☁️',45:'🌫',48:'🌫',51:'🌦',53:'🌦',55:'🌦',56:'🌧',57:'🌧',61:'🌧',63:'🌧',65:'🌧',66:'🌧',67:'🌧',71:'🌨',73:'🌨',75:'🌨',77:'🌨',80:'🌦',81:'🌧',82:'⛈',85:'🌨',86:'🌨',95:'⛈',96:'⛈',99:'⛈'};
+function wxEmoji(c){return WX_CODE[c]||'';}
+/* Park coordinates. WDW parks share one point; Disneyland is a fallback if a
+   trip is ever tagged for it. Defaults to WDW — this app is WDW-first. */
+function wxCoords(){
+  var t=trip(),s=((t&&(t.sub||t.name))||'').toLowerCase();
+  if(s.indexOf('land')>=0||s.indexOf('california')>=0||s.indexOf('anaheim')>=0)return {lat:33.808,lon:-117.919,tz:'America/Los_Angeles',k:'dlr'};
+  return {lat:28.385,lon:-81.563,tz:'America/New_York',k:'wdw'};
+}
+function wxData(){try{return JSON.parse(localStorage.getItem('dtp__wx')||'null');}catch(e){return null;}}
+/* fetch once per day per resort; guarded so the 30s refresh never re-hits it.
+   dtp__wx is a double-underscore key → never syncs (see cloud.js syncable). */
+function wxFetch(){
+  try{
+    if(typeof fetch!=='function')return;
+    var np=nowParts(),c=wxCoords(),cur=wxData();
+    if(cur&&cur.day===np.date&&cur.k===c.k)return;   /* already fresh today */
+    if(window.__wxInflight===np.date+c.k)return;
+    window.__wxInflight=np.date+c.k;
+    var url='https://api.open-meteo.com/v1/forecast?latitude='+c.lat+'&longitude='+c.lon
+      +'&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max'
+      +'&temperature_unit=fahrenheit&timezone='+encodeURIComponent(c.tz)+'&forecast_days=16';
+    fetch(url).then(function(r){return r.json();}).then(function(j){
+      window.__wxInflight=null;
+      if(!j||!j.daily||!j.daily.time)return;
+      var d=j.daily,by={};
+      for(var i=0;i<d.time.length;i++)by[d.time[i]]={c:d.weather_code[i],hi:Math.round(d.temperature_2m_max[i]),lo:Math.round(d.temperature_2m_min[i]),p:d.precipitation_probability_max[i]};
+      try{localStorage.setItem('dtp__wx',JSON.stringify({day:np.date,k:c.k,by:by}));}catch(e){}
+      try{refreshNowCard();}catch(e){}
+    }).catch(function(){window.__wxInflight=null;});
+  }catch(e){}
+}
+/* compact weather segment for a date, or '' when nothing is cached */
+function wxSeg(date){
+  var w=wxData();if(!w||!w.by||!w.by[date])return '';
+  var d=w.by[date],em=wxEmoji(d.c),s=(em?em+' ':'')+d.hi+'°/'+d.lo+'°';
+  if(d.p!=null&&d.p>=20)s+=' · 🌧 '+d.p+'%';
+  return s;
+}
+/* the card itself — one of three states, or '' (auto-hides) */
+function nowCardHtml(){
+  try{wxFetch();}catch(e){}
+  var np=nowParts(),days=tripDays();
+  if(!days.length)return '';
+  var t=trip(),today=dayByDate(np.date);
+  if(!today){
+    /* before the trip → hype countdown to the first day */
+    var first=days[0].date;
+    if(np.date<first){
+      var nd=Math.max(1,Math.round((Date.parse(first+'T00:00:00')-Date.parse(np.date+'T00:00:00'))/86400000));
+      var o='<div class="now-card now-pre" onclick="go(\'home\')">';
+      o+='<div class="now-hd">🎉 '+nd+' day'+(nd===1?'':'s')+' until '+esc((t&&t.name)||'your trip')+'!</div>';
+      var pw=wxSeg(first);
+      if(pw)o+='<div class="now-sub">First day · '+esc(pw)+'</div>';
+      return o+'</div>';
+    }
+    return '';   /* after the trip / a non-trip gap day */
+  }
+  /* today IS a trip day → live agenda */
+  var pkKey=dayPrimaryPark(np.date),pk=pkOf(np.date),h=pkKey?hoursFor(pkKey,np.date):null;
+  var nm=np.mins,items=dayPlanItems(today);
+  var todayIdx=0;for(var i=0;i<days.length;i++)if(days[i].date===np.date){todayIdx=i;break;}
+  var info=[];
+  if(h&&(h.open||h.close))info.push('Open '+(h.open||'—')+' – '+(h.close||'—'));
+  if(h&&h.crowd!=null&&h.crowd!=='')info.push('Crowd '+h.crowd+'/10');
+  var ws=wxSeg(np.date);if(ws)info.push(ws);   /* weather AFTER hours + crowd */
+  var up=items.filter(function(e){return mins(e.t)>=nm;});
+  var body='';
+  if(up.length){
+    var e0=up[0],m0=mins(e0.t),cd='';
+    if(m0<99999){var dm=m0-nm;cd=(dm<=0)?' · now':(' · in '+nowCountdown(dm));}
+    body+='<div class="now-next"><div class="now-lbl">Next</div>';
+    body+='<div class="now-main">'+esc(e0.x)+'</div>';
+    body+='<div class="now-meta">'+(e0.t?esc(e0.t):'')+cd+'</div></div>';
+    for(var k=1;k<up.length&&k<4;k++){var ek=up[k],mk=mins(ek.t);
+      body+='<div class="now-row"><span class="now-rt">'+(mk<99999?esc(ek.t):'')+'</span><span class="now-rx">'+esc(ek.x)+'</span></div>';
+    }
+  }else if(h&&h.open&&nm<mins(h.open)){
+    body+='<div class="now-next"><div class="now-main">Park opens '+esc(h.open)+'</div><div class="now-meta">in '+nowCountdown(mins(h.open)-nm)+'</div></div>';
+  }else{
+    body+='<div class="now-empty">Nothing else scheduled'+(h&&h.close?' — park closes '+esc(h.close):'')+'.</div>';
+  }
+  var out='<div class="now-card" onclick="selDay('+todayIdx+')">';
+  out+='<div class="now-hd"><span class="now-dot" style="background:'+pk.color+'"></span>'+esc(pk.name)+' · Today</div>';
+  if(info.length)out+='<div class="now-sub">'+esc(info.join(' · '))+'</div>';
+  out+=body;
+  out+='<div class="now-open">Open today’s agenda ›</div>';
+  return out+'</div>';
+}
+/* targeted refresh so the ticking countdown never disrupts scroll (mirrors
+   refreshLists etc.) — only ever rewrites #now-card-host on the home tab */
+function refreshNowCard(){
+  if(S.tab!=='home')return;
+  var el=document.getElementById('now-card-host');
+  if(el)el.innerHTML=nowCardHtml();
+}
 
 /* person-filter visibility.
    A non-empty S.filter (specific people picked) always wins; otherwise the
@@ -2289,6 +2404,7 @@ function renderAgenda(){
   var p2=sec?(PARKS[sec.park]||null):null;
   var WDF={Mon:'Monday',Tue:'Tuesday',Wed:'Wednesday',Thu:'Thursday',Fri:'Friday',Sat:'Saturday',Sun:'Sunday'};
   var o='';
+  o+='<div id="now-card-host">'+nowCardHtml()+'</div>';   /* NOW card — pinned live day-of companion */
 
   /* Hero */
   o+='<div class="hero fadein">';
@@ -8061,6 +8177,7 @@ try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().
 try{
   setTimeout(function(){try{autoBackup();}catch(e){}try{runDailyArchive();}catch(e){}},20000);
   setInterval(function(){try{autoBackup();}catch(e){}try{runDailyArchive();}catch(e){}},60000);
+  setInterval(function(){try{refreshNowCard();}catch(e){}},30000);   /* NOW card live countdown */
 }catch(e){}
 /* an invite link (#join=CODE&as=PERSON) — stash it so onCloudSynced can act
    on it after sign-in, then strip it from the URL */
