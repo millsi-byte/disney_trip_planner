@@ -1,9 +1,10 @@
 /* Build 363: NOW card — live day-of companion at the top of the Agenda.
    Drives the REAL app with a pinned "now" via window.__nowOverride over the
-   jul26 demo trip (days 2026-07-14 … 2026-07-19). Verifies the three states
-   (live park-day / pre-trip countdown / after-trip empty), the live countdown,
-   graceful weather-fail (fetch stubbed to reject → segment simply omitted), and
-   that refreshNowCard() touches only #now-card-host. */
+   jul26 demo trip (days 2026-07-14 … 2026-07-19). Verifies the approved mockup
+   structure for both states (live park-day card with LIVE header, weather AFTER
+   hours+crowd, Next-up + countdown pill, Later-today, tap footer; pre-trip
+   big-number countdown with trip-week weather + First-up), the countdown,
+   graceful weather-fail, and that refreshNowCard() touches only #now-card-host. */
 const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
 
 (async () => {
@@ -16,13 +17,11 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
 
   const out = await page.evaluate(async () => {
     const r = {};
-    // weather must fail invisibly: force fetch to reject so no cache is written
-    window.fetch = () => Promise.reject(new Error('offline-test'));
+    window.fetch = () => Promise.reject(new Error('offline-test')); // weather must fail invisibly
 
     loadDemoData(true);
     S.persona = 'scott'; S.tripId = 'jul26'; S.tab = 'home'; loadLists();
 
-    // clean the 15th so we control exactly what "today" contains
     const DAY = '2026-07-15';
     DINING.length = 0; LLS.length = 0; SHOWS.length = 0; PARADES.length = 0;
     FLIGHTS.length = 0; RESORTS.length = 0; REBOOKS.length = 0;
@@ -31,14 +30,16 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     DINING.push({ id: 'ztd', trip: 'jul26', day: DAY, meal: 'Lunch', name: 'ZZNOWDINE', time: '12:30 PM', loc: 'in', park: 'ep', status: 'reserved', who: 'all' });
     LLS.push({ id: 'ztl', trip: 'jul26', day: DAY, ride: 'ZZNOWRIDE', tier: 'sp', status: 'booked', bookedTime: '10:00 AM', winStart: '10:00 AM', winEnd: '11:00 AM', who: 'all' });
 
-    // ── State 1a: park day, 09:00 → next is the 10:00 LL, ~1h out ──
+    // ── State 1a: park day, 09:00 → live card, next is the 10:00 LL, 1h out ──
     window.__nowOverride = { date: DAY, mins: 9 * 60 };
     let h = nowCardHtml();
-    r.s1_hasCard = h.indexOf('now-card') >= 0;
-    r.s1_nextIsRide = h.indexOf('ZZNOWRIDE') >= 0 && h.indexOf('Next') >= 0;
-    r.s1_countdown1h = h.indexOf('in 1h') >= 0;
-    r.s1_laterHasDining = h.indexOf('ZZNOWDINE') >= 0;
-    r.s1_weatherAbsentOffline = h.indexOf('°/') < 0;   // fetch rejected → omitted
+    r.s1_liveHeader = h.indexOf('now-live') >= 0 && h.indexOf('>Now<') >= 0;
+    r.s1_parkName = h.indexOf('now-park') >= 0 && h.indexOf('EPCOT') >= 0;
+    r.s1_nextUp = h.indexOf('Next up') >= 0 && h.indexOf('ZZNOWRIDE') >= 0;
+    r.s1_countdownPill = h.indexOf('now-cd2') >= 0 && h.indexOf('1h 0m') >= 0 && h.indexOf('until') >= 0;
+    r.s1_laterHasDining = h.indexOf('now-later') >= 0 && h.indexOf('ZZNOWDINE') >= 0;
+    r.s1_tapFooter = h.indexOf('now-tap') >= 0 && h.indexOf('Open today') >= 0;
+    r.s1_weatherAbsentOffline = h.indexOf('°/') < 0; // fetch rejected → segment omitted
 
     // ── State 1b: 13:00 → both items passed ──
     window.__nowOverride = { date: DAY, mins: 13 * 60 };
@@ -46,15 +47,17 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.s1b_nothingElse = h.indexOf('Nothing else scheduled') >= 0;
     r.s1b_rideNotNext = h.indexOf('ZZNOWRIDE') < 0;
 
-    // ── State 1c: 06:00, before any item → LL is still next (not before-open) ──
+    // ── State 1c: 06:00, before any item → LL still next ──
     window.__nowOverride = { date: DAY, mins: 6 * 60 };
-    h = nowCardHtml();
-    r.s1c_nextStillRide = h.indexOf('ZZNOWRIDE') >= 0;
+    r.s1c_nextStillRide = nowCardHtml().indexOf('ZZNOWRIDE') >= 0;
 
-    // ── State 2: before the trip → hype countdown ──
+    // ── State 2: before the trip → big-number countdown ──
     window.__nowOverride = { date: '2026-07-01', mins: 10 * 60 };
     h = nowCardHtml();
-    r.s2_countdown = h.indexOf('13 days until') >= 0 && h.indexOf('July 2026') >= 0;
+    r.s2_bigNumber = h.indexOf('now-num') >= 0 && h.indexOf('>13<') >= 0;
+    r.s2_daysUntil = h.indexOf('days until') >= 0;
+    r.s2_dateRange = h.indexOf('Jul 14') >= 0 && h.indexOf('July 2026') >= 0;
+    r.s2_firstUp = h.indexOf('now-first') >= 0; // first-up line present (07-14 has a dinner)
 
     // ── State 3: after the trip → empty ──
     window.__nowOverride = { date: '2026-08-01', mins: 10 * 60 };

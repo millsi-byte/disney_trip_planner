@@ -766,12 +766,54 @@ function wxFetch(){
     }).catch(function(){window.__wxInflight=null;});
   }catch(e){}
 }
-/* compact weather segment for a date, or '' when nothing is cached */
-function wxSeg(date){
-  var w=wxData();if(!w||!w.by||!w.by[date])return '';
-  var d=w.by[date],em=wxEmoji(d.c),s=(em?em+' ':'')+d.hi+'°/'+d.lo+'°';
-  if(d.p!=null&&d.p>=20)s+=' · 🌧 '+d.p+'%';
-  return s;
+/* weather tag segments for a date (temp + rain), styled; [] when uncached.
+   Rendered AFTER hours + crowd on the live card's sub-line. */
+function wxTags(date){
+  var w=wxData();if(!w||!w.by||!w.by[date])return [];
+  var d=w.by[date],em=wxEmoji(d.c),out=[];
+  out.push('<span class="now-wtag now-wx">'+(em?em+' ':'')+d.hi+'°/'+d.lo+'°</span>');
+  if(d.p!=null&&d.p>=20)out.push('<span class="now-wtag now-rain">🌧 '+d.p+'%</span>');
+  return out;
+}
+/* one-line trip-week weather summary for the pre-trip card, or '' */
+function wxWeekSummary(days){
+  var w=wxData();if(!w||!w.by)return '';
+  var his=[],rainDays=[],em='';
+  for(var i=0;i<days.length;i++){var d=w.by[days[i].date];if(!d)continue;
+    if(d.hi!=null)his.push(d.hi);
+    if(!em)em=wxEmoji(d.c);
+    if(d.p!=null&&d.p>=40)rainDays.push(days[i].dl||'');
+  }
+  if(!his.length)return '';
+  var hiMax=Math.max.apply(null,his),hiMin=Math.min.apply(null,his);
+  var s=(em||'🌤')+' Trip week: highs '+(hiMin===hiMax?('~'+hiMax+'°'):(hiMin+'–'+hiMax+'°'));
+  if(rainDays.length)s+=' · showers '+rainDays.filter(Boolean).join(', ');
+  return esc(s);
+}
+/* type → emoji + human context for a plan item */
+function nowIcon(t){return ({dining:'🍽',ll:'⚡',show:'🎭',parade:'🎭',flight:'✈️',resort:'🏨',rebook:'🔁',manual:'📍'})[t]||'•';}
+function nowCtx(e){
+  if(e.park&&PARKS[e.park])return PARKS[e.park].name;
+  return ({dining:'Dining',ll:'Lightning Lane',show:'Show',parade:'Parade',flight:'Flight',resort:'Resort',rebook:'Re-book',manual:'Plans'})[e.type]||'';
+}
+/* countdown formatter for the "until" pill: "1h 20m" / "45 min" / "now" */
+function nowFmtCd(m){if(m<=0)return 'now';if(m>=60){var h=Math.floor(m/60);return h+'h '+(m%60)+'m';}return m+' min';}
+/* "Jul 14 – 20" across the trip's first/last day */
+function nowDateRange(a,b){
+  var ma=MON[parseInt(a.slice(5,7),10)-1],da=parseInt(a.slice(8,10),10);
+  var mb=MON[parseInt(b.slice(5,7),10)-1],db=parseInt(b.slice(8,10),10);
+  return ma+' '+da+' – '+(ma===mb?db:(mb+' '+db));
+}
+/* first scheduled item across the whole trip (the flight, usually) */
+function nowFirstUp(days){
+  for(var i=0;i<days.length;i++){
+    var d=dayByDate(days[i].date);if(!d)continue;
+    var its=dayPlanItems(d).filter(function(e){return mins(e.t)<99999;});
+    if(its.length){var e=its[0];
+      return nowIcon(e.type)+' First up: '+esc(e.x)+' — '+esc(e.t)+' ('+MON[parseInt(days[i].date.slice(5,7),10)-1]+' '+parseInt(days[i].date.slice(8,10),10)+')';
+    }
+  }
+  return '';
 }
 /* the card itself — one of three states, or '' (auto-hides) */
 function nowCardHtml(){
@@ -780,47 +822,63 @@ function nowCardHtml(){
   if(!days.length)return '';
   var t=trip(),today=dayByDate(np.date);
   if(!today){
-    /* before the trip → hype countdown to the first day */
-    var first=days[0].date;
+    /* before the trip → big-number hype countdown */
+    var first=days[0].date,last=days[days.length-1].date;
     if(np.date<first){
       var nd=Math.max(1,Math.round((Date.parse(first+'T00:00:00')-Date.parse(np.date+'T00:00:00'))/86400000));
-      var o='<div class="now-card now-pre" onclick="go(\'home\')">';
-      o+='<div class="now-hd">🎉 '+nd+' day'+(nd===1?'':'s')+' until '+esc((t&&t.name)||'your trip')+'!</div>';
-      var pw=wxSeg(first);
-      if(pw)o+='<div class="now-sub">First day · '+esc(pw)+'</div>';
-      return o+'</div>';
+      var o='<div class="now now-pre" onclick="go(\'home\')">';
+      o+='<div class="now-hd"><span class="now-t">✨ The countdown is on ✨</span></div>';
+      o+='<div class="now-cbody">';
+      o+='<div class="now-big">days until Disney World</div>';
+      o+='<div class="now-num">'+nd+'</div>';
+      o+='<div class="now-datesub">'+esc(nowDateRange(first,last))+(t&&t.name?' · '+esc(t.name):'')+'</div>';
+      var ww=wxWeekSummary(days);if(ww)o+='<div class="now-wxweek">'+ww+'</div>';
+      var fu=nowFirstUp(days);if(fu)o+='<div class="now-first">'+fu+'</div>';
+      o+='</div></div>';
+      return o;
     }
     return '';   /* after the trip / a non-trip gap day */
   }
-  /* today IS a trip day → live agenda */
+  /* today IS a trip day → live agenda card */
   var pkKey=dayPrimaryPark(np.date),pk=pkOf(np.date),h=pkKey?hoursFor(pkKey,np.date):null;
   var nm=np.mins,items=dayPlanItems(today);
   var todayIdx=0;for(var i=0;i<days.length;i++)if(days[i].date===np.date){todayIdx=i;break;}
-  var info=[];
-  if(h&&(h.open||h.close))info.push('Open '+(h.open||'—')+' – '+(h.close||'—'));
-  if(h&&h.crowd!=null&&h.crowd!=='')info.push('Crowd '+h.crowd+'/10');
-  var ws=wxSeg(np.date);if(ws)info.push(ws);   /* weather AFTER hours + crowd */
+  /* sub-line: hours · crowd · weather (weather AFTER hours + crowd) */
+  var segs=[];
+  if(h&&(h.open||h.close))segs.push('<span>Open '+esc(h.open||'—')+' – '+esc(h.close||'—')+'</span>');
+  if(h&&h.crowd!=null&&h.crowd!=='')segs.push('<span>Crowd '+h.crowd+'/10</span>');
+  wxTags(np.date).forEach(function(x){segs.push(x);});
+  var sub=segs.join('<span class="now-sep">·</span>');
+  /* next up + later today */
   var up=items.filter(function(e){return mins(e.t)>=nm;});
   var body='';
   if(up.length){
-    var e0=up[0],m0=mins(e0.t),cd='';
-    if(m0<99999){var dm=m0-nm;cd=(dm<=0)?' · now':(' · in '+nowCountdown(dm));}
-    body+='<div class="now-next"><div class="now-lbl">Next</div>';
-    body+='<div class="now-main">'+esc(e0.x)+'</div>';
-    body+='<div class="now-meta">'+(e0.t?esc(e0.t):'')+cd+'</div></div>';
-    for(var k=1;k<up.length&&k<4;k++){var ek=up[k],mk=mins(ek.t);
-      body+='<div class="now-row"><span class="now-rt">'+(mk<99999?esc(ek.t):'')+'</span><span class="now-rx">'+esc(ek.x)+'</span></div>';
+    var e0=up[0],m0=mins(e0.t),n2=[];
+    if(e0.t)n2.push(esc(e0.t));
+    var cx=nowCtx(e0);if(cx)n2.push(esc(cx));
+    body+='<div class="now-nextwrap"><div class="now-nlabel">Next up</div>';
+    body+='<div class="now-next"><span class="now-ico">'+nowIcon(e0.type)+'</span>';
+    body+='<div class="now-body"><div class="now-n1">'+esc(e0.x)+'</div><div class="now-n2">'+n2.join(' · ')+'</div></div>';
+    if(m0<99999)body+='<div class="now-cd2"><div class="now-cdn">'+nowFmtCd(m0-nm)+'</div><div class="now-cdl">until</div></div>';
+    body+='</div>';
+    if(up.length>1){
+      body+='<div class="now-later">';
+      for(var k=1;k<up.length&&k<4;k++){var ek=up[k],mk=mins(ek.t);
+        body+='<div class="now-lrow"><span class="now-li">'+nowIcon(ek.type)+'</span><span class="now-lx">'+esc(ek.x)+'</span><span class="now-lt">'+(mk<99999?esc(ek.t):'')+'</span></div>';
+      }
+      body+='</div>';
     }
+    body+='</div>';
   }else if(h&&h.open&&nm<mins(h.open)){
-    body+='<div class="now-next"><div class="now-main">Park opens '+esc(h.open)+'</div><div class="now-meta">in '+nowCountdown(mins(h.open)-nm)+'</div></div>';
+    body+='<div class="now-nextwrap"><div class="now-nlabel">Next up</div><div class="now-next"><span class="now-ico">🎢</span><div class="now-body"><div class="now-n1">Park opens '+esc(h.open)+'</div><div class="now-n2">Get ready</div></div><div class="now-cd2"><div class="now-cdn">'+nowFmtCd(mins(h.open)-nm)+'</div><div class="now-cdl">until</div></div></div></div>';
   }else{
-    body+='<div class="now-empty">Nothing else scheduled'+(h&&h.close?' — park closes '+esc(h.close):'')+'.</div>';
+    body+='<div class="now-nextwrap"><div class="now-empty">Nothing else scheduled'+(h&&h.close?' — park closes '+esc(h.close):'')+'.</div></div>';
   }
-  var out='<div class="now-card" onclick="selDay('+todayIdx+')">';
-  out+='<div class="now-hd"><span class="now-dot" style="background:'+pk.color+'"></span>'+esc(pk.name)+' · Today</div>';
-  if(info.length)out+='<div class="now-sub">'+esc(info.join(' · '))+'</div>';
+  var out='<div class="now" onclick="selDay('+todayIdx+')">';
+  out+='<div class="now-hd"><span class="now-live"></span><span class="now-t">Now</span><span class="now-park">'+esc(pk.name)+'</span></div>';
+  if(sub)out+='<div class="now-sub">'+sub+'</div>';
   out+=body;
-  out+='<div class="now-open">Open today’s agenda ›</div>';
+  out+='<div class="now-tap"><span>Open today’s agenda</span><span>→</span></div>';
   return out+'</div>';
 }
 /* targeted refresh so the ticking countdown never disrupts scroll (mirrors
@@ -830,6 +888,7 @@ function refreshNowCard(){
   var el=document.getElementById('now-card-host');
   if(el)el.innerHTML=nowCardHtml();
 }
+
 
 /* person-filter visibility.
    A non-empty S.filter (specific people picked) always wins; otherwise the
