@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='368';
+var BUILD='369';
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -2871,7 +2871,7 @@ function llCard(lls,d,pk){
       o+='<div class="ll-top"><div class="ll-ride">'+esc(l.ride)+' <span class="ll-tag '+tagCls(l.tier)+'">'+tagShort(l.tier)+'</span></div>';
       o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0" onclick="openScreen({type:\'addll\',edit:\''+l.id+'\',day:\''+l.day+'\'})">'+IC.pencil+'</button></div>';
       if(l.status==='booked'){
-        o+='<div class="ll-win booked">'+IC.check+' Booked '+esc(l.bookedTime)+'</div>';
+        o+='<div class="ll-win booked">'+IC.check+' Booked'+((l.rideTime||l.winStart)?' '+esc(l.rideTime||l.winStart):'')+'</div>';
         if(l.conf) o+='<div class="ll-conf">Confirmation '+esc(l.conf)+'</div>';
       }else{
         var _wt=llWindowText(l);if(_wt)o+='<div class="ll-win">Ride window: '+esc(_wt)+'</div>';
@@ -4429,7 +4429,6 @@ function scrLLBook(){
   body+='<div style="display:flex;align-items:center;gap:10px"><div class="ll-ride" style="font-size:20px">'+esc(l.ride)+'</div><span class="ll-tag '+tagCls(l.tier)+'">'+tagLbl(l.tier)+'</span></div>';
   body+='<div class="ll-win" style="margin-top:8px">Ride window: '+esc(llWindowText(l))+(l.rideTime?' · Ride at '+esc(l.rideTime):'')+'</div></div>';
   body+='<div class="field"><label class="field-label">Status</label><div class="seg"><button class="seg-btn" onclick="toast(\'Already planning\')">Planning</button><button class="seg-btn on book">Booked</button></div></div>';
-  body+='<div class="field"><label class="field-label">Confirmed return time</label>'+timeField('llb-time','')+'</div>';
   body+='<div class="field"><label class="field-label">Confirmation #</label><input class="field-input" id="llb-conf" placeholder="MP-00000"></div>';
   body+=whoSelectField(l.who);
   body+=notifyField('Lightning Lane');
@@ -4438,9 +4437,8 @@ function scrLLBook(){
 }
 function saveLLBook(){
   var l=LLS.filter(function(x){return x.id===S.screen.id;})[0];
-  var tm=document.getElementById('llb-time'),cf=document.getElementById('llb-conf');
+  var cf=document.getElementById('llb-conf');
   l.status='booked';
-  l.bookedTime=(tm&&tm.value.trim())||l.rideTime||l.winStart||(l.window?l.window.replace(/[~]/g,'').split('–')[0].trim():'');
   l.conf=(cf&&cf.value.trim())||'MP-'+Math.floor(10000+Math.random()*89999);
   var oldWho=l.who;
   if(S._who)l.who=whoVal();
@@ -4468,7 +4466,6 @@ function parseWindow(w){
    confirmed return time, then the window start (legacy window as last resort) */
 function llSlotTime(l){
   if(l.rideTime)return l.rideTime;
-  if(l.status==='booked'&&l.bookedTime)return l.bookedTime;
   if(l.winStart)return l.winStart;
   return l.window||'';
 }
@@ -4490,7 +4487,6 @@ function scrAddLL(){
   body+='<div class="field" style="margin:0"><label class="field-label" style="font-size:11px">To</label>'+timeField('ll-wend',win.end)+'</div></div></div>';
   body+='<div class="field"><label class="field-label">Planned time to ride <span class="opt">(slots the ride on the Day Plan)</span></label>'+timeField('ll-rtime',edit&&edit.rideTime?edit.rideTime:'')+'</div>';
   if(stt==='booked'){
-    body+='<div class="field"><label class="field-label">Confirmed return time</label>'+timeField('ll-btime',edit&&edit.bookedTime?edit.bookedTime:'')+'</div>';
     body+='<div class="field"><label class="field-label">Confirmation #</label><input class="field-input" id="ll-conf" placeholder="MP-44190" value="'+(edit&&edit.conf?esc(edit.conf):'')+'"></div>';
   }
   body+=whoSelectField(pre);
@@ -4507,7 +4503,7 @@ function saveLL(){
   if(!ride){toast('Add a ride name');return;}
   var dy=val('ll-day')||S.screen.day;
   var oldWho=edit?edit.who:[];
-  var rec=edit||{id:'ll'+Date.now(),trip:S.tripId,by:S.persona,bookedTime:'',conf:'',bookDate:''};
+  var rec=edit||{id:'ll'+Date.now(),trip:S.tripId,by:S.persona,conf:'',bookDate:''};
   rec.day=dy;rec.park=dayPrimaryPark(dy);rec.ride=ride;
   rec.tier=S._formTier||'sp';rec.who=whoVal();
   var ws=val('ll-wstart'),we=val('ll-wend');
@@ -4517,7 +4513,6 @@ function saveLL(){
   rec.rideTime=val('ll-rtime')||'';
   rec.status=S._formStatus.ll||'planning';
   if(rec.status==='booked'){
-    rec.bookedTime=val('ll-btime')||rec.rideTime||rec.winStart||(rec.window?rec.window.replace(/[~]/g,'').split('–')[0].trim():'');
     rec.conf=val('ll-conf')||rec.conf||'MP-'+Math.floor(10000+Math.random()*89999);
   }
   if(!edit)LLS.push(rec);
@@ -4552,7 +4547,7 @@ function importPromptText(){
 '',
 '• resort:    {"type":"resort","name":"","room":"","checkin":"","checkout":"","inTime":"4:00 PM","outTime":"11:00 AM","conf":"","status":"booked"}',
 '• dining:    {"type":"dining","name":"","day":"","meal":"Breakfast|Lunch|Dinner|Drinks","time":"7:40 PM","park":"mk|ep|hs|ak (omit if not in a park)","loc":"in|off","conf":"","status":"reserved|want|planned"}',
-'• lightning: {"type":"lightning","ride":"","day":"","park":"mk|ep|hs|ak","tier":"sp|mp1|mp2","status":"booked|planning","winStart":"10:00 AM","winEnd":"11:00 AM","rideTime":"10:15 AM","bookedTime":"9:45 AM","conf":""}',
+'• lightning: {"type":"lightning","ride":"","day":"","park":"mk|ep|hs|ak","tier":"sp|mp1|mp2","status":"booked|planning","winStart":"10:00 AM","winEnd":"11:00 AM","rideTime":"10:15 AM","conf":""}',
 '   (tier: sp = Single/Individual Lightning Lane, mp1 = Multi Pass tier 1, mp2 = Multi Pass tier 2; window = the ride-time window if given)',
 '• rebook:    {"type":"rebook","day":"","afterRide":"Jungle Cruise","text":"Buzz Lightyear","anchor":"after|before","time":"2:00 PM"}',
 '   (a ROLLING re-book: after you tap into the Multi Pass ride named in afterRide, book what is in text. afterRide MUST exactly match the "ride" of a lightning item above on the SAME day so they link up. List them in tap order. Omit afterRide for a standalone reminder. This is the "in-park rolling re-books — book each right after you tap the prior one" pattern.)',
@@ -4571,7 +4566,7 @@ function importPromptText(){
 '   (a packing-list item, grouped under section. qty optional. needBuy:true flags it as “need to get”.)',
 '',
 'Status — default to "not booked yet" unless I clearly have it confirmed:',
-'• Lightning Lane: "planning" until actually booked; "booked" only with a real return time/confirmation (omit bookedTime and conf until then).',
+'• Lightning Lane: "planning" until actually booked; "booked" only with a real return time/confirmation (omit conf until then).',
 '• Flight: "planning" until ticketed; "booked" when confirmed.',
 '• Resort / Park reservation: "booked" if there is a confirmation #/it is made; otherwise "planning".',
 '• Dining: "reserved" ONLY with a confirmation #; "planned" = intend to book; "want" = wishlist.',
@@ -4653,7 +4648,7 @@ function buildImportItem(it){
   if(t==='lightning'||t==='ll'||t==='lightninglane'){
     var tier=({sp:'sp',mp1:'mp1',mp2:'mp2'})[(it.tier||'').toLowerCase()]||'mp1';
     return finalizeImport('Lightning Lane',base({ride:it.ride?String(it.ride):'',day:impDate(it.day),park:impPark(it.park),tier:tier,
-      status:it.status==='booked'?'booked':'planning',winStart:it.winStart||'',winEnd:it.winEnd||'',rideTime:it.rideTime||'',window:it.window||((it.winStart||it.winEnd)?((it.winStart||'?')+'–'+(it.winEnd||'?')):''),bookedTime:it.bookedTime||'',conf:it.conf||'',bookDate:it.bookDate||''}));
+      status:it.status==='booked'?'booked':'planning',winStart:it.winStart||'',winEnd:it.winEnd||'',rideTime:it.rideTime||'',window:it.window||((it.winStart||it.winEnd)?((it.winStart||'?')+'–'+(it.winEnd||'?')):''),conf:it.conf||'',bookDate:it.bookDate||''}));
   }
   if(t==='parkres'||t==='park reservation'){
     return finalizeImport('Park reservation',base({day:impDate(it.day),park:impPark(it.park),status:it.status||'booked'}));
@@ -4819,7 +4814,7 @@ function importReset(){S._importItems=null;S._importEdit=null;S.importStep=1;ren
 
 /* ── CSV template (download → fill in Excel/Sheets → upload) ──
    Reuses the same builder + review screen as the JSON path. */
-var IMPORT_CSV_COLS=['type','name','room','checkin','checkout','inTime','outTime','day','meal','time','park','loc','ride','tier','bookedTime','window','winStart','winEnd','rideTime','afterRide','text','label','airline','num','depApt','depCity','depTime','depDate','arrApt','arrCity','arrTime','arrDate','open','close','early','late','crowd','headline','blurb','strategy','tags','alert','when','section','item','needBuy','conf','status'];
+var IMPORT_CSV_COLS=['type','name','room','checkin','checkout','inTime','outTime','day','meal','time','park','loc','ride','tier','window','winStart','winEnd','rideTime','afterRide','text','label','airline','num','depApt','depCity','depTime','depDate','arrApt','arrCity','arrTime','arrDate','open','close','early','late','crowd','headline','blurb','strategy','tags','alert','when','section','item','needBuy','conf','status'];
 function csvEsc(v){v=(v==null?'':String(v));return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}
 function importCsvTemplate(){
   var rows=[IMPORT_CSV_COLS];
@@ -5599,7 +5594,7 @@ function importCsvFile(ev){
 var IMPORT_FIELDS={
   Resort:[['name','Name','text'],['room','Room','text'],['checkin','Check-in','date'],['checkout','Check-out','date'],['conf','Confirmation #','text'],['status','Status',['booked','planning']]],
   Dining:[['name','Name','text'],['day','Date','date'],['time','Time','text'],['meal','Meal',['Breakfast','Lunch','Dinner','Drinks','Snack']],['loc','Location',['in','off']],['conf','Confirmation #','text'],['status','Status',['reserved','planned']]],
-  'Lightning Lane':[['ride','Ride','text'],['day','Date','date'],['park','Park',['mk','ep','hs','ak']],['tier','Tier',['sp','mp1','mp2']],['status','Status',['booked','planning']],['winStart','Window from','text'],['winEnd','Window to','text'],['rideTime','Time to ride','text'],['bookedTime','Booked time','text'],['conf','Confirmation #','text']],
+  'Lightning Lane':[['ride','Ride','text'],['day','Date','date'],['park','Park',['mk','ep','hs','ak']],['tier','Tier',['sp','mp1','mp2']],['status','Status',['booked','planning']],['winStart','Window from','text'],['winEnd','Window to','text'],['rideTime','Time to ride','text'],['conf','Confirmation #','text']],
   'Park reservation':[['day','Date','date'],['park','Park',['mk','ep','hs','ak']],['status','Status',['booked','planning']]],
   Show:[['name','Name','text'],['day','Date','date'],['time','Time','text'],['park','Park',['mk','ep','hs','ak']],['status','Status',['attend','scheduled']]],
   Parade:[['name','Name','text'],['day','Date','date'],['time','Time','text'],['park','Park',['mk','ep','hs','ak']],['status','Status',['attend','scheduled']]],
@@ -7313,7 +7308,7 @@ function scrSection(){
     for(var il=0;il<TD.length;il++){var lld=llFor(TD[il].date).filter(function(x){return visible(x.who);});if(!lld.length)continue;
       llbody+=dayHd(TD[il].date);
       for(var lj=0;lj<lld.length;lj++){var l=lld[lj];
-        llbody+='<div class="ov-card'+(isPlanningStatus(l.status)?' planning':'')+'"><div class="item-row"><div style="flex:1;min-width:0"><div class="item-name">'+esc(l.ride)+' <span class="ll-tag '+tagCls(l.tier)+'">'+tagShort(l.tier)+'</span></div><div class="item-time">'+(l.status==='booked'?('Booked '+esc(l.bookedTime||'')):('Window '+esc(llWindowText(l))))+(l.rideTime?' · Ride '+esc(l.rideTime):'')+'</div>'+whoChips(l.who)+'</div>'+statusBadge(l.status)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'addll\',edit:\''+l.id+'\',day:\''+l.day+'\'})">'+IC.pencil+'</button></div></div>';
+        llbody+='<div class="ov-card'+(isPlanningStatus(l.status)?' planning':'')+'"><div class="item-row"><div style="flex:1;min-width:0"><div class="item-name">'+esc(l.ride)+' <span class="ll-tag '+tagCls(l.tier)+'">'+tagShort(l.tier)+'</span></div><div class="item-time">'+(l.status==='booked'?('Booked'+((l.rideTime||l.winStart)?' '+esc(l.rideTime||l.winStart):'')):('Window '+esc(llWindowText(l))))+(l.rideTime?' · Ride '+esc(l.rideTime):'')+'</div>'+whoChips(l.who)+'</div>'+statusBadge(l.status)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'addll\',edit:\''+l.id+'\',day:\''+l.day+'\'})">'+IC.pencil+'</button></div></div>';
       }
     }
     var allLL=LLS.filter(function(x){return x.trip===S.tripId&&visible(x.who);});

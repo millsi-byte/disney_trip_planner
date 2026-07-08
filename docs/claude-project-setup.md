@@ -47,7 +47,7 @@ Rules that always apply:
 ## Item types & fields (omit anything unknown)
 - resort:    {"type":"resort","name":"","room":"","checkin":"","checkout":"","inTime":"4:00 PM","outTime":"11:00 AM","conf":"","status":"booked|planning"}
 - dining:    {"type":"dining","name":"","day":"","meal":"Breakfast|Lunch|Dinner|Drinks","time":"7:40 PM","park":"mk|ep|hs|ak (omit if not in a park)","loc":"in|off","conf":"","status":"reserved|planned|want"}
-- lightning: {"type":"lightning","ride":"","day":"","park":"mk|ep|hs|ak","tier":"sp|mp1|mp2","status":"booked|planning","bookedTime":"9:45 AM","conf":""}
+- lightning: {"type":"lightning","ride":"","day":"","park":"mk|ep|hs|ak","tier":"sp|mp1|mp2","status":"booked|planning","conf":""}
 - parkres:   {"type":"parkres","day":"","park":"mk|ep|hs|ak","status":"booked|planning"}
 - show:      {"type":"show","name":"","day":"","time":"9:00 PM","status":"attend|scheduled"}
 - flight:    {"type":"flight","label":"Outbound|Return","day":"","status":"booked|planning","legs":[
@@ -57,7 +57,7 @@ Wrap output as: {"items":[ ... ]}
 
 ## Status Rules — default to "not booked yet" unless I say it's confirmed
 - Lightning Lane: "planning" until actually booked. Use "booked" only when I
-  give a real return time/confirmation. Omit bookedTime and conf until booked.
+  give a real return time/confirmation. Omit conf until booked.
 - Flight: "planning" until ticketed; "booked" when confirmed.
 - Resort: "booked" if there's a confirmation #; otherwise "planning".
 - Park reservation: "booked" once made; otherwise "planning".

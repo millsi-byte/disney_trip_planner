@@ -41,6 +41,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.s1_liveHeader = h.indexOf('now-live') >= 0 && h.indexOf('>Now<') >= 0;
     r.s1_parkName = h.indexOf('now-park') >= 0 && h.indexOf('EPCOT') >= 0;
     r.s1_nextUp = h.indexOf('Next up') >= 0 && h.indexOf('ZZNOWRIDE') >= 0;
+    r.s1_nextUpTimeFromWinStart = h.indexOf('10:00 AM') >= 0; // bookedTime removed — llSlotTime must resolve this via winStart alone
     r.s1_countdownPill = h.indexOf('now-cd2') >= 0 && h.indexOf('1h 0m') >= 0 && h.indexOf('until') >= 0;
     r.s1_laterHasDining = h.indexOf('now-later') >= 0 && h.indexOf('ZZNOWDINE') >= 0;
     r.s1_tapFooter = h.indexOf('now-tap') >= 0 && h.indexOf('Open today') >= 0;
