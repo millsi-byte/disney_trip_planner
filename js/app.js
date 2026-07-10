@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='391-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='392-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -875,8 +875,8 @@ function wxWeekSummary(days){
    are sent. Everything it writes carries src:'api' + an apiUpd stamp and it
    will NEVER touch a record a person created or edited (editing an api record
    clears src → the refresher leaves it alone forever). Raw responses cache in
-   dtp__parkapi (double underscore: device-local, never syncs). Hard-gated to
-   -dev builds like the NOW-preview tool: fully inert in production. */
+   dtp__parkapi (double underscore: device-local, never syncs). Dev-gated
+   through Build 391; live in production from Build 392. */
 var PAPI_IDS={mk:'75ea578a-adc8-4116-a54d-dccb60765ef9',ep:'47f90d2c-e191-4239-a466-5892ef59a88b',hs:'288747d1-8b4f-4a64-867e-ea7c9b27bad8',ak:'1c84a229-8862-4648-9c71-378ddd2c7693'};
 /* curated headline entertainment per park: the daytime parade + the nighttime
    spectacular. kind decides which collection the record lands in. */
@@ -886,7 +886,7 @@ var PAPI_HEADLINE={
   hs:[{re:/fantasmic/i,kind:'show'}],
   ak:[{re:/parade/i,kind:'parade'}]
 };
-function papiEnabled(){return BUILD.indexOf('-dev')>=0&&typeof fetch==='function';}
+function papiEnabled(){return typeof fetch==='function';}   /* promoted to production with Build 392 (was dev-gated through 391) */
 function papiData(){try{return JSON.parse(localStorage.getItem('dtp__parkapi')||'null')||{};}catch(e){return {};}}
 function papiSave(d){try{localStorage.setItem('dtp__parkapi',JSON.stringify(d));}catch(e){}}
 /* "2026-07-15T09:00:00-04:00" → "9:00 AM" — read the LOCAL time straight off

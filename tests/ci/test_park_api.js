@@ -6,8 +6,8 @@
    manual save clears src, ending auto-updates); the curated headline parade +
    night show auto-create once as 'scheduled'; non-headline shows don't; the
    pick-list add creates an 'attend' item; the day-of crowd estimate writes
-   only over empty/api-owned values; and the whole engine is inert on a
-   production BUILD string. */
+   only over empty/api-owned values; and the engine runs on production
+   BUILD strings too (promoted with Build 392). */
 const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
 
 (async () => {
@@ -497,15 +497,16 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     S.screen = null;
     r.hubMerged = renderPlanHub().indexOf('Live Entertainment') >= 0 && renderPlanHub().indexOf('Night Shows') < 0 && renderPlanHub().indexOf('Rides & Attractions') >= 0;
 
-    // ── production build: engine fully inert ──
+    // ── production build: the engine ships LIVE from Build 392 (user-approved promotion) ──
     const realBuild = window.BUILD;
     window.BUILD = realBuild.replace('-dev', '');
+    window.fetch = goodFetch;
     const before = fetchCount;
     localStorage.setItem('dtp__parkapi', JSON.stringify({ fetched: 0, crowdFetched: 0 }));
     papiRefresh(true);
-    await new Promise(res => setTimeout(res, 200));
-    r.prodInert = fetchCount === before;
-    r.prodStampHidden = papiStampLine() === '';
+    await new Promise(res => setTimeout(res, 250));
+    r.prodActive = fetchCount > before;
+    r.prodStampShown = papiStampLine().indexOf('Park data via ThemeParks.wiki') >= 0;
     window.BUILD = realBuild;
 
     return r;
