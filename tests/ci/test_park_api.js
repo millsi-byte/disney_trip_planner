@@ -468,6 +468,17 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     papiShowSweep('mk', DAY);
     await new Promise(res => setTimeout(res, 150));
     r.sweepHonorsCooldown = fetchCount === beforeSweep;
+    // Browse says WHY times are missing while backing off
+    S.screen = { type: 'apishows', day: DAY, pk: 'mk' };
+    r.browseSaysBackingOff = scrApiShows().indexOf('backing off') >= 0;
+    // and reports an all-failed sweep (clear the cooldown so the sweep actually runs)
+    localStorage.setItem('dtp__parkapi', JSON.stringify(Object.assign(papiData(), { coolUntil: 0, shows: { mk: [{ id: 'ent-hea', name: 'Happily Ever After' }] }, stamps: {} })));
+    window.__papiSweepInfo = null;
+    papiShowSweep('mk', DAY);   // fetch still rejects here
+    await new Promise(res => setTimeout(res, 400));
+    r.sweepReportsFailure = !!window.__papiSweepInfo && window.__papiSweepInfo.bad > 0 && window.__papiSweepInfo.got === 0;
+    r.browseSaysFailed = scrApiShows().indexOf('Couldn’t fetch showtimes') >= 0;
+    S.screen = null;
 
     // ── honest run summary: an all-cached run is UP TO DATE, not a failure ──
     r.summaryUpToDate = papiRunSummary({ schedOk: 0, schedErr: 0, created: 0, updated: 0, skippedUser: 0 }, null, 0).indexOf('Up to date') === 0;
