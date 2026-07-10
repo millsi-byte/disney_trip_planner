@@ -211,6 +211,31 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.rideFormAttendance = scrRideEdit().indexOf('Attendance') >= 0;
     S.screen = null;
 
+    // ── Build 395: agenda TBD, live-ent chip, re-book from Plan page, rsvp hardening ──
+    RIDES.push({ id: 'ztbd', trip: 'jul26', day: DAY, name: 'ZZ Timeless', rideTime: '', llId: '', who: 'all', park: 'ep' });
+    const dp395 = dayPlanCard(DAYS.filter(x => x.trip === 'jul26' && x.date === DAY)[0], PARKS.ep);
+    r.agendaTimelessTBD = dp395.indexOf('>TBD</div>') >= 0;   // timeless component items say TBD, not blank
+    RIDES.splice(RIDES.findIndex(x => x.id === 'ztbd'), 1);
+    r.agendaLiveEntChip = dp395.indexOf('Add Live Entertainment') >= 0 && dp395.indexOf("type:'apishows'") >= 0;
+    S.screen = { type: 'section', section: 'll' };
+    r.llSectionRebookAdd = scrSection().indexOf('Add Rolling Re-book') >= 0;
+    S.screen = null;
+    // a stale persona's "Will attend" must still flip an api-scheduled show to attend
+    SHOWS.push({ id: 'sGhost', trip: 'jul26', day: '2026-07-18', name: 'ZZ Ghost Flip', time: '9:00 PM', status: 'scheduled', park: 'ep', who: 'all', src: 'api' });
+    const realPersona = S.persona; S.persona = 'zz-not-a-person';
+    rsvpSet('show', 'sGhost', 'in');
+    S.persona = realPersona;
+    r.staleRsvpStillFlips = SHOWS.filter(x => x.id === 'sGhost')[0].status === 'attend';
+    r.flippedShowOnAgenda = dayPlanItems(DAYS.filter(x => x.trip === 'jul26' && x.date === '2026-07-18')[0]).some(i => i.type === 'show' && i.ref === 'sGhost');
+    // a parade-NAMED record living in SHOWS must route to the show editor (array membership, not id prefix)
+    SHOWS.push({ id: 'paWEIRD', trip: 'jul26', day: DAY, name: 'ZZ Misfiled Parade', time: '1:00 PM', status: 'attend', park: 'mk', who: 'all' });
+    S.screen = { type: 'section', section: 'shows' };
+    r.pencilRoutesByArray = scrSection().indexOf("type:'showedit',edit:'paWEIRD'") >= 0;
+    S.screen = null;
+    // schedule cards explain scheduled-but-not-attending rows
+    S.open = defOpen(); S.open.shows = true;
+    r.scheduledRowHint = showsCard(showsFor('2026-07-18'), PARKS.ep, '2026-07-18').indexOf('On the schedule') >= 0;
+
     // NOW card: at 2:05 PM the 2:15 ride is next-up → current + expected wait in its line
     window.__nowOverride = { date: DAY, mins: 14 * 60 + 5 };
     const nowHtml = nowCardHtml();

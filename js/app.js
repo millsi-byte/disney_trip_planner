@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='394-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='395-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -2420,8 +2420,10 @@ function rsvpSet(type,id,val){
   /* a show/parade is "Attending" (on the day plan) while anyone is in; once no
      one is attending it falls back to "Scheduled". */
   if(type==='show'||type==='parade'){
+    /* count valid people, but MY OWN 'in' always flips it — a stale persona
+       must never make "Will attend" silently snap back to Scheduled */
     var ins=Object.keys(rec.rsvp).filter(function(x){return rec.rsvp[x]==='in'&&person(x);}).length;
-    rec.status=ins>0?'attend':'scheduled';
+    rec.status=(ins>0||rec.rsvp[me]==='in')?'attend':'scheduled';
   }
   /* sync who-it's-for: 'out' removes me; 'in' or cleared ensures I'm included */
   var arr=whoArrFor(rec.who==null?'all':rec.who,tid).slice();
@@ -3645,6 +3647,7 @@ function dayPlanCard(d,pk){
     o+='<button class="dp-addchip" onclick="openScreen({type:\'adddining\',day:\''+d.date+'\'})">'+IC.plus+' Add Dining</button>';
     o+='<button class="dp-addchip" onclick="openScreen({type:\''+(papiEnabled()?'apirides':'rideedit')+'\',day:\''+d.date+'\'})">'+IC.plus+' Add Ride</button>';
     o+='<button class="dp-addchip" onclick="openScreen({type:\'addll\',day:\''+d.date+'\'})">'+IC.plus+' Add Lightning Lane</button>';
+    o+='<button class="dp-addchip" onclick="openScreen({type:\''+(papiEnabled()?'apishows':'showedit')+'\',day:\''+d.date+'\'})">'+IC.plus+' Add Live Entertainment</button>';
     o+='<button class="dp-addchip" onclick="openScreen({type:\'visedit\',day:\''+d.date+'\'})">'+IC.plus+' Add Park Visit</button>';
     o+='</div>';
     if(llFor(d.date).length){
@@ -3656,7 +3659,7 @@ function dayPlanCard(d,pk){
     for(var j=0;j<items.length;j++){
       var e=items[j];
       o+='<div class="t-row'+(e.soft?' t-soft':'')+'" data-dpkey="'+encodeURIComponent(e.x+(e.t?' · '+e.t:''))+'">';
-      o+='<div class="t-time">'+esc(e.t)+'</div>';
+      o+='<div class="t-time">'+(e.t?esc(e.t):((e.type==='ride'||e.type==='ll'||e.type==='show'||e.type==='parade')?'TBD':''))+'</div>';
       /* name: dining/show use the bare name; LL appends its tier pill; others keep text (may carry pill markers) */
       var nameHtml=(e.type==='ll')?(esc(e.name||e.x)+' <span class="ll-tag '+tagCls(e.tier)+'">'+tagShort(e.tier)+'</span>')
                    :(e.type==='ride'&&e.ll)?(esc(e.name||e.x)+' <span class="ll-tag '+tagCls(e.ll.tier)+'">'+tagShort(e.ll.tier)+'</span>')
@@ -3839,7 +3842,7 @@ function showsCard(sh,pk,date){
     o+='<button class="add-link solo" onclick="openScreen({type:\'showedit\',day:\''+date+'\'})">'+IC.plus+' Add show</button>';
     if(!sh.length) o+='<div class="body-empty">No shows'+(filterActive()?' for the current filter':'')+' on this day.</div>';
     for(var i=0;i<sh.length;i++){var x=sh[i];var xpk=x.park&&PARKS[x.park];
-      o+='<div class="item-row"><div style="flex:1"><div class="item-name">'+esc(x.name)+'</div><div style="display:flex;align-items:center;gap:6px;margin-top:4px">'+statusBadge(x.status||'attend')+(xpk?'<span class="inpark-badge" style="background:'+xpk.color+'">'+esc(xpk.short)+'</span>':'')+whoChips(x.who)+'</div></div><div class="item-time">'+esc(x.time)+'</div>';
+      o+='<div class="item-row"><div style="flex:1"><div class="item-name">'+esc(x.name)+'</div><div style="display:flex;align-items:center;gap:6px;margin-top:4px">'+statusBadge(x.status||'attend')+(xpk?'<span class="inpark-badge" style="background:'+xpk.color+'">'+esc(xpk.short)+'</span>':'')+whoChips(x.who)+'</div>'+(x.status==='scheduled'?'<div class="t-sub" style="margin-top:3px">On the schedule — tap Will attend to put it on your agenda</div>':'')+'</div><div class="item-time">'+esc(x.time)+'</div>';
       o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;margin-left:8px" onclick="openScreen({type:\'showedit\',edit:\''+x.id+'\',day:\''+x.day+'\'})">'+IC.pencil+'</button>'+rsvpRow('show',x.id)+'</div>';
     }
     o+='</div>';
@@ -3856,7 +3859,7 @@ function paradesCard(par,pk,date){
     o+='<button class="add-link solo" onclick="openScreen({type:\'paradeedit\',day:\''+date+'\'})">'+IC.plus+' Add parade</button>';
     if(!par.length) o+='<div class="body-empty">No parades'+(filterActive()?' for the current filter':'')+' on this day.</div>';
     for(var i=0;i<par.length;i++){var x=par[i];var xpk=x.park&&PARKS[x.park];
-      o+='<div class="item-row"><div style="flex:1"><div class="item-name">'+esc(x.name)+'</div><div style="display:flex;align-items:center;gap:6px;margin-top:4px">'+statusBadge(x.status||'attend')+(xpk?'<span class="inpark-badge" style="background:'+xpk.color+'">'+esc(xpk.short)+'</span>':'')+whoChips(x.who)+'</div></div><div class="item-time">'+esc(x.time)+'</div>';
+      o+='<div class="item-row"><div style="flex:1"><div class="item-name">'+esc(x.name)+'</div><div style="display:flex;align-items:center;gap:6px;margin-top:4px">'+statusBadge(x.status||'attend')+(xpk?'<span class="inpark-badge" style="background:'+xpk.color+'">'+esc(xpk.short)+'</span>':'')+whoChips(x.who)+'</div>'+(x.status==='scheduled'?'<div class="t-sub" style="margin-top:3px">On the schedule — tap Will attend to put it on your agenda</div>':'')+'</div><div class="item-time">'+esc(x.time)+'</div>';
       o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;margin-left:8px" onclick="openScreen({type:\'paradeedit\',edit:\''+x.id+'\',day:\''+x.day+'\'})">'+IC.pencil+'</button>'+rsvpRow('parade',x.id)+'</div>';
     }
     o+='</div>';
@@ -8295,7 +8298,8 @@ function scrSection(){
     }
     var allLL=LLS.filter(function(x){return x.trip===S.tripId&&visible(x.who);});
     body=llBookBanner(allLL)+(llbody||fnote('Lightning Lanes'));
-    add='<button class="sec-add" onclick="openScreen({type:\'addll\',day:\''+dft+'\'})">Add Lightning Lane</button>';
+    add='<div class="sec-add-stack"><button class="sec-add" onclick="openScreen({type:\'addll\',day:\''+dft+'\'})">Add Lightning Lane</button>'
+       +'<button class="sec-add" onclick="openScreen({type:\'rbedit\',day:\''+dft+'\'})">Add Rolling Re-book</button></div>';
   }else if(sec==='resort'){
     var rsl=RESORTS.filter(function(r){return r.trip===S.tripId&&visible(r.who);});
     for(var ir=0;ir<rsl.length;ir++){var rr=rsl[ir];
@@ -8351,7 +8355,7 @@ function scrSection(){
     for(var ish=0;ish<TD.length;ish++){var shd=showsFor(TD[ish].date).filter(function(x){return visible(x.who);}).concat(paradesFor(TD[ish].date).filter(function(x){return visible(x.who);}));if(!shd.length)continue;
       body+=dayHd(TD[ish].date);
       for(var sj=0;sj<shd.length;sj++){var sx=shd[sj],spk=sx.park&&PARKS[sx.park];
-        var sxT=(String(sx.id).indexOf('pa')===0)?'paradeedit':'showedit';
+        var sxT=PARADES.some(function(pp){return pp.id===sx.id;})?'paradeedit':'showedit';
         body+='<div class="ov-card"><div class="item-row"><div style="flex:1;min-width:0"><div class="item-name">'+esc(sx.name)+'</div><div class="item-time">'+esc(sx.time||'TBD')+(spk?' · '+esc(spk.name):'')+'</div>'+whoChips(sx.who)+'</div>'+statusBadge(sx.status||'attend')+(spk?'<span class="inpark-badge" style="background:'+spk.color+';margin-left:8px">'+esc(spk.short)+'</span>':'')+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\''+sxT+'\',edit:\''+sx.id+'\',day:\''+sx.day+'\'})">'+IC.pencil+'</button></div></div>';
       }
     }
