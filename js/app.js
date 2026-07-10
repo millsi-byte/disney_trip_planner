@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='373-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='374-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -979,11 +979,20 @@ function papiFetchSched(trips,st){
             v.open=papiT(e.openingTime);v.close=papiT(e.closingTime);
           });
           entries.forEach(function(e){
-            if(e.type!=='EXTRA_HOURS')return;
+            if(e.type==='OPERATING')return;
+            var desc=String(e.description||'');
             var v=rec[e.date]=rec[e.date]||{};
-            /* before regular open → early entry; otherwise extended evening */
-            if(!v.open||mins(papiT(e.openingTime))<=mins(v.open))v.early=papiT(e.openingTime);
-            else v.late=papiT(e.closingTime);
+            /* Disney parks publish early entry / extended evening with a
+               description (often typed TICKETED_EVENT, not EXTRA_HOURS —
+               confirmed against real WDW data). Classify by description
+               first; bare EXTRA_HOURS falls back to a time-of-day split.
+               Other TICKETED_EVENTs (party nights etc.) are ignored. */
+            if(/early entry|early theme park entry/i.test(desc)){v.early=papiT(e.openingTime);return;}
+            if(/extended evening/i.test(desc)){v.late=papiT(e.closingTime);return;}
+            if(e.type==='EXTRA_HOURS'){
+              if(!v.open||mins(papiT(e.openingTime))<=mins(v.open))v.early=papiT(e.openingTime);
+              else v.late=papiT(e.closingTime);
+            }
           });
         }).catch(function(){});
       });

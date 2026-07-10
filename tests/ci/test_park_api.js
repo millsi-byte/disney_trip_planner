@@ -37,11 +37,14 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     const MK = '75ea578a-adc8-4116-a54d-dccb60765ef9';
     const EP = '47f90d2c-e191-4239-a466-5892ef59a88b';
     let fetchCount = 0;
-    // evening EXTRA_HOURS deliberately FIRST: classification must not depend on array order
+    // mirrors REAL WDW data: early entry / extended evening arrive as
+    // description-tagged entries (often TICKETED_EVENT, not EXTRA_HOURS),
+    // party events must be ignored, and order must not matter
     const sched = (dates) => ({ schedule: dates.flatMap(d => ([
-      { date: d, type: 'EXTRA_HOURS', openingTime: d + 'T23:00:00-04:00', closingTime: d + 'T01:00:00-04:00' },
+      { date: d, type: 'EXTRA_HOURS', description: 'Extended Evening', openingTime: d + 'T23:00:00-04:00', closingTime: d + 'T01:00:00-04:00' },
       { date: d, type: 'OPERATING', openingTime: d + 'T09:00:00-04:00', closingTime: d + 'T23:00:00-04:00' },
-      { date: d, type: 'EXTRA_HOURS', openingTime: d + 'T08:30:00-04:00', closingTime: d + 'T09:00:00-04:00' },
+      { date: d, type: 'TICKETED_EVENT', description: 'Early Entry', openingTime: d + 'T08:30:00-04:00', closingTime: d + 'T09:00:00-04:00' },
+      { date: d, type: 'TICKETED_EVENT', description: 'H2O Glow After Hours', openingTime: d + 'T22:00:00-04:00', closingTime: d + 'T02:00:00-04:00' },
     ])) });
     const tripDates = ['2026-07-14','2026-07-15','2026-07-16','2026-07-17','2026-07-18','2026-07-19'];
     const goodFetch = (url) => {
@@ -87,6 +90,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.hoursCreated = !!mk15;
     r.hoursFormat = !!mk15 && mk15.open === '9:00 AM' && mk15.close === '11:00 PM';
     r.earlyLateMapped = !!mk15 && mk15.early === '8:30 AM' && mk15.late === '1:00 AM';
+    r.partyEventIgnored = !!mk15 && mk15.late !== '2:00 AM'; // after-hours party must not be read as extended evening
     r.hoursSrcStamped = !!mk15 && mk15.src === 'api' && mk15.apiUpd > 0;
     r.allParksFilled = ['mk','ep','hs','ak'].every(pk => PARKHOURS.some(h => h.park === pk && h.day === DAY && h.src === 'api'));
     r.userRecordUntouched = JSON.stringify(PARKHOURS.filter(h => h.id === 'huser1')) === userSnap;
