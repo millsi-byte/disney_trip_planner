@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='380-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='381-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -600,7 +600,7 @@ function rehydrate(){
   DINING=load('dtp_dining',DINING); LLS=load('dtp_lls',LLS); SHOWS=load('dtp_shows',SHOWS); PARADES=load('dtp_parades',PARADES);
   FLIGHTS=load('dtp_flights',FLIGHTS); RESORTS=load('dtp_resorts',RESORTS); PARKRES=load('dtp_parkres',PARKRES); TICKETS=load('dtp_tickets',TICKETS); PASSES=load('dtp_passes',PASSES);
   try{migratePasses();}catch(e){}
-  REBOOKS=load('dtp_rebooks',REBOOKS); RIDES=load('dtp_rides',RIDES); TRIPS=load('dtp_trips',TRIPS); NOTIFS=load('dtp_notifs',NOTIFS);
+  REBOOKS=load('dtp_rebooks',REBOOKS); RIDES=load('dtp_rides',RIDES); PAPICAT=load('dtp_papicat',PAPICAT); TRIPS=load('dtp_trips',TRIPS); NOTIFS=load('dtp_notifs',NOTIFS);
   PARTIES=load('dtp_parties',PARTIES)||PARTIES; CHAT=load('dtp_chat',CHAT);
   try{ensurePartyTags();}catch(e){}   /* re-tag records that arrived without a party */
   /* backfill any trip still missing day skeletons — TRIPS/DAYS are now the
@@ -1057,6 +1057,13 @@ function papiFetchSched(trips,st){
     st.fetched=Date.now();
     papiApplyHours(trips,st);
     papiApplyShows(trips,st);
+    /* share the catalog with every device (only when it actually changed) */
+    if(st.rides&&st.shows&&!awaitingFirstCloudSync()){
+      var cat={rides:st.rides,shows:st.shows,upd:Date.now()};
+      if(JSON.stringify(cat.rides)!==JSON.stringify(PAPICAT.rides||null)||JSON.stringify(cat.shows)!==JSON.stringify(PAPICAT.shows||null)){
+        PAPICAT=cat;save('dtp_papicat',PAPICAT);
+      }
+    }
   });
 }
 /* write hours into PARKHOURS — api-owned records only, deterministic ids,
@@ -1231,9 +1238,9 @@ function papiForce(){
    plain text field either way; datalist is purely additive). */
 function papiRideDatalist(){
   if(!papiEnabled())return '';
-  var st=papiData();if(!st.rides)return '';
+  if(!PAPICAT.rides&&!papiData().rides)return '';
   var names={},o='<datalist id="papi-ridelist">';
-  Object.keys(st.rides).forEach(function(pk){(st.rides[pk]||[]).forEach(function(rd){
+  ['mk','ep','hs','ak'].forEach(function(pk){papiCatRides(pk).forEach(function(rd){
     if(names[rd.name])return;names[rd.name]=1;
     o+='<option value="'+esc(rd.name)+'">';
   });});
@@ -1262,9 +1269,9 @@ function papiRideMetaRefresh(){
 function papiRideSuggest(id){
   var inp=document.getElementById(id),box=document.getElementById(id+'__sug');
   if(!inp||!box)return;
-  var q=inp.value.trim().toLowerCase(),st=papiData(),out=[];
-  if(q.length>=2&&st.rides){
-    Object.keys(st.rides).forEach(function(pk){(st.rides[pk]||[]).forEach(function(rd){
+  var q=inp.value.trim().toLowerCase(),out=[];
+  if(q.length>=2){
+    ['mk','ep','hs','ak'].forEach(function(pk){papiCatRides(pk).forEach(function(rd){
       if(out.length<6&&rd.name.toLowerCase().indexOf(q)>=0&&!out.some(function(x){return x===rd.name;}))out.push(rd.name);
     });});
   }
@@ -1320,7 +1327,7 @@ function scrApiRides(){
   body+='<div class="field"><label class="field-label">Park</label><select class="field-select" onchange="papiBrowsePark(this.value)">';
   ['mk','ep','hs','ak'].forEach(function(k){body+='<option value="'+k+'"'+(k===pk?' selected':'')+'>'+esc(PARKS[k].name)+'</option>';});
   body+='</select></div>';
-  var list=(st.rides&&st.rides[pk])||[];
+  var list=papiCatRides(pk);
   if(!list.length)body+='<div class="body-empty" style="text-align:left;padding:2px">Nothing cached yet — open Admin \u203a Live Disney Data and tap Refresh.</div>';
   var taken={};RIDES.forEach(function(r){if(r.trip===S.tripId&&r.day===d.date)taken[(r.name||'').toLowerCase()]=1;});
   list.forEach(function(rd){
@@ -1334,7 +1341,7 @@ function scrApiRides(){
   return screenShell('Browse Rides',body,null,null,'Done');
 }
 function papiAddRide(entId,ds,pk){
-  var st=papiData(),ent=((st.rides||{})[pk]||[]).filter(function(x){return x.id===entId;})[0];
+  var ent=papiCatRides(pk).filter(function(x){return x.id===entId;})[0];
   if(!ent){toast('Ride not found in cache');return;}
   RIDES.push({id:'rd'+Date.now(),trip:S.tripId,by:S.persona,name:ent.name,day:ds,rideTime:'',llId:'',who:'all',park:pk,apiKey:ent.id});
   save('dtp_rides',RIDES);toast(ent.name+' planned — set a time from the Rides list');renderScreen_inplace2();
@@ -1352,7 +1359,7 @@ function papiBrowsePark(v){S.screen.pk=v;renderScreen_inplace2();}
 function scrApiShows(){
   var d=dayByDate(S.screen.day);if(!d)return scrGeneric();
   var st=papiData(),pk=S.screen.pk||dayPrimaryPark(d.date)||'mk';
-  var list=(st.shows&&st.shows[pk])||[];
+  var list=papiCatShows(pk);
   /* pick the date and park explicitly — no guessing */
   var body='<div class="field"><label class="field-label">Day</label><select class="field-select" onchange="papiBrowseDay(this.value)">'+dayOptions(d.date)+'</select></div>';
   body+='<div class="field"><label class="field-label">Park</label><select class="field-select" onchange="papiBrowsePark(this.value)">';
@@ -1395,7 +1402,7 @@ function papiAddEvent(name,tm,ds,pk){
 }
 function papiAddShow(entId,ds,pkSel){
   var st=papiData(),pk=pkSel||dayPrimaryPark(ds)||'mk';
-  var ent=((st.shows||{})[pk]||[]).filter(function(s){return s.id===entId;})[0];
+  var ent=papiCatShows(pk).filter(function(s){return s.id===entId;})[0];
   if(!ent){toast('Show not found in cache');return;}
   var isParade=papiShowKind(ent.name)==='parade',arr=isParade?PARADES:SHOWS;
   var mk=function(tm){
@@ -2215,6 +2222,13 @@ function resortsFor(date){return RESORTS.filter(function(r){return r.trip===S.tr
 function parkResFor(date){return PARKRES.filter(function(p){return p.trip===S.tripId&&p.day===date;});}
 function rebooksFor(date){return REBOOKS.filter(function(r){return r.trip===S.tripId&&r.day===date;});}
 var RIDES=[];   /* planned rides — a plan to ride an attraction; may link an LL (llId) that sets its window */
+/* the attraction/show CATALOG is synced (dtp_papicat) so a device whose
+   browser blocks the API (e.g. laptop ad-block) still gets ride lists,
+   autocomplete and Browse from whichever device CAN fetch. Small (~KBs),
+   changes rarely, written only when content actually differs. */
+var PAPICAT=load('dtp_papicat',{});
+function papiCatRides(pk){var st=papiData();return (st.rides&&st.rides[pk])||(PAPICAT.rides&&PAPICAT.rides[pk])||[];}
+function papiCatShows(pk){var st=papiData();return (st.shows&&st.shows[pk])||(PAPICAT.shows&&PAPICAT.shows[pk])||[];}
 function ridesFor(date){return RIDES.filter(function(r){return r.trip===S.tripId&&r.day===date;});}
 /* parse a loose time string ("5:45 AM", "Evening", "Afternoon") to minutes for sorting */
 function mins(t){

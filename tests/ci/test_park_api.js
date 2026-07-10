@@ -244,6 +244,15 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.cooldownHonored = fetchCount === beforeCool;
     r.blockedDeviceHint = papiStampLine().indexOf('blocking the data service') >= 0;
 
+    // ── blocked-device catalog: a device that can't fetch still gets ride lists via sync ──
+    r.catalogPublished = !!localStorage.getItem('dtp_papicat') && localStorage.getItem('dtp_papicat').indexOf('ZZ Space Mountain') >= 0;
+    localStorage.removeItem('dtp__parkapi');   // simulate the laptop: empty device cache
+    S.screen = { type: 'apirides', day: DAY, pk: 'mk' };
+    r.browseWorksWithoutCache = scrApiRides().indexOf('ZZ Space Mountain') >= 0;
+    S.screen = { type: 'apishows', day: DAY, pk: 'mk' };
+    r.showsBrowseWorksWithoutCache = scrApiShows().indexOf('Happily Ever After') >= 0;
+    S.screen = null;
+
     // ── production build: engine fully inert ──
     const realBuild = window.BUILD;
     window.BUILD = realBuild.replace('-dev', '');
