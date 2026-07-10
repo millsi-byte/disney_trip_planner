@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='382-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='383-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -3618,7 +3618,7 @@ function renderPlanHub(){
   var rows=[
     ['Flights',IC.plane,'var(--hd-flight)',cnt(FLIGHTS)+' journeys','addflight'],
     ['Dining',IC.fork,'var(--hd-din)',cnt(DINING)+' reservations','dining'],
-    ['Planned Rides',IC.route,'#166534',cnt(RIDES)+' ride'+(cnt(RIDES)===1?'':'s'),'rides'],
+    ['Rides & Attractions',IC.route,'#166534',cnt(RIDES)+' ride'+(cnt(RIDES)===1?'':'s'),'rides'],
     ['Lightning Lanes',IC.bolt,'var(--hd-ll)',cnt(LLS)+' rides','ll'],
     ['Resort',IC.bed,'var(--hd-resort)',cnt(RESORTS)+' stays','resort'],
     ['Park Tickets',IC.ticket,'#0F766E',cnt(TICKETS)+' ticket'+(cnt(TICKETS)===1?'':'s'),'tickets'],
@@ -3627,8 +3627,7 @@ function renderPlanHub(){
   ];
   var liveRows=[
     ['Park Hours',IC.bolt,'#0F5F73',cnt(PARKHOURS)+' set','hours'],
-    ['Night Shows',IC.star,'var(--hd-show)',cnt(SHOWS)+' show'+(cnt(SHOWS)===1?'':'s'),'shows'],
-    ['Parades',IC.sparkles,'var(--hd-parade)',cnt(PARADES)+' parade'+(cnt(PARADES)===1?'':'s'),'parades']
+    ['Live Entertainment',IC.star,'var(--hd-show)',(cnt(SHOWS)+cnt(PARADES))+' items','shows']
   ];
   /* Edit Trip Details sits at the top of the page */
   if(canEditTrip())
@@ -7888,7 +7887,8 @@ function scrSection(){
   var map={
     addflight:['Flights',IC.plane,'var(--hd-flight)'], dining:['Dining',IC.fork,'var(--hd-din)'],
     ll:['Lightning Lanes',IC.bolt,'var(--hd-ll)'], resort:['Resort',IC.bed,'var(--hd-resort)'],
-    shows:['Night Shows',IC.star,'var(--hd-show)'],
+    shows:['Live Entertainment',IC.star,'var(--hd-show)'],
+    rides:['Rides & Attractions',IC.route,'#166534'],
     parades:['Parades',IC.sparkles,'var(--hd-parade)'],
     tickets:['Park Tickets',IC.ticket,'#0F766E'],
     parkres:['Park Reservations',IC.ticket,'#0F5F73'], visits:['Park Visits',IC.map,'#3B7549'],
@@ -7957,6 +7957,10 @@ function scrSection(){
     body+=papiMiniStamp();
     add='<button class="sec-add" onclick="openScreen({type:\'hoursedit\',day:\''+dft+'\'})">Add park hours</button>';
   }else if(sec==='rides'){
+    if(papiEnabled()){
+      body+='<button class="btn-secondary" style="margin:0 0 6px" onclick="openScreen({type:\'apirides\',day:\''+dft+'\'})">'+IC.sparkles+' Browse Rides &amp; Attractions</button>';
+      body+=papiMiniStamp()+'<div style="height:8px"></div>';
+    }
     for(var ird=0;ird<TD.length;ird++){var rdl=ridesFor(TD[ird].date).filter(function(x){return visible(x.who);});if(!rdl.length)continue;
       body+=dayHd(TD[ird].date);
       for(var rj=0;rj<rdl.length;rj++){var rx=rdl[rj];
@@ -7966,22 +7970,22 @@ function scrSection(){
         body+='<div class="ov-card"><div class="item-row"><div style="flex:1;min-width:0"><div class="item-name">'+esc(rx.name)+'</div><div class="item-time">'+sub+'</div>'+(lm||'')+whoChips(rx.who)+'</div><button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'rideedit\',edit:\''+rx.id+'\',day:\''+rx.day+'\'})">'+IC.pencil+'</button></div></div>';
       }
     }
-    if(!body)body=fnote('planned rides');
-    if(papiEnabled())body+='<button class="add-link solo" style="margin:6px 0 0" onclick="openScreen({type:\'apirides\',day:\''+dft+'\'})">'+IC.sparkles+' Browse live ride list</button>';
-    add='<button class="sec-add" onclick="openScreen({type:\'rideedit\',day:\''+dft+'\'})">Plan a ride</button>';
+    if(!body)body=fnote('rides');
+    add='<button class="sec-add" onclick="openScreen({type:\'rideedit\',day:\''+dft+'\'})">Add Ride Manually</button>';
   }else if(sec==='shows'){
-    if(SHOWS.some(function(s){return s.trip===S.tripId;}))
-      body+='<button class="btn-secondary" style="margin:0 0 10px" onclick="autoAssignShowParks()">'+IC.sparkles+' Auto-assign parks by show name</button>';
-    for(var ish=0;ish<TD.length;ish++){var shd=showsFor(TD[ish].date).filter(function(x){return visible(x.who);});if(!shd.length)continue;
+    if(papiEnabled()){
+      body+='<button class="btn-secondary" style="margin:0 0 6px" onclick="openScreen({type:\'apishows\',day:\''+dft+'\'})">'+IC.sparkles+' Browse Live Entertainment</button>';
+      body+=papiMiniStamp()+'<div style="height:8px"></div>';
+    }
+    for(var ish=0;ish<TD.length;ish++){var shd=showsFor(TD[ish].date).filter(function(x){return visible(x.who);}).concat(paradesFor(TD[ish].date).filter(function(x){return visible(x.who);}));if(!shd.length)continue;
       body+=dayHd(TD[ish].date);
       for(var sj=0;sj<shd.length;sj++){var sx=shd[sj],spk=sx.park&&PARKS[sx.park];
-        body+='<div class="ov-card"><div class="item-row"><div style="flex:1;min-width:0"><div class="item-name">'+esc(sx.name)+'</div><div class="item-time">'+esc(sx.time||'TBD')+(spk?' · '+esc(spk.name):'')+'</div>'+whoChips(sx.who)+'</div>'+statusBadge(sx.status||'attend')+(spk?'<span class="inpark-badge" style="background:'+spk.color+';margin-left:8px">'+esc(spk.short)+'</span>':'')+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'showedit\',edit:\''+sx.id+'\',day:\''+sx.day+'\'})">'+IC.pencil+'</button></div></div>';
+        var sxT=(String(sx.id).indexOf('pa')===0)?'paradeedit':'showedit';
+        body+='<div class="ov-card"><div class="item-row"><div style="flex:1;min-width:0"><div class="item-name">'+esc(sx.name)+'</div><div class="item-time">'+esc(sx.time||'TBD')+(spk?' · '+esc(spk.name):'')+'</div>'+whoChips(sx.who)+'</div>'+statusBadge(sx.status||'attend')+(spk?'<span class="inpark-badge" style="background:'+spk.color+';margin-left:8px">'+esc(spk.short)+'</span>':'')+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\''+sxT+'\',edit:\''+sx.id+'\',day:\''+sx.day+'\'})">'+IC.pencil+'</button></div></div>';
       }
     }
-    if(!body)body=fnote('night shows');
-    if(papiEnabled())body+='<button class="add-link solo" style="margin:6px 0 0" onclick="openScreen({type:\'apishows\',day:\''+dft+'\'})">'+IC.sparkles+' Browse live shows &amp; parades</button>';
-    body+=papiMiniStamp();
-    add='<button class="sec-add" onclick="openScreen({type:\'showedit\',day:\''+dft+'\'})">Add show</button>';
+    if(!body)body=fnote('live entertainment');
+    add='<button class="sec-add" onclick="openScreen({type:\'showedit\',day:\''+dft+'\'})">Add Live Entertainment Manually</button>';
   }else if(sec==='parades'){
     if(PARADES.some(function(p){return p.trip===S.tripId;}))
       body+='<button class="btn-secondary" style="margin:0 0 10px" onclick="autoAssignParadeParks()">'+IC.sparkles+' Auto-assign parks by parade name</button>';

@@ -159,7 +159,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     S.screen = { type: 'apirides', day: DAY, pk: 'mk' };
     const brHtml = scrApiRides();
     r.browseRidesPickers = brHtml.indexOf('papiBrowseDay') >= 0 && brHtml.indexOf('ZZ Space Mountain') >= 0;
-    r.planHubLiveGroup = (S.screen = null, renderPlanHub().indexOf('Live data refresh') >= 0 && renderPlanHub().indexOf('Planned Rides') >= 0);
+    r.planHubLiveGroup = (S.screen = null, renderPlanHub().indexOf('Live data refresh') >= 0 && renderPlanHub().indexOf('Rides & Attractions') >= 0);
 
     // ── Browse: explicit day+park pickers, grouped, special events surfaced ──
     S.screen = { type: 'apishows', day: DAY };
@@ -272,6 +272,21 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     S.screen = { type: 'rideedit', day: DAY, seed: { name: 'ZZ Space Mountain' } };
     r.formSeedPrefills = scrRideEdit().indexOf('ZZ Space Mountain') >= 0;
     S.screen = null;
+
+    // ── merged Live Entertainment section + renamed Rides & Attractions ──
+    PARADES.push({ id: 'pa_zz', trip: 'jul26', day: DAY, name: 'ZZ Merge Parade', time: '3:00 PM', status: 'scheduled', park: 'mk', who: 'all' });
+    S.screen = { type: 'section', section: 'shows' };
+    const secHtml = scrSection();
+    r.mergedSectionTitle = secHtml.indexOf('Live Entertainment') >= 0;
+    r.mergedShowsParades = secHtml.indexOf('ZZ Merge Parade') >= 0 && secHtml.indexOf('Happily Ever After') >= 0;
+    r.mergedTopBrowse = secHtml.indexOf('Browse Live Entertainment') >= 0 && secHtml.indexOf('Auto-assign') < 0;
+    r.mergedAddManually = secHtml.indexOf('Add Live Entertainment Manually') >= 0;
+    r.paradeRoutesToParadeEdit = secHtml.indexOf("type:'paradeedit',edit:'pa_zz'") >= 0;
+    S.screen = { type: 'section', section: 'rides' };
+    const ridesHtml = scrSection();
+    r.ridesSectionRenamed = ridesHtml.indexOf('Rides &amp; Attractions') >= 0 && ridesHtml.indexOf('Browse Rides') >= 0;
+    S.screen = null;
+    r.hubMerged = renderPlanHub().indexOf('Live Entertainment') >= 0 && renderPlanHub().indexOf('Night Shows') < 0 && renderPlanHub().indexOf('Rides & Attractions') >= 0;
 
     // ── production build: engine fully inert ──
     const realBuild = window.BUILD;
