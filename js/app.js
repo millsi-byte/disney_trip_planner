@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='392';
+var BUILD='393';
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -888,7 +888,17 @@ var PAPI_HEADLINE={
 };
 function papiEnabled(){return typeof fetch==='function';}   /* promoted to production with Build 392 (was dev-gated through 391) */
 function papiData(){try{return JSON.parse(localStorage.getItem('dtp__parkapi')||'null')||{};}catch(e){return {};}}
-function papiSave(d){try{localStorage.setItem('dtp__parkapi',JSON.stringify(d));}catch(e){}}
+function papiSave(d){
+  try{localStorage.setItem('dtp__parkapi',JSON.stringify(d));return;}catch(e){}
+  /* storage full: shed the bulkiest day-of payloads and retry — an UNSAVED
+     cache means every run refetches and rewrites records (endless
+     "N refreshed" churn), which is far worse than losing live waits */
+  try{
+    var slim=Object.assign({},d);delete slim.waits;delete slim.parkFc;
+    localStorage.setItem('dtp__parkapi',JSON.stringify(slim));return;
+  }catch(e2){}
+  window.__papiErr=window.__papiErr||'device storage full — live data cache not saved';
+}
 /* "2026-07-15T09:00:00-04:00" → "9:00 AM" — read the LOCAL time straight off
    the string; never via new Date() (device-timezone bugs) */
 function papiT(iso){
@@ -898,11 +908,20 @@ function papiT(iso){
 }
 function papiStat(){return window.__papiStat=window.__papiStat||{schedOk:0,schedErr:0,childOk:0,liveOk:0,created:0,updated:0,skippedUser:0};}
 function papiGet(path,kind){
-  return fetch('https://api.themeparks.wiki/v1'+path).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status+' on '+(kind||'request'));return r.json();}).then(function(j){
+  /* hard timeout: one stalled request must never wedge the whole run (the
+     in-flight guard would otherwise block every refresh until reload) */
+  var ms=window.__papiTimeoutMs||15000,toId;
+  var ctl=(typeof AbortController==='function')?new AbortController():null;
+  var timeout=new Promise(function(_,rej){toId=setTimeout(function(){if(ctl)try{ctl.abort();}catch(e){}rej(new Error('timeout on '+(kind||'request')));},ms);});
+  return Promise.race([fetch('https://api.themeparks.wiki/v1'+path,ctl?{signal:ctl.signal}:{}),timeout]).then(function(r){
+    if(!r.ok)throw new Error('HTTP '+r.status+' on '+(kind||'request'));return r.json();
+  }).then(function(j){
+    clearTimeout(toId);
     window.__papiOk=(window.__papiOk||0)+1;
     var t=papiStat();if(kind==='sched')t.schedOk++;else if(kind==='children')t.childOk++;else if(kind==='live')t.liveOk++;
     return j;
   },function(e){
+    clearTimeout(toId);
     /* remember the FIRST failure so the UI can say WHY a refresh did nothing
        (CSP/CORS blocks surface as an opaque "Failed to fetch") */
     if(!window.__papiErr)window.__papiErr=String(e&&e.message||e).slice(0,140);
@@ -942,7 +961,13 @@ function papiFetchShowTimes(st,entId,y,m){
     });
     var tm=st.times[entId]=st.times[entId]||{};
     var tl=st.timesList[entId]=st.timesList[entId]||{};
-    Object.keys(byDate).forEach(function(ds){tm[ds]=byDate[ds].join(' & ');tl[ds]=byDate[ds];});
+    Object.keys(byDate).forEach(function(ds){
+      /* the LIVE feed owns today's times once captured — the monthly schedule
+         must not fight it (that tug-of-war churned records every run) */
+      if(st.timesLive&&st.timesLive[entId]&&st.timesLive[entId][ds])return;
+      byDate[ds].sort(function(a,b){return mins(a)-mins(b);});   /* stable string regardless of feed order */
+      tm[ds]=byDate[ds].join(' & ');tl[ds]=byDate[ds];
+    });
     return true;
   });
 }
@@ -972,14 +997,19 @@ function papiRefresh(force){
   if(awaitingFirstCloudSync()){if(force)toast('Still syncing — try again in a moment');return;}
   var trips=papiTrips();if(!trips.length){if(force)toast('No upcoming trip with dates to fill');return;}
   var st=papiData(),now=Date.now();
-  if(window.__papiInflight){if(force)toast('Already refreshing…');return;}
+  if(window.__papiInflight){
+    var age=Date.now()-(window.__papiStart||0);
+    if(age<120000){if(force)toast('Still refreshing\u2026 started '+Math.max(1,Math.round(age/1000))+'s ago');return;}
+    /* watchdog: a wedged run (stalled network, tab frozen mid-run) must not
+       block refreshes forever — after 2 minutes assume it died and go again */
+  }
   if(!force&&st.coolUntil&&now<st.coolUntil)return;   /* backing off after a blocked run */
   var wantSched=force||!st.fetched||(now-st.fetched)>12*3600*1000;
   var np=nowParts(),todayTrip=null;
   trips.forEach(function(tr){if(tr.days.some(function(d){return d.date===np.date;}))todayTrip=tr;});
   var wantCrowd=todayTrip&&(force||!st.crowdFetched||(now-st.crowdFetched)>60*60*1000);
   if(!wantSched&&!wantCrowd)return;
-  window.__papiInflight=true;window.__papiErr=null;window.__papiOk=0;window.__papiStat=null;
+  window.__papiInflight=true;window.__papiStart=Date.now();window.__papiErr=null;window.__papiOk=0;window.__papiStat=null;
   var work=Promise.resolve();
   if(wantSched)work=work.then(function(){return papiFetchSched(trips,st);});
   if(wantCrowd)work=work.then(function(){return papiFetchCrowd(todayTrip,np,st);});
@@ -1085,6 +1115,13 @@ function papiFetchSched(trips,st){
     st.fetched=Date.now();
     papiApplyHours(trips,st);
     papiApplyShows(trips,st);
+    /* keep the cache lean: monthly feeds cover WHOLE months, but only trip
+       dates are ever consumed — dropping the rest keeps dtp__parkapi small
+       enough to always save (a full device broke persistence entirely) */
+    var dset={};trips.forEach(function(tr){tr.days.forEach(function(d){dset[d.date]=1;});});
+    var trimIdMap=function(map){Object.keys(map||{}).forEach(function(id){var m=map[id];Object.keys(m).forEach(function(ds){if(!dset[ds])delete m[ds];});if(!Object.keys(m).length)delete map[id];});};
+    trimIdMap(st.times);trimIdMap(st.timesList);trimIdMap(st.timesLive);
+    [st.hours,st.events].forEach(function(top){Object.keys(top||{}).forEach(function(pk){var m=top[pk];Object.keys(m).forEach(function(ds){if(!dset[ds])delete m[ds];});});});
     papiPublishCat(st);
   });
 }
@@ -1181,7 +1218,12 @@ function papiFetchCrowd(tr,np,st){
           /* today's REAL performance times — fresher than the monthly schedule */
           if(e&&e.id&&e.showtimes&&e.showtimes.length){
             var ts=[];e.showtimes.forEach(function(sh){var t=papiT(sh&&(sh.startTime||sh.openingTime)||'');if(t)ts.push(t);});
-            if(ts.length){st.times=st.times||{};(st.times[e.id]=st.times[e.id]||{})[np.date]=ts.join(' & ');gotShowtimes=true;}
+            if(ts.length){
+              ts.sort(function(a,b){return mins(a)-mins(b);});
+              st.times=st.times||{};(st.times[e.id]=st.times[e.id]||{})[np.date]=ts.join(' & ');
+              st.timesLive=st.timesLive||{};(st.timesLive[e.id]=st.timesLive[e.id]||{})[np.date]=1;
+              gotShowtimes=true;
+            }
           }
         });
         parks[pk]={by:byName,byId:byId};
@@ -1300,7 +1342,14 @@ function scrParkApi(){
    clear it and refresh shortly after the current call stack settles */
 function papiNudge(){
   if(!papiEnabled())return;
-  try{var st=papiData();st.fetched=0;papiSave(st);}catch(e){}
+  try{
+    var st=papiData();st.fetched=0;
+    /* the cache is trimmed to known trip dates, so a NEW trip (or changed
+       dates) needs the schedule fetches to actually re-run — bust their
+       TTL stamps, not just the 12h throttle */
+    Object.keys(st.stamps||{}).forEach(function(k){if(k.indexOf('sched_')===0)delete st.stamps[k];});
+    papiSave(st);
+  }catch(e){}
   setTimeout(function(){try{papiRefresh();}catch(e){}},2500);
 }
 /* NOW-card header control: refresh JUST the live waits/crowd (schedule
