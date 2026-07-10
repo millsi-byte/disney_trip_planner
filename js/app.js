@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='372-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='373-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -1130,12 +1130,29 @@ function papiStampLine(){
   var o='<div class="papi-line">';
   o+=st.fetched?('Checked live Disney data '+papiAgo(st.fetched)):'Live Disney data: not fetched yet';
   o+=' · <a href="#" onclick="event.preventDefault();papiForce()">Refresh</a>';
+  if(PARKHOURS.some(function(h){return h.trip===S.tripId&&h.src!=='api';}))
+    o+=' · <a href="#" onclick="event.preventDefault();papiAdoptHours()">Use live hours</a>';
   if(st.lastStat){var L=st.lastStat;
     o+='<div>Last run: '+L.s+' schedule fetches'+(L.se?(' ('+L.se+' failed)'):'')+' · '+L.c+' added · '+L.u+' refreshed'+(L.k?(' · '+L.k+' skipped (yours)'):'')+'</div>';
   }
   if(st.lastErr&&!st.lastOk)o+='<div style="color:#B91C1C">Last refresh failed: '+esc(st.lastErr)+'</div>';
   o+='<div class="papi-attr">Park data via ThemeParks.wiki</div></div>';
   return o;
+}
+/* deliberate opt-in: hand the ACTIVE trip's existing park-hours records over
+   to the live data (they become api-owned and stay auto-updated). Crowd
+   numbers are untouched — crowd stays yours unless it was already the live
+   estimate. Shows/parades are NOT adopted: those stay whoever's they are. */
+function papiAdoptHours(){
+  if(!papiEnabled()){toast('Dev builds only');return;}
+  var mine=PARKHOURS.filter(function(h){return h.trip===S.tripId&&h.src!=='api';});
+  if(!mine.length){toast('Hours are already on live data');return;}
+  if(!confirm('Replace this trip\u2019s park hours with live Disney data?\n\n'+mine.length+' hours record'+(mine.length===1?'':'s')+' will switch to auto-updating from Disney\u2019s published schedule. Your crowd numbers are kept. Shows and parades are not affected.'))return;
+  mine.forEach(function(h){h.src='api';h.apiUpd=Date.now();});
+  save('dtp_hours',PARKHOURS);
+  toast('Hours switched to live data — refreshing\u2026');
+  var st=papiData();st.fetched=0;papiSave(st);
+  papiRefresh(true);
 }
 function papiForce(){
   if(!papiEnabled()){toast('Dev builds only');return;}

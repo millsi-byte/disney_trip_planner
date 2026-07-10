@@ -44,7 +44,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
       { date: d, type: 'EXTRA_HOURS', openingTime: d + 'T08:30:00-04:00', closingTime: d + 'T09:00:00-04:00' },
     ])) });
     const tripDates = ['2026-07-14','2026-07-15','2026-07-16','2026-07-17','2026-07-18','2026-07-19'];
-    window.fetch = (url) => {
+    const goodFetch = (url) => {
       fetchCount++;
       let body = {};
       if (url.indexOf('/children') >= 0) {
@@ -73,6 +73,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
       }
       return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
     };
+    window.fetch = goodFetch;
 
     // pre-seed a USER hours record for MK on the 16th — must never be touched
     PARKHOURS.push({ id: 'huser1', trip: 'jul26', by: 'scott', park: 'mk', day: '2026-07-16', open: '7:00 AM', close: '10:00 PM', early: '', late: '', crowd: 4 });
@@ -158,6 +159,21 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     const stF = papiData();
     r.failureRecorded = !!stF.lastErr && stF.lastOk === 0;
     r.stampShowsFailure = papiStampLine().indexOf('Last refresh failed') >= 0 && papiStampLine().indexOf('Failed to fetch') >= 0;
+
+    // ── "Use live hours": deliberate adoption of a fully user-populated trip ──
+    window.fetch = goodFetch;   // the failure block above left the rejecting stub installed
+    // mirror the real fully-user-populated trip: the slot has ONE record and it's the person's
+    for (let i = PARKHOURS.length - 1; i >= 0; i--) if (PARKHOURS[i].park === 'ak' && PARKHOURS[i].day === DAY) PARKHOURS.splice(i, 1);
+    PARKHOURS.push({ id: 'huser2', trip: 'jul26', by: 'scott', park: 'ak', day: DAY, open: '7:30 AM', close: '5:00 PM', early: '', late: '', crowd: 7 });
+    window.confirm = () => false;             // decline → nothing changes
+    papiAdoptHours();
+    r.adoptDeclinedNoChange = PARKHOURS.filter(h => h.id === 'huser2')[0].src === undefined;
+    window.confirm = () => true;              // accept → adopted + live values applied
+    papiAdoptHours();
+    await new Promise(res => setTimeout(res, 300));
+    const adopted = PARKHOURS.filter(h => h.id === 'huser2')[0];
+    r.adoptTakesLiveHours = !!adopted && adopted.src === 'api' && adopted.open === '9:00 AM';
+    r.adoptKeepsUserCrowd = adopted.crowd === 7 && adopted.crowdSrc === undefined;
 
     // ── production build: engine fully inert ──
     const realBuild = window.BUILD;
