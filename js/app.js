@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='404-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='405-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -1667,13 +1667,18 @@ function papiShowSweep(pk,ds){
   if(st.coolUntil&&Date.now()<st.coolUntil)return;   /* respect the rate-limit backoff — don't hammer while blocked */
   if(!list.length)return;   /* fetch-blocked device: times arrive via the synced catalog */
   window.__papiSweep[key]=1;
-  var y=ds.slice(0,4),m=ds.slice(5,7),got=0,chain=Promise.resolve();
+  var y=ds.slice(0,4),m=ds.slice(5,7),got=0,bad=0,chain=Promise.resolve();
   list.forEach(function(s){
-    chain=chain.then(function(){return papiFetchShowTimes(st,s.id,y,m).then(function(f){if(f)got++;},function(){});});
+    chain=chain.then(function(){return papiFetchShowTimes(st,s.id,y,m).then(function(f){if(f)got++;},function(){bad++;});});
   });
   chain.then(function(){
     delete window.__papiSweep[key];
-    if(!got)return;
+    window.__papiSweepInfo={key:key,got:got,bad:bad,at:Date.now()};
+    if(!got){
+      /* every fetch failed → let Browse SAY so instead of bare rows */
+      if(bad&&S.screen&&S.screen.type==='apishows')renderScreen_inplace2();
+      return;
+    }
     papiSave(st);
     papiPublishCat(st);
     if(S.screen&&(S.screen.type==='apishows'||S.screen.type==='showtimes'))renderScreen_inplace2();
@@ -1693,6 +1698,15 @@ function scrApiShows(){
   if(!list.length)body+='<div class="body-empty" style="text-align:left;padding:2px">Nothing cached yet — open Admin \u203a Live Disney Data and tap Refresh.</div>';
   var sel=S.screen._sel=S.screen._sel||{};
   var nsel=Object.keys(sel).length;
+  /* be honest about WHY times may be missing — silence reads as broken */
+  if(papiEnabled()&&list.length){
+    var swKey=pk+'_'+d.date.slice(0,7);
+    var swActive=!!(window.__papiSweep&&window.__papiSweep[swKey]);
+    var swInfo=window.__papiSweepInfo;
+    if(st.coolUntil&&Date.now()<st.coolUntil)body+='<div class="papi-line">Live data is backing off after failed fetches — showtimes resume in ~'+Math.ceil((st.coolUntil-Date.now())/60000)+'m.</div>';
+    else if(swActive)body+='<div class="papi-line">Fetching showtimes…</div>';
+    else if(swInfo&&swInfo.key===swKey&&swInfo.bad&&!swInfo.got)body+='<div class="papi-line" style="color:#B91C1C">Couldn’t fetch showtimes just now (rate-limited or blocked) — they’ll fill in on a later try.</div>';
+  }
   if(list.length)body+='<div class="body-empty" style="text-align:left;padding:2px 2px 8px">Tap a show’s name to add it with the full form, or tick several and set all their times at once.</div>';
   var taken={};SHOWS.concat(PARADES).forEach(function(r){if(r.trip===S.tripId&&r.day===d.date)taken[(r.name||'').toLowerCase()]=1;});
   var groups={parade:[],night:[],show:[]};
