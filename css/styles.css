@@ -679,6 +679,7 @@ button{font-family:inherit}
 .now-li{font-size:15px;width:20px;text-align:center;flex-shrink:0}
 .now-lx{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .now-lt{color:var(--muted);font-weight:600;font-variant-numeric:tabular-nums}
+.now-lwait{color:var(--muted);font-size:11.5px;font-weight:500}
 .now-empty{font-size:13px;color:var(--muted)}
 .now-tap{padding:9px 14px;border-top:1px solid var(--border);font-size:12px;font-weight:700;color:var(--mk);display:flex;justify-content:space-between}
 .now-pre .now-hd{background:linear-gradient(100deg,var(--mk),#8a63c9);justify-content:center}
@@ -689,7 +690,23 @@ button{font-family:inherit}
 .now-wxweek{margin-top:11px;border-top:1px dashed var(--border);padding-top:9px;font-size:12.5px;color:var(--ink);font-weight:600}
 .now-first{margin-top:7px;font-size:12px;color:var(--muted)}
 .now-hd .chev{color:rgba(255,255,255,.85);margin-left:auto}
+.now-rw{margin-left:auto;font-size:11px;font-weight:700;color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:999px;padding:3px 9px;cursor:pointer;white-space:nowrap}
+.now-rw+.chev{margin-left:0}
 .now-cbody-collapsed{padding:10px 14px}
 .now-num-sm{font-size:26px;margin:0 0 2px}
 .now-nextwrap-collapsed{padding:10px 14px}
 .now-headline{font-size:13.5px;font-weight:600;color:var(--ink)}
+.papi-line{font-size:12px;color:var(--muted);padding:10px 2px 0;line-height:1.5}
+.papi-wait{font-weight:800;font-size:1.1em;color:var(--ink)}
+.papi-line a{color:var(--hd-plan);font-weight:600;text-decoration:none}
+.papi-attr{font-size:10.5px;color:var(--muted);opacity:.7;margin-top:2px}
+.ll-tag.sb{background:#E5E7EB;color:#374151}
+.papi-sug{padding:9px 12px;border:1px solid var(--border);border-top:0;background:var(--card);font-size:14px;cursor:pointer}
+.papi-sug:first-child{border-top:1px solid var(--border);border-radius:8px 8px 0 0;margin-top:4px}
+.papi-sug:last-child{border-radius:0 0 8px 8px}
+.papi-sugtag{font-size:10.5px;font-weight:700;color:#166534;background:#DCFCE7;border-radius:6px;padding:1px 6px;margin-left:6px;vertical-align:1px}
+/* sticky multi-select action bar pinned in the Browse screens' footer */
+.papi-selbar .papi-selhint{font-size:13px;color:var(--muted);text-align:center;padding:0 2px 8px}
+.papi-selbar.fly{animation:selbar-in .25s ease-out}
+@keyframes selbar-in{from{transform:translateY(110%);opacity:.4}to{transform:translateY(0);opacity:1}}
+@media (prefers-reduced-motion: reduce){.papi-selbar.fly{animation:none}}
