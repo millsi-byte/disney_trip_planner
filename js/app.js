@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='374-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='375-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -1012,10 +1012,12 @@ function papiFetchSched(trips,st){
   /* headline showtimes per matched entity per month */
   chain=chain.then(function(){
     var sub=Promise.resolve();
+    st.hlNames=[];
     Object.keys(PAPI_IDS).forEach(function(pk){
       (PAPI_HEADLINE[pk]||[]).forEach(function(hl){
         var ent=(st.shows[pk]||[]).filter(function(s){return hl.re.test(s.name);})[0];
         if(!ent)return;
+        if(st.hlNames.indexOf(ent.name)<0)st.hlNames.push(ent.name);
         months.forEach(function(mo){
           sub=sub.then(function(){
             return papiGet('/entity/'+ent.id+'/schedule/'+mo.y+'/'+mo.m,'sched').then(function(j){
@@ -1071,7 +1073,9 @@ function papiApplyShows(trips,st){
         (PAPI_HEADLINE[pk]||[]).forEach(function(hl){
           var ent=((st.shows||{})[pk]||[]).filter(function(s){return hl.re.test(s.name);})[0];
           if(!ent)return;
-          var tm=st.times&&st.times[ent.id]&&st.times[ent.id][d.date];if(!tm)return;
+          /* no published time yet → still create the item (as TBD); the time
+             fills in on a later refresh or from the live feed day-of */
+          var tm=(st.times&&st.times[ent.id]&&st.times[ent.id][d.date])||'TBD';
           var arr=hl.kind==='parade'?PARADES:SHOWS;
           var ex=null,i;
           for(i=0;i<arr.length;i++){if(arr[i].trip===tr.trip.id&&arr[i].day===d.date&&arr[i].apiKey===ent.id){ex=arr[i];break;}}
@@ -1096,11 +1100,17 @@ function papiApplyShows(trips,st){
 function papiFetchCrowd(tr,np,st){
   var pk=dayPrimaryParkFor(tr.trip.id,np.date);if(!pk||!PAPI_IDS[pk])return Promise.resolve();
   return papiGet('/entity/'+PAPI_IDS[pk]+'/live','live').then(function(j){
-    var waits=[],byName={};
+    var waits=[],byName={},gotShowtimes=false;
     (j&&j.liveData||[]).forEach(function(e){
       var w=e&&e.queue&&e.queue.STANDBY&&e.queue.STANDBY.waitTime;
       if(typeof w==='number'&&e.status==='OPERATING'){waits.push(w);if(e.name)byName[e.name.toLowerCase()]=w;}
+      /* today's REAL performance times — fresher than the monthly schedule */
+      if(e&&e.id&&e.showtimes&&e.showtimes.length){
+        var ts=[];e.showtimes.forEach(function(sh){var t=papiT(sh&&(sh.startTime||sh.openingTime)||'');if(t)ts.push(t);});
+        if(ts.length){st.times=st.times||{};(st.times[e.id]=st.times[e.id]||{})[np.date]=ts.join(' & ');gotShowtimes=true;}
+      }
     });
+    if(gotShowtimes){try{papiApplyShows(papiTrips(),st);}catch(e){}}
     /* per-ride live waits — cached for the daily plan / future Rides component */
     st.waits={day:np.date,pk:pk,upd:Date.now(),by:byName};
     if(!waits.length)return;
@@ -1144,6 +1154,7 @@ function papiStampLine(){
   if(st.lastStat){var L=st.lastStat;
     o+='<div>Last run: '+L.s+' schedule fetches'+(L.se?(' ('+L.se+' failed)'):'')+' · '+L.c+' added · '+L.u+' refreshed'+(L.k?(' · '+L.k+' skipped (yours)'):'')+'</div>';
   }
+  if(st.hlNames&&st.hlNames.length)o+='<div>Headline shows: '+esc(st.hlNames.join(', '))+'</div>';
   if(st.lastErr&&!st.lastOk)o+='<div style="color:#B91C1C">Last refresh failed: '+esc(st.lastErr)+'</div>';
   o+='<div class="papi-attr">Park data via ThemeParks.wiki</div></div>';
   return o;
@@ -1162,6 +1173,13 @@ function papiAdoptHours(){
   toast('Hours switched to live data — refreshing\u2026');
   var st=papiData();st.fetched=0;papiSave(st);
   papiRefresh(true);
+}
+/* a new trip (or changed dates) shouldn't wait out the 12h throttle —
+   clear it and refresh shortly after the current call stack settles */
+function papiNudge(){
+  if(!papiEnabled())return;
+  try{var st=papiData();st.fetched=0;papiSave(st);}catch(e){}
+  setTimeout(function(){try{papiRefresh();}catch(e){}},2500);
 }
 function papiForce(){
   if(!papiEnabled()){toast('Dev builds only');return;}
@@ -6244,6 +6262,7 @@ function ntCreateTripSkip(){
 function ntFinish(silent){
   var t=tripById(S._ntTripId),optIn=!silent&&S._notify;
   var partyId=S._ntPartyId||S._ntProvParty,id=S._ntTripId;
+  try{papiNudge();}catch(e){}   /* fill the new trip's hours/shows right away */
   saveLists();
   if(id){S.tripId=id;saveTripId();}
   if(partyId&&partyId!=='none'){S.partyId=partyId;savePartyId();}
@@ -8618,6 +8637,7 @@ function saveTrip(){
     t.start=st;t.end=en;
     t.dates=monOf(st)+' '+(+st.slice(8))+' – '+monOf(en)+' '+(+en.slice(8))+', '+st.slice(0,4);
     reconcileDays(t.id);saveDays();
+    try{papiNudge();}catch(e){}   /* dates changed — refresh live data for the new range */
     if(t.id===S.tripId){S.dayIdx=0;S.open=defOpen();}
   }
   t.notifyByDefault=!!S._notify;

@@ -46,7 +46,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
       { date: d, type: 'TICKETED_EVENT', description: 'Early Entry', openingTime: d + 'T08:30:00-04:00', closingTime: d + 'T09:00:00-04:00' },
       { date: d, type: 'TICKETED_EVENT', description: 'H2O Glow After Hours', openingTime: d + 'T22:00:00-04:00', closingTime: d + 'T02:00:00-04:00' },
     ])) });
-    const tripDates = ['2026-07-14','2026-07-15','2026-07-16','2026-07-17','2026-07-18','2026-07-19'];
+    const tripDates = ['2026-07-14','2026-07-15','2026-07-16','2026-07-17','2026-07-18','2026-07-19','2026-07-20'];
     const goodFetch = (url) => {
       fetchCount++;
       let body = {};
@@ -63,11 +63,13 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
           { entityType: 'ATTRACTION', status: 'OPERATING', name: 'ZZ Space Mountain', queue: { STANDBY: { waitTime: 60 } } },
           { entityType: 'ATTRACTION', status: 'OPERATING', name: 'ZZ Peter Pan', queue: { STANDBY: { waitTime: 40 } } },
           { entityType: 'ATTRACTION', status: 'OPERATING', name: 'ZZ Other', queue: { STANDBY: { waitTime: 20 } } },
+          { entityType: 'SHOW', status: 'OPERATING', id: 'ent-hea', name: 'Happily Ever After', showtimes: [{ startTime: '2026-07-15T20:30:00-04:00' }, { startTime: '2026-07-15T22:30:00-04:00' }] },
         ] };
       } else if (url.indexOf('/entity/ent-fof/schedule') >= 0) {
         body = { schedule: tripDates.map(d => ({ date: d, type: 'OPERATING', openingTime: d + 'T15:00:00-04:00' })) };
       } else if (url.indexOf('/entity/ent-hea/schedule') >= 0) {
-        body = { schedule: tripDates.flatMap(d => ([
+        // no published times for 07-20 → the item must still create as TBD
+        body = { schedule: tripDates.filter(d => d !== '2026-07-20').flatMap(d => ([
           { date: d, type: 'OPERATING', openingTime: d + 'T20:30:00-04:00' },
           { date: d, type: 'OPERATING', openingTime: d + 'T22:30:00-04:00' },
         ])) };
@@ -178,6 +180,18 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     const adopted = PARKHOURS.filter(h => h.id === 'huser2')[0];
     r.adoptTakesLiveHours = !!adopted && adopted.src === 'api' && adopted.open === '9:00 AM';
     r.adoptKeepsUserCrowd = adopted.crowd === 7 && adopted.crowdSrc === undefined;
+
+    // ── a NEW trip fills automatically: nudge busts the 12h throttle ──
+    window.fetch = goodFetch;
+    TRIPS.push({ id: 'zt2', name: 'ZZ New Trip', start: '2026-07-20', end: '2026-07-21', parties: ['g1'], by: 'scott' });
+    DAYS.push({ trip: 'zt2', date: '2026-07-20', d: '20', dl: 'Mon', itin: [] });
+    // simulate "refresh ran recently" — without the nudge this would wait ~12h
+    localStorage.setItem('dtp__parkapi', JSON.stringify(Object.assign(papiData(), { fetched: Date.now() })));
+    papiNudge();                       // what ntFinish/date-change now call
+    await new Promise(res => setTimeout(res, 2900)); // nudge refreshes after ~2.5s
+    r.newTripAutoFilled = PARKHOURS.some(h => h.trip === 'zt2' && h.day === '2026-07-20' && h.src === 'api' && h.open === '9:00 AM');
+    r.newTripShowTBD = SHOWS.some(x => x.trip === 'zt2' && x.day === '2026-07-20' && x.apiKey === 'ent-hea' && x.time === 'TBD' && x.status === 'scheduled');
+    r.stampListsHeadlines = papiStampLine().indexOf('Happily Ever After') >= 0;
 
     // ── production build: engine fully inert ──
     const realBuild = window.BUILD;
