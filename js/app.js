@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='376-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='377-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -1103,7 +1103,12 @@ function papiFetchCrowd(tr,np,st){
     var waits=[],byName={},gotShowtimes=false;
     (j&&j.liveData||[]).forEach(function(e){
       var w=e&&e.queue&&e.queue.STANDBY&&e.queue.STANDBY.waitTime;
-      if(typeof w==='number'&&e.status==='OPERATING'){waits.push(w);if(e.name)byName[e.name.toLowerCase()]=w;}
+      if(typeof w==='number'&&e.status==='OPERATING')waits.push(w);
+      if(e&&e.entityType==='ATTRACTION'&&e.name){
+        var paid=e.queue&&e.queue.PAID_RETURN_TIME,ret=e.queue&&e.queue.RETURN_TIME;
+        byName[e.name.toLowerCase()]={w:(typeof w==='number'?w:null),status:e.status||'',
+          ll:paid?'single':(ret?'multi':null),price:(paid&&paid.price&&paid.price.amount!=null)?(paid.price.amount/100):null};
+      }
       /* today's REAL performance times — fresher than the monthly schedule */
       if(e&&e.id&&e.showtimes&&e.showtimes.length){
         var ts=[];e.showtimes.forEach(function(sh){var t=papiT(sh&&(sh.startTime||sh.openingTime)||'');if(t)ts.push(t);});
@@ -1211,6 +1216,24 @@ function papiRideDatalist(){
     o+='<option value="'+esc(rd.name)+'">';
   });});
   return o+'</datalist>';
+}
+/* live metadata line for the ride form: today's wait / status / LL kind+price
+   for the typed ride name (day-of live data; empty when nothing matches) */
+function papiRideMeta(name){
+  if(!papiEnabled()||!name)return '';
+  var st=papiData(),w=st.waits&&st.waits.by&&st.waits.by[String(name).toLowerCase()];
+  if(!w||typeof w!=='object')return '';
+  var bits=[];
+  if(w.status&&w.status!=='OPERATING')bits.push(w.status==='REFURBISHMENT'?'\u26a0\ufe0f Under refurbishment':'\u26a0\ufe0f Currently '+w.status.toLowerCase());
+  if(typeof w.w==='number')bits.push(w.w+' min standby now');
+  if(w.ll==='single')bits.push('LL Single Pass'+(w.price?(' $'+w.price):''));
+  else if(w.ll==='multi')bits.push('LL Multi Pass');
+  if(!bits.length)return '';
+  return '<div class="papi-line" style="padding:6px 2px 0">Live: '+esc(bits.join(' \u00b7 '))+'</div>';
+}
+function papiRideMetaRefresh(){
+  var inp=document.getElementById('ll-ride'),el=document.getElementById('papi-ridemeta');
+  if(inp&&el)el.innerHTML=papiRideMeta(inp.value.trim());
 }
 /* ── pick-list: browse everything the API knows for a day's park ── */
 function scrApiShows(){
@@ -1482,9 +1505,9 @@ function statusBadge(st){
 }
 function isPlanningStatus(st){return st==='planning'||st==='want'||st==='planned'||st==='scheduled';}
 
-function tagCls(t){return t==='sp'?'sp':t==='mp1'?'mp1':'mp2';}
-function tagLbl(t){return t==='sp'?'Single Pass':t==='mp1'?'Multi Pass T1':'Multi Pass T2';}
-function tagShort(t){return t==='sp'?'SP':t==='mp1'?'T1':'T2';}
+function tagCls(t){return t==='none'?'sb':t==='sp'?'sp':t==='mp1'?'mp1':'mp2';}
+function tagLbl(t){return t==='none'?'Standby':t==='sp'?'Single Pass':t==='mp1'?'Multi Pass T1':'Multi Pass T2';}
+function tagShort(t){return t==='none'?'SB':t==='sp'?'SP':t==='mp1'?'T1':'T2';}
 
 function crowdPill(v){
   if(v==null)return '<span style="color:var(--muted);font-size:13px">—</span>';
@@ -3109,7 +3132,7 @@ function dayPlanItems(d){
   diningFor(date).forEach(function(dn){if(dn.status==='reserved'||dn.status==='planned')out.push({t:dn.time,x:dn.meal+' — '+dn.name,name:dn.name,meal:dn.meal,park:(dn.loc==='in'?dn.park:null),loc:dn.loc,type:'dining',who:dn.who,ref:dn.id,status:dn.status,dstatus:dn.status,soft:dn.status==='planned'});});
   showsFor(date).forEach(function(s){if((s.status||'attend')==='attend')out.push({t:s.time,x:s.name,name:s.name,park:s.park,type:'show',who:s.who,ref:s.id,status:s.status||'attend'});});
   paradesFor(date).forEach(function(p){if((p.status||'attend')==='attend')out.push({t:p.time,x:p.name,name:p.name,park:p.park,type:'parade',who:p.who,ref:p.id,status:p.status||'attend'});});
-  llFor(date).forEach(function(l){var bk=l.status==='booked';out.push({t:llSlotTime(l),x:l.ride,name:l.ride,type:'ll',who:l.who,ref:l.id,soft:!bk,tier:l.tier,status:l.status,win:llWindowText(l)});});
+  llFor(date).forEach(function(l){var bk=l.status==='booked';out.push({t:llSlotTime(l),x:l.ride,name:l.ride,type:'ll',who:l.who,ref:l.id,soft:!bk&&l.tier!=='none',tier:l.tier,status:l.status,win:llWindowText(l)});});
   (d.itin||[]).forEach(function(it,idx){
     if(it.priv&&it.by&&it.by!==S.persona)return;   /* private stop — only its author sees it */
     out.push({t:it.t,x:it.x,type:'manual',who:it.who||'all',crit:it.crit,idx:idx,priv:!!it.priv});
@@ -4862,19 +4885,23 @@ function scrAddLL(){
   if(S._formInit!=='ll'){S._formTier=edit?edit.tier:'sp';S._formStatus.ll=edit?edit.status:'planning';S._formInit='ll';}
   var win=(edit&&(edit.winStart||edit.winEnd))?{start:edit.winStart||'',end:edit.winEnd||''}:(edit?parseWindow(edit.window):{start:'',end:''});
   var tier=S._formTier,stt=S._formStatus.ll,pre=edit?edit.who:'all';
-  var body='<div class="field"><label class="field-label">Ride</label><input class="field-input" id="ll-ride" list="papi-ridelist" placeholder="e.g. Peter Pan\'s Flight" value="'+(edit?esc(edit.ride):'')+'">'+papiRideDatalist()+'</div>';
-  body+='<div class="field"><label class="field-label">Tier</label><div class="seg">';
+  var body='<div class="field"><label class="field-label">Ride</label><input class="field-input" id="ll-ride" list="papi-ridelist" placeholder="e.g. Peter Pan\'s Flight" value="'+(edit?esc(edit.ride):'')+'" oninput="papiRideMetaRefresh()">'+papiRideDatalist()+'<div id="papi-ridemeta">'+papiRideMeta(edit?edit.ride:'')+'</div></div>';
+  body+='<div class="field"><label class="field-label">How you\u2019ll ride it</label><div class="seg">';
+  body+='<button class="seg-btn'+(tier==='none'?' on':'')+'" onclick="pickTier(\'none\')">Standby</button>';
   body+='<button class="seg-btn'+(tier==='sp'?' on':'')+'" onclick="pickTier(\'sp\')">SP</button>';
   body+='<button class="seg-btn'+(tier==='mp1'?' on':'')+'" onclick="pickTier(\'mp1\')">T1</button>';
-  body+='<button class="seg-btn'+(tier==='mp2'?' on':'')+'" onclick="pickTier(\'mp2\')">T2</button></div></div>';
-  body+='<div class="field"><label class="field-label">Status <span class="opt">(only Booked shows on the Day Plan)</span></label><div class="seg">';
-  body+='<button class="seg-btn'+(stt==='planning'?' on':'')+'" onclick="pickStatus(\'ll\',\'planning\')">Planned</button>';
-  body+='<button class="seg-btn'+(stt==='booked'?' on book':'')+'" onclick="pickStatus(\'ll\',\'booked\')">Booked</button></div></div>';
-  body+='<div class="field"><label class="field-label">Ride Window <span class="opt">(reservation hour)</span></label>';
-  body+='<div class="field-row"><div class="field" style="margin:0"><label class="field-label" style="font-size:11px">From</label>'+timeField('ll-wstart',win.start)+'</div>';
-  body+='<div class="field" style="margin:0"><label class="field-label" style="font-size:11px">To</label>'+timeField('ll-wend',win.end)+'</div></div></div>';
+  body+='<button class="seg-btn'+(tier==='mp2'?' on':'')+'" onclick="pickTier(\'mp2\')">T2</button></div>';
+  body+='<div class="body-empty" style="text-align:left;padding:4px 2px 0;font-size:12px">Standby = just get in line. SP / T1 / T2 = a Lightning Lane reservation.</div></div>';
+  if(tier!=='none'){
+    body+='<div class="field"><label class="field-label">Status <span class="opt">(only Booked shows on the Day Plan)</span></label><div class="seg">';
+    body+='<button class="seg-btn'+(stt==='planning'?' on':'')+'" onclick="pickStatus(\'ll\',\'planning\')">Planned</button>';
+    body+='<button class="seg-btn'+(stt==='booked'?' on book':'')+'" onclick="pickStatus(\'ll\',\'booked\')">Booked</button></div></div>';
+    body+='<div class="field"><label class="field-label">Ride Window <span class="opt">(reservation hour)</span></label>';
+    body+='<div class="field-row"><div class="field" style="margin:0"><label class="field-label" style="font-size:11px">From</label>'+timeField('ll-wstart',win.start)+'</div>';
+    body+='<div class="field" style="margin:0"><label class="field-label" style="font-size:11px">To</label>'+timeField('ll-wend',win.end)+'</div></div></div>';
+  }
   body+='<div class="field"><label class="field-label">Planned time to ride <span class="opt">(slots the ride on the Day Plan)</span></label>'+timeField('ll-rtime',edit&&edit.rideTime?edit.rideTime:'')+'</div>';
-  if(stt==='booked'){
+  if(tier!=='none'&&stt==='booked'){
     body+='<div class="field"><label class="field-label">Confirmation #</label><input class="field-input" id="ll-conf" placeholder="MP-44190" value="'+(edit&&edit.conf?esc(edit.conf):'')+'"></div>';
   }
   body+=whoSelectField(pre);
@@ -4900,6 +4927,7 @@ function saveLL(){
   else if(!rec.window)rec.window='~TBD';
   rec.rideTime=val('ll-rtime')||'';
   rec.status=S._formStatus.ll||'planning';
+  if(rec.tier==='none'){rec.status='planning';rec.winStart='';rec.winEnd='';rec.window='';rec.conf='';}   /* standby: no reservation to book */
   if(rec.status==='booked'){
     rec.conf=val('ll-conf')||rec.conf||'MP-'+Math.floor(10000+Math.random()*89999);
   }

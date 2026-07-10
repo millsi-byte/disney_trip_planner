@@ -60,8 +60,8 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
         ] };
       } else if (url.indexOf('/live') >= 0) {
         body = { liveData: [
-          { entityType: 'ATTRACTION', status: 'OPERATING', name: 'ZZ Space Mountain', queue: { STANDBY: { waitTime: 60 } } },
-          { entityType: 'ATTRACTION', status: 'OPERATING', name: 'ZZ Peter Pan', queue: { STANDBY: { waitTime: 40 } } },
+          { entityType: 'ATTRACTION', status: 'OPERATING', name: 'ZZ Space Mountain', queue: { STANDBY: { waitTime: 60 }, PAID_RETURN_TIME: { price: { amount: 1500 } } } },
+          { entityType: 'ATTRACTION', status: 'OPERATING', name: 'ZZ Peter Pan', queue: { STANDBY: { waitTime: 40 }, RETURN_TIME: {} } },
           { entityType: 'ATTRACTION', status: 'OPERATING', name: 'ZZ Other', queue: { STANDBY: { waitTime: 20 } } },
           { entityType: 'SHOW', status: 'OPERATING', id: 'ent-hea', name: 'Happily Ever After', showtimes: [{ startTime: '2026-07-15T20:30:00-04:00' }, { startTime: '2026-07-15T22:30:00-04:00' }] },
         ] };
@@ -139,7 +139,20 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     // ── ride list + live waits cached; LL form gets the autocomplete ──
     const st2 = papiData();
     r.rideListCached = !!st2.rides && (st2.rides.mk || []).some(x => x.name === 'ZZ Space Mountain');
-    r.liveWaitsCached = !!st2.waits && st2.waits.by['zz space mountain'] === 60 && st2.waits.day === DAY;
+    const wsm = st2.waits && st2.waits.by['zz space mountain'];
+    r.liveWaitsCached = !!wsm && wsm.w === 60 && st2.waits.day === DAY;
+    r.liveLLMetadata = !!wsm && wsm.ll === 'single' && wsm.price === 15 && st2.waits.by['zz peter pan'].ll === 'multi';
+    r.rideMetaLine = papiRideMeta('ZZ Space Mountain').indexOf('60 min standby') >= 0 && papiRideMeta('ZZ Space Mountain').indexOf('LL Single Pass $15') >= 0;
+    // standby ride type: firm plan on the Day Plan, no LL fields saved
+    LLS.push({ id: 'zsb', trip: 'jul26', day: DAY, ride: 'ZZ Standby Ride', tier: 'none', status: 'planning', rideTime: '11:00 AM', who: 'all' });
+    const sbItem = dayPlanItems(DAYS.filter(x => x.trip === 'jul26' && x.date === DAY)[0]).filter(i => i.x === 'ZZ Standby Ride')[0];
+    r.standbyOnPlanNotSoft = !!sbItem && !sbItem.soft && sbItem.t === '11:00 AM';
+    r.standbyTag = tagShort('none') === 'SB' && tagLbl('none') === 'Standby';
+    S.screen = { type: 'addll', day: DAY };
+    S._formInit = null; S._formTier = null;
+    const llForm = (S._formInit = null, scrAddLL());
+    r.formHasStandbyOption = llForm.indexOf('Standby') >= 0 && llForm.indexOf('papi-ridemeta') >= 0;
+    S.screen = null;
     const dl = papiRideDatalist();
     r.datalistHasRides = dl.indexOf('papi-ridelist') >= 0 && dl.indexOf('ZZ Space Mountain') >= 0;
     S.screen = { type: 'addll', day: DAY };
