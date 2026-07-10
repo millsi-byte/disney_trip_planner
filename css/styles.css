@@ -700,6 +700,7 @@ button{font-family:inherit}
 .papi-sug{padding:9px 12px;border:1px solid var(--border);border-top:0;background:var(--card);font-size:14px;cursor:pointer}
 .papi-sug:first-child{border-top:1px solid var(--border);border-radius:8px 8px 0 0;margin-top:4px}
 .papi-sug:last-child{border-radius:0 0 8px 8px}
+.papi-sugtag{font-size:10.5px;font-weight:700;color:#166534;background:#DCFCE7;border-radius:6px;padding:1px 6px;margin-left:6px;vertical-align:1px}
 /* sticky multi-select action bar pinned in the Browse screens' footer */
 .papi-selbar .papi-selhint{font-size:13px;color:var(--muted);text-align:center;padding:0 2px 8px}
 .papi-selbar.fly{animation:selbar-in .25s ease-out}

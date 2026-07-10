@@ -180,7 +180,6 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     S.screen = null;
     // let the browse sweeps triggered above settle before counting fetches later
     await new Promise(res => setTimeout(res, 300));
-    r.datalistHasRides = papiRideDatalist().indexOf('ZZ Space Mountain') >= 0; // still available for future use
 
     // ── a manual refresh with the Live Disney Data console OPEN updates it in place ──
     openScreen({ type: 'parkapi' });
@@ -376,6 +375,47 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.batchLinksLL = RIDES[RIDES.length - 1].llId === 'zll6' && RIDES[RIDES.length - 1].name === 'ZZ Space Mountain';
     S.screen = null; renderOverlay();
 
+    // ── Build 388: Day Agenda quick-add Ride chip + Browse Rides manual add ──
+    S.open = defOpen(); S.open.itin = true;
+    const dpHtml = dayPlanCard(DAYS.filter(x => x.trip === 'jul26' && x.date === DAY)[0], PARKS[dayPrimaryPark(DAY)] || PARKS.mk);
+    r.agendaAddRideChip = dpHtml.indexOf('Add Ride') >= 0 && dpHtml.indexOf("type:'apirides'") >= 0;
+    S.screen = { type: 'apirides', day: DAY, pk: 'mk' };
+    r.browseManualAtBottom = scrApiRides().indexOf('Add Ride Manually') >= 0;
+    S.screen = null;
+
+    // ── Build 388: LL naming — every LL surface says Lightning Lane ──
+    r.llCardSaysLL = llCard(llFor(DAY), DAYS.filter(x => x.trip === 'jul26' && x.date === DAY)[0], PARKS.ep).indexOf('Add Lightning Lane') >= 0;
+    S.screen = { type: 'section', section: 'll' };
+    const llSecHtml = scrSection();
+    r.llSectionSaysLL = llSecHtml.indexOf('Add Lightning Lane') >= 0 && llSecHtml.indexOf('>Add ride<') < 0;
+    S.screen = null;
+    r.hubCountsPasses = renderPlanHub().indexOf('passes') >= 0;
+
+    // ── Build 388: LL form — Day+Park on top, ride picker, no own ride-time ──
+    S.screen = { type: 'addll', day: DAY }; S._formInit = null;
+    renderOverlay();
+    const llHtml = document.getElementById('screen-host').innerHTML;
+    r.llFormTitle = llHtml.indexOf('Add Lightning Lane') >= 0;
+    r.llFormDayParkTop = llHtml.indexOf('ll-day') >= 0 && llHtml.indexOf('ll-park') >= 0 && llHtml.indexOf('ll-day') < llHtml.indexOf('ll-ride');
+    r.llFormNoOwnRideTime = llHtml.indexOf('ll-rtime') < 0;
+    // empty query on focus → the day's unclaimed planned rides, tagged
+    llRideSuggest('ll-ride');
+    const sug = document.getElementById('ll-ride__sug').innerHTML;
+    r.llPickerListsPlanned = sug.indexOf('ZZ Peter Pan') >= 0 && sug.indexOf('planned') >= 0;
+    // typing → live attraction catalog autocomplete (PAPICAT-only device here)
+    document.getElementById('ll-ride').value = 'zz space';
+    llRideSuggest('ll-ride');
+    r.llPickerAutocompletes = document.getElementById('ll-ride__sug').innerHTML.indexOf('ZZ Space Mountain') >= 0;
+    // naming a ride nobody planned yet creates + links the planned ride
+    document.getElementById('ll-ride').value = 'ZZ Fresh Coaster';
+    const ridesBeforeLL = RIDES.length;
+    saveLL();
+    await new Promise(res => setTimeout(res, 300));
+    const freshLL = LLS.filter(l => l.ride === 'ZZ Fresh Coaster')[0];
+    const freshRide = RIDES.filter(x => x.name === 'ZZ Fresh Coaster')[0];
+    r.llCreatesRide = !!freshLL && !!freshRide && RIDES.length === ridesBeforeLL + 1 && freshRide.llId === freshLL.id && freshRide.day === DAY && freshRide.rideTime === '';
+    r.llCreatedMergedRow = !dayPlanItems(DAYS.filter(x => x.trip === 'jul26' && x.date === DAY)[0]).some(i => i.type === 'll' && i.ref === freshLL.id);
+
     // ── Browse shows: multi-select → batch screen; published times become a
     //    selector (each / all / TBD), unpublished ones the manual picker.
     //    Still on the PAPICAT-only device: times must come from the catalog. ──
@@ -433,7 +473,6 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     await new Promise(res => setTimeout(res, 200));
     r.prodInert = fetchCount === before;
     r.prodStampHidden = papiStampLine() === '';
-    r.prodDatalistHidden = papiRideDatalist() === '';
     window.BUILD = realBuild;
 
     return r;
