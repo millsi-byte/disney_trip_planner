@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='385-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='386-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -1326,7 +1326,19 @@ function papiRideBox(id,val){
 }
 /* ── Planned Rides — a plan to ride an attraction. May link a Lightning
    Lane (llId), which supplies the ride window; the ride itself carries the
-   planned time that slots it on the Day Plan. ── */
+   planned time that slots it on the Day Plan (a linked ride absorbs the
+   LL's Day Agenda row — one merged stop, never two). ── */
+/* a day's Lightning Lanes not yet claimed by a planned ride (keepFor: the
+   ride being edited keeps seeing its own LL in the list) */
+function llUnlinked(ds,keepFor){
+  var used={};RIDES.forEach(function(r){if(r.trip===S.tripId&&r.llId&&r.id!==keepFor)used[r.llId]=1;});
+  return LLS.filter(function(l){return l.trip===S.tripId&&l.day===ds&&!used[l.id];});
+}
+/* the same-named unclaimed LL a new ride should link to automatically */
+function llNameMatch(ds,name){
+  var lc=String(name||'').toLowerCase();if(!lc)return null;
+  return llUnlinked(ds).filter(function(l){return (l.ride||'').toLowerCase()===lc;})[0]||null;
+}
 function scrRideEdit(){
   var edit=S.screen.edit?RIDES.filter(function(x){return x.id===S.screen.edit;})[0]:null;
   var seed=(!edit&&S.screen.seed)?S.screen.seed:null;
@@ -1334,10 +1346,13 @@ function scrRideEdit(){
   var body='<div class="field"><label class="field-label">Ride</label>'+papiRideBox('rd-name',edit?edit.name:(seed&&seed.name||''))+'</div>';
   body+='<div class="field"><label class="field-label">Planned time to ride <span class="opt">(slots it on the Day Plan)</span></label>'+timeField('rd-time',edit&&edit.rideTime?edit.rideTime:'')+'</div>';
   body+='<div class="field"><label class="field-label">Day</label><select class="field-select" id="rd-day">'+dayOptions(dy)+'</select></div>';
-  var dayLLs=LLS.filter(function(l){return l.trip===S.tripId&&l.day===dy;});
-  body+='<div class="field"><label class="field-label">Lightning Lane <span class="opt">(optional — sets the ride window)</span></label><select class="field-select" id="rd-ll">';
-  body+='<option value=""'+(!(edit&&edit.llId)?' selected':'')+'>— none (standby) —</option>';
-  dayLLs.forEach(function(l){body+='<option value="'+l.id+'"'+(edit&&edit.llId===l.id?' selected':'')+'>'+esc(l.ride)+' ('+tagShort(l.tier)+(l.status==='booked'?' · Booked':'')+')</option>';});
+  var dayLLs=llUnlinked(dy,edit&&edit.id);
+  var match=(!edit&&seed&&seed.name)?llNameMatch(dy,seed.name):null;
+  var selLL=(edit&&edit.llId)||(match&&match.id)||'';
+  body+='<div class="field"><label class="field-label">Lightning Lane <span class="opt">(optional — sets the ride window; merged into one Day Plan stop)</span></label><select class="field-select" id="rd-ll">';
+  body+='<option value=""'+(!selLL?' selected':'')+'>— none (standby) —</option>';
+  dayLLs.forEach(function(l){body+='<option value="'+l.id+'"'+(selLL===l.id?' selected':'')+'>'+esc(l.ride)+' ('+tagShort(l.tier)+(l.status==='booked'?' · Booked':'')+')</option>';});
+  body+='<option value="__new">+ Create a new Lightning Lane…</option>';
   body+='</select></div>';
   body+=whoSelectField(edit?edit.who:'all');
   if(edit)body+='<button class="btn-danger-link" onclick="delRide(\''+edit.id+'\')">Delete this planned ride</button>';
@@ -1347,10 +1362,23 @@ function saveRide(){
   var nm=val('rd-name');if(!nm){toast('Add a ride name');return;}
   var edit=S.screen.edit?RIDES.filter(function(x){return x.id===S.screen.edit;})[0]:null;
   var rec=edit||{id:'rd'+Date.now(),trip:S.tripId,by:S.persona};
-  rec.name=nm;rec.day=val('rd-day')||S.screen.day;rec.rideTime=val('rd-time')||'';rec.llId=val('rd-ll')||'';rec.who=whoVal();
+  var llSel=val('rd-ll');
+  rec.name=nm;rec.day=val('rd-day')||S.screen.day;rec.rideTime=val('rd-time')||'';rec.who=whoVal();
   rec.park=dayPrimaryPark(rec.day)||'';
+  var linked=false;
+  if(llSel==='__new'){rec.llId='';}
+  else{
+    rec.llId=llSel||'';
+    if(!edit&&!rec.llId){var m=llNameMatch(rec.day,nm);if(m){rec.llId=m.id;linked=true;}}
+  }
   if(!edit)RIDES.push(rec);
-  save('dtp_rides',RIDES);S._who=null;toast('Planned ride saved');closeScreen();render();
+  save('dtp_rides',RIDES);S._who=null;
+  toast(linked?'Planned ride saved — linked to its Lightning Lane':'Planned ride saved');
+  /* "+ Create a new Lightning Lane…": swap straight to the LL form pre-
+     filled (no closeScreen first — its deferred finish would clobber the
+     new screen); saving the LL links it back to this ride */
+  if(llSel==='__new'){openScreen({type:'addll',day:rec.day,seed:{ride:rec.name},linkRide:rec.id});return;}
+  closeScreen();render();
 }
 function delRide(id){
   var it=RIDES.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;
@@ -1390,22 +1418,35 @@ function papiRideSel(entId){
 function papiRideTimes(){
   openScreen({type:'ridetimes',day:S.screen.day,pk:S.screen.pk||dayPrimaryPark(S.screen.day)||'mk',sel:Object.keys(S.screen._sel||{})});
 }
-/* batch time entry: one row per selected ride; empty time = TBD */
+/* batch time entry: one row per selected ride; empty time = TBD. When the
+   day has unclaimed Lightning Lanes, each row can attach one (same-named
+   LLs are pre-selected) — the pair becomes ONE merged Day Plan stop. */
 function scrRideTimes(){
   var d=dayByDate(S.screen.day);if(!d)return scrGeneric();
   var pk=S.screen.pk||'mk',ids=S.screen.sel||[];
-  var body='<div class="body-empty" style="text-align:left;padding:2px 2px 12px">Set a planned time for each ride — or leave one blank to add it as TBD.</div>';
+  var un=llUnlinked(d.date);
+  var body='<div class="body-empty" style="text-align:left;padding:2px 2px 12px">Set a planned time for each ride — or leave one blank to add it as TBD.'+(un.length?' Rides can attach one of the day’s Lightning Lanes.':'')+'</div>';
   ids.forEach(function(id,i){
     var ent=papiCatRides(pk).filter(function(x){return x.id===id;})[0];if(!ent)return;
-    body+='<div class="field"><label class="field-label">'+esc(ent.name)+'</label>'+timeField('rt_'+i,'')+'</div>';
+    body+='<div class="field"><label class="field-label">'+esc(ent.name)+'</label>'+timeField('rt_'+i,'');
+    if(un.length){
+      var m=llNameMatch(d.date,ent.name);
+      body+='<select class="field-select" id="rl_'+i+'" style="margin-top:6px">';
+      body+='<option value=""'+(!m?' selected':'')+'>— no Lightning Lane —</option>';
+      un.forEach(function(l){body+='<option value="'+l.id+'"'+(m&&m.id===l.id?' selected':'')+'>⚡ '+esc(l.ride)+' ('+tagShort(l.tier)+(l.status==='booked'?' · Booked':'')+')</option>';});
+      body+='</select>';
+    }
+    body+='</div>';
   });
   return screenShell('Set Ride Times',body,'Add '+ids.length+' ride'+(ids.length===1?'':'s'),'saveRideTimes()','Back');
 }
 function saveRideTimes(){
   var pk=S.screen.pk||'mk',ids=S.screen.sel||[],ds=S.screen.day,n=0;
+  var hadLL=llUnlinked(ds).length>0;
   ids.forEach(function(id,i){
     var ent=papiCatRides(pk).filter(function(x){return x.id===id;})[0];if(!ent)return;
-    RIDES.push({id:'rd'+Date.now()+'_'+i,trip:S.tripId,by:S.persona,name:ent.name,day:ds,rideTime:val('rt_'+i)||'',llId:'',who:'all',park:pk,apiKey:ent.id});n++;
+    var llId=hadLL?(val('rl_'+i)||''):'';
+    RIDES.push({id:'rd'+Date.now()+'_'+i,trip:S.tripId,by:S.persona,name:ent.name,day:ds,rideTime:val('rt_'+i)||'',llId:llId,who:'all',park:pk,apiKey:ent.id});n++;
   });
   save('dtp_rides',RIDES);toast(n+' ride'+(n===1?'':'s')+' planned');closeScreen();render();
 }
@@ -1549,10 +1590,10 @@ function saveShowTimes(){
   toast(n+' show'+(n===1?'':'s')+' added');closeScreen();render();
 }
 /* type → emoji + human context for a plan item */
-function nowIcon(t){return ({dining:'🍽',ll:'⚡',show:'🎭',parade:'🎭',flight:'✈️',resort:'🏨',rebook:'🔁',manual:'📍'})[t]||'•';}
+function nowIcon(t){return ({dining:'🍽',ll:'⚡',ride:'🎢',show:'🎭',parade:'🎭',flight:'✈️',resort:'🏨',rebook:'🔁',manual:'📍'})[t]||'•';}
 function nowCtx(e){
   if(e.park&&PARKS[e.park])return PARKS[e.park].name;
-  return ({dining:'Dining',ll:'Lightning Lane',show:'Show',parade:'Parade',flight:'Flight',resort:'Resort',rebook:'Re-book',manual:'Plans'})[e.type]||'';
+  return ({dining:'Dining',ll:'Lightning Lane',ride:'Ride',show:'Show',parade:'Parade',flight:'Flight',resort:'Resort',rebook:'Re-book',manual:'Plans'})[e.type]||'';
 }
 /* countdown formatter for the "until" pill: "1h 20m" / "45 min" / "now" */
 function nowFmtCd(m){if(m<=0)return 'now';if(m>=60){var h=Math.floor(m/60);return h+'h '+(m%60)+'m';}return m+' min';}
@@ -3415,20 +3456,28 @@ function dayPlanItems(d){
   diningFor(date).forEach(function(dn){if(dn.status==='reserved'||dn.status==='planned')out.push({t:dn.time,x:dn.meal+' — '+dn.name,name:dn.name,meal:dn.meal,park:(dn.loc==='in'?dn.park:null),loc:dn.loc,type:'dining',who:dn.who,ref:dn.id,status:dn.status,dstatus:dn.status,soft:dn.status==='planned'});});
   showsFor(date).forEach(function(s){if((s.status||'attend')==='attend')out.push({t:s.time,x:s.name,name:s.name,park:s.park,type:'show',who:s.who,ref:s.id,status:s.status||'attend'});});
   paradesFor(date).forEach(function(p){if((p.status||'attend')==='attend')out.push({t:p.time,x:p.name,name:p.name,park:p.park,type:'parade',who:p.who,ref:p.id,status:p.status||'attend'});});
-  llFor(date).forEach(function(l){var bk=l.status==='booked';out.push({t:llSlotTime(l),x:l.ride,name:l.ride,type:'ll',who:l.who,ref:l.id,soft:!bk,tier:l.tier,status:l.status,win:llWindowText(l)});});
-  ridesFor(date).forEach(function(r){out.push({t:r.rideTime||'',x:r.name,name:r.name,type:'ride',who:r.who,ref:r.id});});
+  /* a planned ride that links a Lightning Lane ABSORBS it: one merged row
+     (ride's time first, LL window as fallback + sub-line) instead of two */
+  var llClaimed={};ridesFor(date).forEach(function(r){if(r.llId)llClaimed[r.llId]=1;});
+  llFor(date).forEach(function(l){if(llClaimed[l.id])return;var bk=l.status==='booked';out.push({t:llSlotTime(l),x:l.ride,name:l.ride,type:'ll',who:l.who,ref:l.id,soft:!bk,tier:l.tier,status:l.status,win:llWindowText(l)});});
+  ridesFor(date).forEach(function(r){
+    var ll=r.llId?LLS.filter(function(l){return l.id===r.llId;})[0]:null;
+    out.push({t:r.rideTime||(ll?llSlotTime(ll):''),x:r.name,name:r.name,type:'ride',who:r.who,ref:r.id,ll:ll?{id:ll.id,tier:ll.tier,status:ll.status}:null,win:ll?llWindowText(ll):''});
+  });
   (d.itin||[]).forEach(function(it,idx){
     if(it.priv&&it.by&&it.by!==S.persona)return;   /* private stop — only its author sees it */
     out.push({t:it.t,x:it.x,type:'manual',who:it.who||'all',crit:it.crit,idx:idx,priv:!!it.priv});
   });
   out=out.filter(function(e){return visible(e.who);});
   out.sort(function(a,b){return mins(a.t)-mins(b.t);});
-  // weave each rolling re-book in right after the booked LL it follows
+  // weave each rolling re-book in right after the booked LL it follows —
+  // including an LL absorbed into a merged ride row
   var woven=[];
   out.forEach(function(e){
     woven.push(e);
-    if(e.type==='ll'&&e.ref){
-      rebooksFor(date).forEach(function(rb){if(rb.after===e.ref&&visible(rb.who))woven.push({t:e.t,x:rebookText(rb),type:'rebook',who:rb.who,soft:e.soft,ref:rb.id,sub:rebookTimeLabel(rb)});});
+    var llRef=(e.type==='ll'&&e.ref)?e.ref:(e.type==='ride'&&e.ll?e.ll.id:null);
+    if(llRef){
+      rebooksFor(date).forEach(function(rb){if(rb.after===llRef&&visible(rb.who))woven.push({t:e.t,x:rebookText(rb),type:'rebook',who:rb.who,soft:e.soft,ref:rb.id,sub:rebookTimeLabel(rb)});});
     }
   });
   return woven;
@@ -3469,9 +3518,10 @@ function dayPlanCard(d,pk){
       o+='<div class="t-time">'+esc(e.t)+'</div>';
       /* name: dining/show use the bare name; LL appends its tier pill; others keep text (may carry pill markers) */
       var nameHtml=(e.type==='ll')?(esc(e.name||e.x)+' <span class="ll-tag '+tagCls(e.tier)+'">'+tagShort(e.tier)+'</span>')
+                   :(e.type==='ride'&&e.ll)?(esc(e.name||e.x)+' <span class="ll-tag '+tagCls(e.ll.tier)+'">'+tagShort(e.ll.tier)+'</span>')
                    :(e.type==='dining'||e.type==='show'||e.type==='parade')?esc(e.name||e.x):pillify(esc(e.x));
       o+='<div style="flex:1;min-width:0"><div class="t-text">'+nameHtml+'</div>';
-      if(e.type==='ll'&&e.win) o+='<div class="t-sub">Ride window: '+esc(e.win)+'</div>';
+      if((e.type==='ll'||e.type==='ride')&&e.win) o+='<div class="t-sub">Ride window: '+esc(e.win)+'</div>';
       if(e.type==='rebook'&&e.sub) o+='<div class="t-sub">'+esc(e.sub)+'</div>';
       /* pills: category + the SAME shared pills the cards use (status / meal / park) */
       var tags=[];
@@ -3479,6 +3529,7 @@ function dayPlanCard(d,pk){
          instead of a generic "Dining" pill */
       if(e.type==='dining'&&e.meal) tags.push('<span class="t-tag" style="background:#7C2D12;color:#fff">'+esc(e.meal)+'</span>');
       else{ var chip=planChip(e.type);if(chip)tags.push(chip); }
+      if(e.type==='ride'&&e.ll){ tags.push(planChip('ll')); if(e.ll.status)tags.push(statusBadge(e.ll.status)); }
       if((e.type==='dining'||e.type==='show'||e.type==='parade'||e.type==='ll')&&e.status) tags.push(statusBadge(e.status));
       if(e.type==='dining'){
         tags.push(e.park&&PARKS[e.park]?'<span class="inpark-badge" style="background:'+PARKS[e.park].color+'">'+esc(PARKS[e.park].short)+'</span>':(e.loc==='in'?'<span class="inpark-badge" style="background:#8C9BAA">In-Park</span>':'<span class="nonpark-badge">Non-Park</span>'));
@@ -3494,6 +3545,7 @@ function dayPlanCard(d,pk){
       if(e.type==='manual') o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;align-self:flex-start" onclick="openScreen({type:\'stopedit\',day:\''+d.date+'\',idx:'+e.idx+'})">'+IC.pencil+'</button>';
       else if(e.ref&&DPLAN_EDIT[e.type]) o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;align-self:flex-start" onclick="openScreen({type:\''+DPLAN_EDIT[e.type]+'\',edit:\''+e.ref+'\',day:\''+d.date+'\'})">'+IC.pencil+'</button>';
       if(e.ref&&(e.type==='dining'||e.type==='ll'||e.type==='show'||e.type==='parade')) o+=rsvpRow(e.type,e.ref);
+      else if(e.type==='ride'&&e.ll) o+=rsvpRow('ll',e.ll.id);   /* the absorbed LL keeps its RSVPs */
       else if(e.type==='manual'&&!e.priv) o+=rsvpRow('manual',d.date+'|'+e.idx);
       o+='</div>';
     }
@@ -5177,10 +5229,12 @@ function llSlotTime(l){
 }
 function scrAddLL(){
   var edit=S.screen.edit?LLS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
+  var llseed=(!edit&&S.screen.seed)?S.screen.seed:null;
   if(S._formInit!=='ll'){S._formTier=edit?edit.tier:'sp';S._formStatus.ll=edit?edit.status:'planning';S._formInit='ll';}
   var win=(edit&&(edit.winStart||edit.winEnd))?{start:edit.winStart||'',end:edit.winEnd||''}:(edit?parseWindow(edit.window):{start:'',end:''});
   var tier=S._formTier,stt=S._formStatus.ll,pre=edit?edit.who:'all';
-  var body='<div class="field"><label class="field-label">Ride</label><input class="field-input" id="ll-ride" placeholder="e.g. Peter Pan\'s Flight" value="'+(edit?esc(edit.ride):'')+'"></div>';
+  var body='<div class="field"><label class="field-label">Ride</label><input class="field-input" id="ll-ride" placeholder="e.g. Peter Pan\'s Flight" value="'+(edit?esc(edit.ride):(llseed&&llseed.ride?esc(llseed.ride):''))+'"></div>';
+  if(S.screen.linkRide)body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px">Will be attached to your planned ride when saved.</div>';
   body+='<div class="field"><label class="field-label">Tier</label><div class="seg">';
   body+='<button class="seg-btn'+(tier==='sp'?' on':'')+'" onclick="pickTier(\'sp\')">SP</button>';
   body+='<button class="seg-btn'+(tier==='mp1'?' on':'')+'" onclick="pickTier(\'mp1\')">T1</button>';
@@ -5222,12 +5276,30 @@ function saveLL(){
     rec.conf=val('ll-conf')||rec.conf||'MP-'+Math.floor(10000+Math.random()*89999);
   }
   if(!edit)LLS.push(rec);
-  save('dtp_lls',LLS);afterWhoSave('Lightning Lane',rec,oldWho);S._who=null;toast('Ride saved');closeScreen();render();
+  save('dtp_lls',LLS);afterWhoSave('Lightning Lane',rec,oldWho);S._who=null;
+  /* keep ride links honest: attach to the ride that created this LL
+     (+ Create new… flow), else auto-link a same-named unclaimed ride that
+     day; a day change un-links rides left on the old day */
+  var ridesChanged=false,linkedTo=null;
+  if(edit){
+    RIDES.forEach(function(r){if(r.llId===rec.id&&r.trip===S.tripId&&r.day!==rec.day){r.llId='';ridesChanged=true;}});
+  }else{
+    var tgt=S.screen.linkRide?RIDES.filter(function(r){return r.id===S.screen.linkRide;})[0]:null;
+    if(!tgt)tgt=RIDES.filter(function(r){return r.trip===S.tripId&&r.day===rec.day&&!r.llId&&(r.name||'').toLowerCase()===rec.ride.toLowerCase();})[0];
+    if(tgt){tgt.llId=rec.id;ridesChanged=true;linkedTo=tgt;}
+  }
+  if(ridesChanged)save('dtp_rides',RIDES);
+  toast(linkedTo?'Ride saved — attached to your planned ride':'Ride saved');
+  closeScreen();render();
 }
 function delLL(id){
   var it=LLS.filter(function(x){return x.id===id;})[0];if(!ownOK(it))return;
   confirmCritical('Lightning Lane',function(){
     for(var i=0;i<LLS.length;i++)if(LLS[i].id===id){LLS.splice(i,1);break;}
+    /* un-link any planned ride that pointed at it */
+    var ridesChanged=false;
+    RIDES.forEach(function(r){if(r.llId===id){r.llId='';ridesChanged=true;}});
+    if(ridesChanged)save('dtp_rides',RIDES);
     save('dtp_lls',LLS);notifyDelete('Lightning Lane',it);toast('Ride removed');closeScreen();render();
   });
 }

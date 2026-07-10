@@ -154,7 +154,8 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     S.screen = { type: 'rideedit', day: DAY };
     const rdForm = scrRideEdit();
     r.rideFormAutocomplete = rdForm.indexOf('papiRideSuggest') >= 0 && rdForm.indexOf('rd-name__sug') >= 0;
-    r.rideFormLLLink = rdForm.indexOf('rd-ll') >= 0 && rdForm.indexOf('ZZNOWRIDE') >= 0;
+    // zll9 is claimed by zrd1 → a NEW ride's LL dropdown must NOT offer it
+    r.rideFormLLLink = rdForm.indexOf('rd-ll') >= 0 && rdForm.indexOf('ZZNOWRIDE') < 0;
     S.screen = { type: 'addll', day: DAY };
     S._formInit = null; S._formTier = null;
     const llForm = scrAddLL();
@@ -281,6 +282,89 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     S.screen = { type: 'rideedit', day: DAY, seed: { name: 'ZZ Space Mountain' } };
     r.formSeedPrefills = scrRideEdit().indexOf('ZZ Space Mountain') >= 0;
     S.screen = null;
+
+    // ── ride + linked LL = ONE merged Day Agenda row (never two) ──
+    const dayD = DAYS.filter(x => x.trip === 'jul26' && x.date === DAY)[0];
+    let dpi = dayPlanItems(dayD);
+    r.mergedSingleRow = !dpi.some(i => i.type === 'll' && i.ref === 'zll9') && dpi.some(i => i.type === 'ride' && i.ref === 'zrd1');
+    const mrg = dpi.filter(i => i.ref === 'zrd1')[0];
+    r.mergedWindowInfo = !!mrg && mrg.win === '2:00 PM–3:00 PM' && !!mrg.ll && mrg.ll.tier === 'mp1';
+    r.mergedRideTimeWins = !!mrg && mrg.t === '2:15 PM';
+    // ride with no planned time falls back to the LL slot for agenda ordering
+    RIDES.filter(x => x.id === 'zrd1')[0].rideTime = '';
+    r.mergedTimeFallback = dayPlanItems(dayD).filter(i => i.ref === 'zrd1')[0].t === '2:00 PM';
+    RIDES.filter(x => x.id === 'zrd1')[0].rideTime = '2:15 PM';
+    // the absorbed LL's rolling re-book still weaves in right after the merged row
+    REBOOKS.push({ id: 'rb_z1', trip: 'jul26', day: DAY, after: 'zll9', text: 'ZZ rebook target', who: 'all' });
+    dpi = dayPlanItems(dayD);
+    const rdIdx = dpi.findIndex(i => i.ref === 'zrd1');
+    r.mergedKeepsRebook = rdIdx >= 0 && !!dpi[rdIdx + 1] && dpi[rdIdx + 1].type === 'rebook';
+    REBOOKS.pop();
+    // an unclaimed LL keeps its own row
+    LLS.push({ id: 'zll8', trip: 'jul26', day: DAY, ride: 'ZZ Solo LL', tier: 'sp', status: 'booked', winStart: '4:00 PM', winEnd: '5:00 PM', who: 'all' });
+    r.unlinkedLLKeepsRow = dayPlanItems(dayD).some(i => i.type === 'll' && i.ref === 'zll8');
+
+    // ── LL first, ride later: form pre-selects the same-named unclaimed LL ──
+    LLS.push({ id: 'zll7', trip: 'jul26', day: DAY, ride: 'ZZ Link Coaster', tier: 'mp2', status: 'planning', winStart: '1:00 PM', winEnd: '2:00 PM', who: 'all' });
+    S.screen = { type: 'rideedit', day: DAY, seed: { name: 'ZZ Link Coaster' } };
+    renderOverlay();
+    const rdHtml = document.getElementById('screen-host').innerHTML;
+    r.rideFormPreselectsLL = document.getElementById('rd-ll').value === 'zll7';
+    r.rideFormOffersCreateNew = rdHtml.indexOf('__new') >= 0;
+    saveRide();
+    await new Promise(res => setTimeout(res, 300));   // closeScreen's deferred finish
+    const linkedRide = RIDES.filter(x => x.name === 'ZZ Link Coaster')[0];
+    r.rideAutoLinked = !!linkedRide && linkedRide.llId === 'zll7';
+    // a claimed LL disappears from other rides' LL dropdowns
+    S.screen = { type: 'rideedit', day: DAY };
+    r.claimedLLHidden = scrRideEdit().indexOf('ZZ Link Coaster') < 0 && scrRideEdit().indexOf('ZZ Solo LL') >= 0;
+    S.screen = null; renderOverlay();
+
+    // ── ride first, LL later: saving a same-named LL links itself to the ride ──
+    RIDES.push({ id: 'zrd2', trip: 'jul26', day: DAY, name: 'ZZ Orphan Ride', rideTime: '', llId: '', who: 'all', park: 'ep' });
+    S.screen = { type: 'addll', day: DAY };
+    S._formInit = null;
+    renderOverlay();
+    document.getElementById('ll-ride').value = 'ZZ Orphan Ride';
+    saveLL();
+    await new Promise(res => setTimeout(res, 300));
+    const orphan = RIDES.filter(x => x.id === 'zrd2')[0];
+    r.llAutoLinksRide = !!orphan.llId && LLS.some(l => l.id === orphan.llId && l.ride === 'ZZ Orphan Ride');
+
+    // ── "+ Create a new Lightning Lane…" from the ride form links back ──
+    S.screen = { type: 'rideedit', day: DAY };
+    S._formInit = null;
+    renderOverlay();
+    document.getElementById('rd-name').value = 'ZZ Chain Ride';
+    document.getElementById('rd-ll').value = '__new';
+    saveRide();
+    r.newLLFlowOpensLLForm = !!S.screen && S.screen.type === 'addll' && !!S.screen.seed && S.screen.seed.ride === 'ZZ Chain Ride' && !!S.screen.linkRide;
+    saveLL();
+    await new Promise(res => setTimeout(res, 300));
+    const chainRide = RIDES.filter(x => x.name === 'ZZ Chain Ride')[0];
+    r.newLLFlowLinksBack = !!chainRide && !!chainRide.llId && LLS.some(l => l.id === chainRide.llId && l.ride === 'ZZ Chain Ride');
+
+    // ── moving a linked LL to another day un-links the ride left behind ──
+    S.screen = { type: 'addll', edit: chainRide.llId, day: DAY };
+    S._formInit = null;
+    renderOverlay();
+    document.getElementById('ll-day').value = '2026-07-16';
+    saveLL();
+    await new Promise(res => setTimeout(res, 300));
+    r.llDayMoveUnlinks = RIDES.filter(x => x.id === chainRide.id)[0].llId === '';
+
+    // ── batch browse-add: LL dropdown appears, pre-selects the name match, links on save ──
+    LLS.push({ id: 'zll6', trip: 'jul26', day: DAY, ride: 'ZZ Space Mountain', tier: 'sp', status: 'planning', winStart: '6:00 PM', winEnd: '7:00 PM', who: 'all' });
+    S.screen = { type: 'apirides', day: DAY, pk: 'mk', _sel: { 'ent-ride1': 1 } };
+    papiRideTimes();
+    renderOverlay();
+    const rtHtml = document.getElementById('screen-host').innerHTML;
+    r.batchLLDropdown = rtHtml.indexOf('rl_0') >= 0;
+    r.batchLLPreselected = document.getElementById('rl_0').value === 'zll6';
+    saveRideTimes();
+    await new Promise(res => setTimeout(res, 300));
+    r.batchLinksLL = RIDES[RIDES.length - 1].llId === 'zll6' && RIDES[RIDES.length - 1].name === 'ZZ Space Mountain';
+    S.screen = null; renderOverlay();
 
     // ── Browse shows: multi-select → batch screen; published times become a
     //    selector (each / all / TBD), unpublished ones the manual picker.
