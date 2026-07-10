@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='405';
+var BUILD='406';
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -1048,6 +1048,16 @@ function papiRefresh(force){
   var fin=function(){
     window.__papiInflight=false;
     var t=papiStat();
+    /* a Browse sweep may have saved showtimes while this run was in flight —
+       graft them in (this run's own values win) before the wholesale save */
+    try{
+      var cur=papiData();
+      ['times','timesList','timesLive'].forEach(function(f){
+        if(!cur[f])return;st[f]=st[f]||{};
+        Object.keys(cur[f]).forEach(function(eid){st[f][eid]=Object.assign({},cur[f][eid],st[f][eid]||{});});
+      });
+      if(cur.stamps){st.stamps=st.stamps||{};Object.keys(cur.stamps).forEach(function(k){if(!(k in st.stamps))st.stamps[k]=cur.stamps[k];});}
+    }catch(e){}
     st.lastErr=window.__papiErr||null;st.lastOk=window.__papiOk||0;
     st.lastStat={s:t.schedOk,se:t.schedErr,c:t.created,u:t.updated,k:t.skippedUser,at:Date.now()};
     if(t.schedErr>0&&!t.schedOk)st.coolUntil=Date.now()+10*60*1000;   /* total failure → back off 10m */
@@ -1679,8 +1689,18 @@ function papiShowSweep(pk,ds){
       if(bad&&S.screen&&S.screen.type==='apishows')renderScreen_inplace2();
       return;
     }
-    papiSave(st);
-    papiPublishCat(st);
+    /* MERGE into fresh storage — saving this stale snapshot wholesale wiped
+       whatever a concurrent refresh run had just written (and vice versa:
+       a refresh finishing after us used to erase every time we fetched) */
+    var st2=papiData();
+    ['times','timesList','timesLive'].forEach(function(f){
+      if(!st[f])return;st2[f]=st2[f]||{};
+      Object.keys(st[f]).forEach(function(eid){st2[f][eid]=Object.assign(st2[f][eid]||{},st[f][eid]);});
+    });
+    st2.stamps=st2.stamps||{};
+    Object.keys(st.stamps||{}).forEach(function(k){if(k.indexOf('sched_')===0&&!st2.stamps[k])st2.stamps[k]=st.stamps[k];});
+    papiSave(st2);
+    papiPublishCat(st2);
     if(S.screen&&(S.screen.type==='apishows'||S.screen.type==='showtimes'))renderScreen_inplace2();
     else if(!S.screen)render();   /* day-view schedule cards show these times too */
   });
