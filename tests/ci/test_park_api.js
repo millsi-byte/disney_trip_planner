@@ -37,6 +37,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     const MK = '75ea578a-adc8-4116-a54d-dccb60765ef9';
     const EP = '47f90d2c-e191-4239-a466-5892ef59a88b';
     let fetchCount = 0;
+    let liveLate = false;   // evening live feed: only the late performance remains
     // mirrors REAL WDW data: early entry / extended evening arrive as
     // description-tagged entries (often TICKETED_EVENT, not EXTRA_HOURS),
     // party events must be ignored, and order must not matter
@@ -76,7 +77,9 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
               { time: DAY + 'T15:00:00-04:00', waitTime: 45, percentage: 85 },
             ] },
           { entityType: 'ATTRACTION', status: 'OPERATING', name: 'ZZ Other', queue: { STANDBY: { waitTime: 20 } } },
-          { entityType: 'SHOW', status: 'OPERATING', id: 'ent-hea', name: 'Happily Ever After', showtimes: [{ startTime: '2026-07-15T20:30:00-04:00' }, { startTime: '2026-07-15T22:30:00-04:00' }] },
+          { entityType: 'SHOW', status: 'OPERATING', id: 'ent-hea', name: 'Happily Ever After',
+            // REVERSED order on purpose — the stable sort must normalize it
+            showtimes: liveLate ? [{ startTime: '2026-07-15T22:30:00-04:00' }] : [{ startTime: '2026-07-15T22:30:00-04:00' }, { startTime: '2026-07-15T20:30:00-04:00' }] },
         ] };
       } else if (url.indexOf('/entity/ent-fof/schedule') >= 0) {
         body = { schedule: tripDates.map(d => ({ date: d, type: 'OPERATING', openingTime: d + 'T15:00:00-04:00' })) };
@@ -89,7 +92,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
           { date: d, type: 'OPERATING', openingTime: d + 'T22:30:00-04:00' },
         ])) };
       } else if (url.indexOf('/schedule/2026/07') >= 0) {
-        body = sched(tripDates);
+        body = sched(tripDates.concat(['2026-07-25']));   // non-trip date → cache must trim it
       }
       return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
     };
@@ -130,6 +133,24 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     await new Promise(res => setTimeout(res, 300));
     // apiUpd only bumps when values change, so full-state must be identical
     r.idempotentRerun = JSON.stringify([PARKHOURS, SHOWS, PARADES]) === snap;
+    r.idempotentNoUpdates = (window.__papiStat || {}).updated === 0 && (window.__papiStat || {}).created === 0;
+    r.cacheTrimmed = !((papiData().hours || {}).mk || {})['2026-07-25']; // whole-month feed, trip-dates-only cache
+
+    // ── live day-of showtimes OWN today's entry: applied once, then no
+    //    monthly/live tug-of-war ("8 refreshed" on every tap in prod) ──
+    liveLate = true;
+    localStorage.setItem('dtp__parkapi', JSON.stringify(Object.assign(papiData(), { fetched: 0, crowdFetched: 0 })));
+    papiRefresh(true);
+    await new Promise(res => setTimeout(res, 300));
+    r.liveTimesWin = SHOWS.filter(s => s.day === DAY && s.apiKey === 'ent-hea')[0].time === '10:30 PM';
+    localStorage.setItem('dtp__parkapi', JSON.stringify(Object.assign(papiData(), { fetched: 0, crowdFetched: 0 })));
+    papiRefresh(true);
+    await new Promise(res => setTimeout(res, 300));
+    r.liveTimesNoChurn = (window.__papiStat || {}).updated === 0;
+    liveLate = false;   // restore the full evening; the next forced run re-applies both times
+    localStorage.setItem('dtp__parkapi', JSON.stringify(Object.assign(papiData(), { fetched: 0, crowdFetched: 0 })));
+    papiRefresh(true);
+    await new Promise(res => setTimeout(res, 300));
 
     // ── manual edit takes ownership: save the api MK record via saveHours ──
     openScreen({ type: 'hoursedit', edit: mk15.id, day: DAY });
@@ -496,6 +517,34 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.ridesTopRefresh = ridesHtml.indexOf('papiForce') >= 0;
     S.screen = null;
     r.hubMerged = renderPlanHub().indexOf('Live Entertainment') >= 0 && renderPlanHub().indexOf('Night Shows') < 0 && renderPlanHub().indexOf('Rides & Attractions') >= 0;
+
+    // ── a stalled request cannot wedge the run: hard per-request timeout ──
+    window.__papiTimeoutMs = 60;
+    window.fetch = () => new Promise(() => {});   // hangs forever
+    localStorage.setItem('dtp__parkapi', JSON.stringify({ fetched: 0, crowdFetched: 0 }));
+    papiRefresh(true);
+    await new Promise(res => setTimeout(res, 2500));
+    r.timeoutUnwedges = window.__papiInflight === false && (papiData().lastErr || '').indexOf('timeout') >= 0;
+    window.__papiTimeoutMs = null;
+    window.fetch = goodFetch;
+
+    // ── watchdog: a dead in-flight flag older than 2 minutes no longer blocks refreshes ──
+    window.__papiInflight = true; window.__papiStart = Date.now() - 130000;
+    const beforeW = fetchCount;
+    localStorage.setItem('dtp__parkapi', JSON.stringify({ fetched: 0, crowdFetched: 0 }));
+    papiRefresh(true);
+    await new Promise(res => setTimeout(res, 400));
+    r.watchdogRecovers = fetchCount > beforeW && window.__papiInflight === false;
+
+    // ── storage full: papiSave sheds bulky day-of payloads instead of silently losing the cache ──
+    const origSetItem = localStorage.setItem.bind(localStorage);
+    let failNext = true;
+    localStorage.setItem = function (k, v) { if (failNext && k === 'dtp__parkapi') { failNext = false; throw new Error('QuotaExceededError'); } return origSetItem(k, v); };
+    const stQ = papiData(); stQ.waits = stQ.waits || { day: DAY, parks: {} };
+    papiSave(stQ);
+    localStorage.setItem = origSetItem;
+    const savedQ = papiData();
+    r.quotaShedSaves = savedQ.waits === undefined && !!savedQ.stamps;
 
     // ── production build: the engine ships LIVE from Build 392 (user-approved promotion) ──
     const realBuild = window.BUILD;
