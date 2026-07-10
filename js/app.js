@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='401-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='402-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -1660,6 +1660,7 @@ function papiShowSweep(pk,ds){
   window.__papiSweep=window.__papiSweep||{};
   if(window.__papiSweep[key])return;
   var st=papiData(),list=(st.shows&&st.shows[pk])||[];
+  if(st.coolUntil&&Date.now()<st.coolUntil)return;   /* respect the rate-limit backoff — don't hammer while blocked */
   if(!list.length)return;   /* fetch-blocked device: times arrive via the synced catalog */
   window.__papiSweep[key]=1;
   var y=ds.slice(0,4),m=ds.slice(5,7),got=0,chain=Promise.resolve();
@@ -3820,9 +3821,9 @@ function dayPlanCard(d,pk){
     o+='<button class="dp-addchip" onclick="openScreen({type:\'stopedit\',day:\''+d.date+'\'})">'+IC.plus+' Plans</button>';
     o+='<button class="dp-addchip" onclick="openScreen({type:\'adddining\',day:\''+d.date+'\'})">'+IC.plus+' Dining</button>';
     o+='<button class="dp-addchip" onclick="openScreen({type:\''+(papiEnabled()?'apirides':'rideedit')+'\',day:\''+d.date+'\'})">'+IC.plus+' Ride</button>';
+    o+='<button class="dp-addchip" onclick="openScreen({type:\'visedit\',day:\''+d.date+'\'})">'+IC.plus+' Park Visit</button>';
     o+='<button class="dp-addchip" onclick="openScreen({type:\'addll\',day:\''+d.date+'\'})">'+IC.plus+' Lightning Lane</button>';
     o+='<button class="dp-addchip" onclick="openScreen({type:\''+(papiEnabled()?'apishows':'showedit')+'\',day:\''+d.date+'\'})">'+IC.plus+' Entertainment</button>';
-    o+='<button class="dp-addchip" onclick="openScreen({type:\'visedit\',day:\''+d.date+'\'})">'+IC.plus+' Park Visit</button>';
     o+='</div>';
     if(llFor(d.date).length){
       o+='<div class="ll-legend"><div class="ll-legend-item"><span class="ll-tag sp">SP</span> Single Pass</div>'

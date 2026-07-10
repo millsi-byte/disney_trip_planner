@@ -463,6 +463,11 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     papiRefresh(false);                              // auto refresh must honor the cooldown
     await new Promise(res => setTimeout(res, 100));
     r.cooldownHonored = fetchCount === beforeCool;
+    // the Browse showtimes sweep must honor the cooldown too
+    const beforeSweep = fetchCount;
+    papiShowSweep('mk', DAY);
+    await new Promise(res => setTimeout(res, 150));
+    r.sweepHonorsCooldown = fetchCount === beforeSweep;
     r.blockedDeviceHint = papiStampLine().indexOf('blocking the data service') >= 0;
 
     // ── blocked-device catalog: a device that can't fetch still gets ride lists via sync ──
