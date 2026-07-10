@@ -51,14 +51,24 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     const goodFetch = (url) => {
       fetchCount++;
       let body = {};
-      if (url.indexOf('/children') >= 0) {
+      if (url.indexOf('e957da41') >= 0) {   // the WDW destination: hotels + non-park dining
+        body = { children: [
+          { id: 'hot-1', entityType: 'HOTEL', name: 'ZZ Grand Hotel', parentId: 'dest-root' },
+          { id: 'rest-rs', entityType: 'RESTAURANT', name: 'ZZ Resort Steakhouse', parentId: 'hot-1' },
+          { id: 'rest-ds', entityType: 'RESTAURANT', name: 'ZZ Springs Cafe', parentId: 'dest-root' },
+          { id: 'rest-park', entityType: 'RESTAURANT', name: 'ZZ Park Diner', parentId: MK },
+        ] };
+      } else if (url.indexOf('/children') >= 0) {
         body = { children: [
           { id: 'ent-fof', entityType: 'SHOW', name: 'Festival of Fantasy Parade' },
           { id: 'ent-hea', entityType: 'SHOW', name: 'Happily Ever After' },
           { id: 'ent-stage', entityType: 'SHOW', name: 'ZZ Some Stage Show' },
           { id: 'ent-quiet', entityType: 'SHOW', name: 'ZZ Quiet Show' },   // never publishes times → manual picker
+          { id: 'ent-glow', entityType: 'SHOW', name: 'ZZ Glow Spectacular' },   // night kind, non-headline → schedule ghost
+          { id: 'ent-many', entityType: 'SHOW', name: 'ZZ Many Show' },   // 5 daily showtimes → '+N more' truncation
           { id: 'ent-ride1', entityType: 'ATTRACTION', name: 'ZZ Space Mountain' },
           { id: 'ent-ride2', entityType: 'ATTRACTION', name: 'ZZ Peter Pan' },
+          { id: 'rest-park', entityType: 'RESTAURANT', name: 'ZZ Park Diner' },
         ] };
       } else if (url.indexOf('/live') >= 0) {
         body = { liveData: [
@@ -77,12 +87,15 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
               { time: DAY + 'T15:00:00-04:00', waitTime: 45, percentage: 85 },
             ] },
           { entityType: 'ATTRACTION', status: 'OPERATING', name: 'ZZ Other', queue: { STANDBY: { waitTime: 20 } } },
+          { entityType: 'RESTAURANT', status: 'REFURBISHMENT', name: 'ZZ Park Diner' },
           { entityType: 'SHOW', status: 'OPERATING', id: 'ent-hea', name: 'Happily Ever After',
             // REVERSED order on purpose — the stable sort must normalize it
             showtimes: liveLate ? [{ startTime: '2026-07-15T22:30:00-04:00' }] : [{ startTime: '2026-07-15T22:30:00-04:00' }, { startTime: '2026-07-15T20:30:00-04:00' }] },
         ] };
       } else if (url.indexOf('/entity/ent-fof/schedule') >= 0) {
         body = { schedule: tripDates.map(d => ({ date: d, type: 'OPERATING', openingTime: d + 'T15:00:00-04:00' })) };
+      } else if (url.indexOf('/entity/ent-many/schedule') >= 0) {
+        body = { schedule: ['15','16','17','18','19'].map(h => ({ date: DAY, type: 'OPERATING', openingTime: DAY + 'T' + h + ':00:00-04:00' })) };
       } else if (url.indexOf('/entity/ent-quiet/schedule') >= 0) {
         body = { schedule: [] };
       } else if (url.indexOf('/entity/ent-hea/schedule') >= 0) {
@@ -211,6 +224,139 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.rideFormAttendance = scrRideEdit().indexOf('Attendance') >= 0;
     S.screen = null;
 
+    // ── Build 395: agenda TBD, live-ent chip, re-book from Plan page, rsvp hardening ──
+    RIDES.push({ id: 'ztbd', trip: 'jul26', day: DAY, name: 'ZZ Timeless', rideTime: '', llId: '', who: 'all', park: 'ep' });
+    const dp395 = dayPlanCard(DAYS.filter(x => x.trip === 'jul26' && x.date === DAY)[0], PARKS.ep);
+    r.agendaTimelessTBD = dp395.indexOf('>TBD</div>') >= 0;   // timeless component items say TBD, not blank
+    RIDES.splice(RIDES.findIndex(x => x.id === 'ztbd'), 1);
+    r.agendaLiveEntChip = dp395.indexOf(' Entertainment</button>') >= 0 && dp395.indexOf("type:'apishows'") >= 0;
+    S.screen = { type: 'section', section: 'll' };
+    r.llSectionRebookAdd = scrSection().indexOf('Add Rolling Re-book') >= 0;
+    S.screen = null;
+    // a stale persona's "Will attend" must still flip an api-scheduled show to attend
+    SHOWS.push({ id: 'sGhost', trip: 'jul26', day: '2026-07-18', name: 'ZZ Ghost Flip', time: '9:00 PM', status: 'scheduled', park: 'ep', who: 'all', src: 'api' });
+    const realPersona = S.persona; S.persona = 'zz-not-a-person';
+    rsvpSet('show', 'sGhost', 'in');
+    S.persona = realPersona;
+    r.staleRsvpStillFlips = SHOWS.filter(x => x.id === 'sGhost')[0].status === 'attend';
+    r.flippedShowOnAgenda = dayPlanItems(DAYS.filter(x => x.trip === 'jul26' && x.date === '2026-07-18')[0]).some(i => i.type === 'show' && i.ref === 'sGhost');
+    // a parade-NAMED record living in SHOWS must route to the show editor (array membership, not id prefix)
+    SHOWS.push({ id: 'paWEIRD', trip: 'jul26', day: DAY, name: 'ZZ Misfiled Parade', time: '1:00 PM', status: 'attend', park: 'mk', who: 'all' });
+    S.screen = { type: 'section', section: 'shows' };
+    r.pencilRoutesByArray = scrSection().indexOf("type:'showedit',edit:'paWEIRD'") >= 0;
+    S.screen = null;
+    // schedule cards explain scheduled-but-not-attending rows
+    S.open = defOpen(); S.open.shows = true;
+    r.scheduledRowHint = showsCard(showsFor('2026-07-18'), PARKS.ep, '2026-07-18').indexOf('On the schedule') >= 0;
+
+    // ── Build 396: schedule cards v2 — ghosts from the API cache ──
+    S.open = defOpen(); S.open.shows = true; S.open.parades = true;
+    let nsCard = showsCard(showsFor(DAY).filter(x => visible(x.who)), PARKS.ep, DAY);
+    r.nsCardRenamed = nsCard.indexOf('Nighttime Spectaculars') >= 0;
+    r.nsCardBrowse = nsCard.indexOf('Browse More Shows') >= 0 && nsCard.indexOf("type:'apishows'") >= 0;
+    r.nsGhostListed = nsCard.indexOf('ZZ Glow Spectacular') >= 0 && nsCard.indexOf('papiGhostAttend') >= 0;
+    r.nsEventGhost = nsCard.indexOf('H2O Glow After Hours') >= 0;
+    r.nsManualAdd = nsCard.indexOf('Add show manually') >= 0;
+    papiGhostAttend('ent-glow', DAY, 'ep');
+    const glow = SHOWS.filter(x => x.apiKey === 'ent-glow' && x.day === DAY)[0];
+    r.ghostAttendCreates = !!glow && glow.status === 'attend' && glow.rsvp && glow.rsvp[S.persona] === 'in';
+    r.ghostOnAgenda = dayPlanItems(DAYS.filter(x => x.trip === 'jul26' && x.date === DAY)[0]).some(i => i.type === 'show' && i.ref === glow.id);
+    nsCard = showsCard(showsFor(DAY).filter(x => visible(x.who)), PARKS.ep, DAY);
+    r.ghostDeduped = nsCard.indexOf("papiGhostAttend('ent-glow'") < 0;
+    SHOWS.splice(SHOWS.findIndex(x => x.id === glow.id), 1);
+    papiGhostEdit('ent-glow', DAY, 'ep');
+    r.ghostEditOpensForm = !!S.screen && S.screen.type === 'showedit' && SHOWS.some(x => x.apiKey === 'ent-glow' && x.day === DAY && x.status === 'scheduled');
+    S.screen = null; renderOverlay();
+    const paCard = paradesCard(paradesFor(DAY).filter(x => visible(x.who)), PARKS.ep, DAY);
+    r.paCardBrowse = paCard.indexOf('Browse More Parades') >= 0;
+    r.paNoDupGhost = paCard.indexOf('papiGhostAttend') < 0;   // the only parade entity already has a record
+
+    // ── Build 397: published-time constraints ──
+    const stM = papiData();
+    await papiFetchShowTimes(stM, 'ent-many', DAY.slice(0, 4), DAY.slice(5, 7));
+    papiSave(stM);
+    S.screen = { type: 'apishows', day: DAY, pk: 'mk' };
+    const brT = scrApiShows();
+    r.browseTimesTruncated = brT.indexOf('3:00 PM &amp; 4:00 PM &amp; 5:00 PM +2 more') >= 0;
+    r.browseSeedCarriesKey = brT.indexOf("apiKey:'ent-many'") >= 0;
+    S.screen = { type: 'showedit', day: DAY, seed: { name: 'ZZ Many Show', apiKey: 'ent-many' } };
+    S._formInit = null;
+    const cForm = scrShowEdit();
+    r.formTimeSelector = cForm.indexOf('id="sh-time"') >= 0 && cForm.indexOf('sh-time__h') < 0 && cForm.indexOf('>3:00 PM<') >= 0 && cForm.indexOf('All showtimes') >= 0;
+    S.screen = { type: 'showedit', day: DAY, seed: { name: 'ZZ Quiet Show', apiKey: 'ent-quiet' } };
+    S._formInit = null;
+    r.formManualWhenUnpublished = scrShowEdit().indexOf('sh-time__h') >= 0;
+    S.screen = null;
+
+    // ── Build 398: batch rows can CREATE a Lightning Lane; tier locks to live Single/Multi ──
+    S.screen = { type: 'apirides', day: DAY, pk: 'mk', _sel: { 'ent-ride2': 1 } };
+    papiRideTimes();
+    renderOverlay();
+    r.batchHasCreateLL = document.getElementById('screen-host').innerHTML.indexOf('__new') >= 0;
+    document.getElementById('rl_0').value = '__new';
+    const llsBefore = LLS.length;
+    saveRideTimes();
+    await new Promise(res => setTimeout(res, 300));
+    const mintedLL = LLS[LLS.length - 1];
+    const mintedRide = RIDES[RIDES.length - 1];
+    r.batchMintsPlannedLL = LLS.length === llsBefore + 1 && mintedLL.ride === 'ZZ Peter Pan' && mintedLL.status === 'planning' && mintedLL.tier === 'mp1' && mintedRide.llId === mintedLL.id;
+
+    S.screen = { type: 'addll', day: DAY }; S._formInit = null;
+    renderOverlay();
+    document.getElementById('ll-ride').value = 'ZZ Space Mountain';   // live: Single Pass
+    let llForm399 = scrAddLL();
+    r.tierLockedSingle = llForm399.indexOf('Single Pass ride') >= 0 && llForm399.indexOf("pickTier('mp1')") < 0;
+    document.getElementById('ll-ride').value = 'ZZ Peter Pan';        // live: Multi Pass
+    S._formInit = null; S._formTier = null;
+    llForm399 = scrAddLL();
+    r.tierLockedMulti = llForm399.indexOf('Multi Pass ride') >= 0 && llForm399.indexOf("pickTier('sp')") < 0 && llForm399.indexOf("pickTier('mp1')") >= 0;
+    document.getElementById('ll-ride').value = 'ZZ Unknown Coaster';
+    S._formInit = null; S._formTier = null;
+    llForm399 = scrAddLL();
+    r.tierFreeWhenUnknown = llForm399.indexOf("pickTier('sp')") >= 0 && llForm399.indexOf("pickTier('mp1')") >= 0;
+    S.screen = null; renderOverlay();
+
+    // ── Build 399: park-visit form must not steal API hours ownership ──
+    // (the EPCOT record is still api-owned; MK was deliberately user-edited earlier)
+    const epVisit = VISITS.filter(v => v.trip === 'jul26' && v.day === DAY)[0];
+    S.screen = { type: 'visedit', edit: epVisit.id, day: DAY }; S._formInit = null;
+    renderOverlay();
+    const visHtml = document.getElementById('screen-host').innerHTML;
+    r.visitHoursReadOnly = visHtml.indexOf('vh-open') < 0 && visHtml.indexOf('From live Disney data') >= 0 && visHtml.indexOf('vh-crowd') >= 0;
+    // saving with a crowd pick keeps the hours record api-owned, only crowd flips
+    document.getElementById('vh-crowd').value = '9';
+    const epRec = PARKHOURS.filter(h => h.park === 'ep' && h.day === DAY)[0];
+    saveVisit();
+    await new Promise(res => setTimeout(res, 300));
+    r.visitKeepsHoursApi = epRec.src === 'api' && epRec.crowd === 9 && epRec.crowdSrc === undefined;
+    // diff-aware upsert: identical values change nothing and keep ownership
+    const ep15b = PARKHOURS.filter(h => h.park === 'ep' && h.day === DAY)[0];
+    upsertHours('ep', DAY, { open: ep15b.open, close: ep15b.close, early: ep15b.early, late: ep15b.late, crowd: null });
+    r.upsertNoChangeKeepsApi = ep15b.src === 'api';
+
+    // ── Build 400: dining catalog — parks, Disney Springs, resorts ──
+    const stD = papiData();
+    r.diningParkCaptured = !!stD.dining && (stD.dining.mk || []).some(x => x.name === 'ZZ Park Diner');
+    r.diningSprings = (stD.dining.ds || []).some(x => x.name === 'ZZ Springs Cafe');
+    r.diningResort = (stD.dining.rs || []).some(x => x.name === 'ZZ Resort Steakhouse' && x.venue === 'ZZ Grand Hotel');
+    r.hotelsCaptured = (stD.hotels || []).some(h => h.name === 'ZZ Grand Hotel');
+    r.diningPublished = (localStorage.getItem('dtp_papicat') || '').indexOf('ZZ Springs Cafe') >= 0;
+    r.dineMetaStatus = papiDineMeta('ZZ Park Diner').indexOf('refurbishment') >= 0;
+    S.screen = { type: 'adddining', day: DAY }; S._formInit = null;
+    renderOverlay();
+    document.getElementById('dd-name').value = 'zz springs';
+    dnNameSuggest('dd-name');
+    r.dineSuggests = document.getElementById('dd-name__sug').innerHTML.indexOf('ZZ Springs Cafe') >= 0 && document.getElementById('dd-name__sug').innerHTML.indexOf('Disney Springs') >= 0;
+    dnNamePick('dd-name', 'ZZ Springs Cafe', 'ds');
+    r.dinePickSetsLoc = S._formLoc === 'ds';
+    saveDining();
+    await new Promise(res => setTimeout(res, 200));
+    const scafe = DINING.filter(x => x.name === 'ZZ Springs Cafe')[0];
+    r.dineSavedArea = !!scafe && scafe.loc === 'off' && scafe.area === 'ds';
+    S.open = defOpen(); S.open.itin = true;
+    r.dineSpringsBadge = dayPlanCard(DAYS.filter(x => x.trip === 'jul26' && x.date === DAY)[0], PARKS.ep).indexOf('>Springs<') >= 0;
+    S.screen = null; renderOverlay();
+
     // NOW card: at 2:05 PM the 2:15 ride is next-up → current + expected wait in its line
     window.__nowOverride = { date: DAY, mins: 14 * 60 + 5 };
     const nowHtml = nowCardHtml();
@@ -317,6 +463,28 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     papiRefresh(false);                              // auto refresh must honor the cooldown
     await new Promise(res => setTimeout(res, 100));
     r.cooldownHonored = fetchCount === beforeCool;
+    // the Browse showtimes sweep must honor the cooldown too
+    const beforeSweep = fetchCount;
+    papiShowSweep('mk', DAY);
+    await new Promise(res => setTimeout(res, 150));
+    r.sweepHonorsCooldown = fetchCount === beforeSweep;
+    // Browse says WHY times are missing while backing off
+    S.screen = { type: 'apishows', day: DAY, pk: 'mk' };
+    r.browseSaysBackingOff = scrApiShows().indexOf('backing off') >= 0;
+    // and reports an all-failed sweep (clear the cooldown so the sweep actually runs)
+    localStorage.setItem('dtp__parkapi', JSON.stringify(Object.assign(papiData(), { coolUntil: 0, shows: { mk: [{ id: 'ent-hea', name: 'Happily Ever After' }] }, stamps: {} })));
+    window.__papiSweepInfo = null;
+    papiShowSweep('mk', DAY);   // fetch still rejects here
+    await new Promise(res => setTimeout(res, 400));
+    r.sweepReportsFailure = !!window.__papiSweepInfo && window.__papiSweepInfo.bad > 0 && window.__papiSweepInfo.got === 0;
+    r.browseSaysFailed = scrApiShows().indexOf('Couldn’t fetch showtimes') >= 0;
+    S.screen = null;
+
+    // ── honest run summary: an all-cached run is UP TO DATE, not a failure ──
+    r.summaryUpToDate = papiRunSummary({ schedOk: 0, schedErr: 0, created: 0, updated: 0, skippedUser: 0 }, null, 0).indexOf('Up to date') === 0;
+    r.summaryYours = papiRunSummary({ schedOk: 0, schedErr: 0, created: 0, updated: 0, skippedUser: 3 }, null, 0).indexOf('3 records are yours') > 0;
+    r.summaryRealFailure = papiRunSummary({ schedOk: 0, schedErr: 4, created: 0, updated: 0, skippedUser: 0 }, 'HTTP 429 on sched', 0).indexOf('Refresh failed') === 0;
+    r.summaryChanges = papiRunSummary({ schedOk: 2, schedErr: 0, created: 1, updated: 2, skippedUser: 0 }, null, 5).indexOf('1 added, 2 refreshed') > 0;
     r.blockedDeviceHint = papiStampLine().indexOf('blocking the data service') >= 0;
 
     // ── blocked-device catalog: a device that can't fetch still gets ride lists via sync ──
@@ -444,7 +612,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     // ── Build 388: Day Agenda quick-add Ride chip + Browse Rides manual add ──
     S.open = defOpen(); S.open.itin = true;
     const dpHtml = dayPlanCard(DAYS.filter(x => x.trip === 'jul26' && x.date === DAY)[0], PARKS[dayPrimaryPark(DAY)] || PARKS.mk);
-    r.agendaAddRideChip = dpHtml.indexOf('Add Ride') >= 0 && dpHtml.indexOf("type:'apirides'") >= 0;
+    r.agendaAddRideChip = dpHtml.indexOf(' Ride</button>') >= 0 && dpHtml.indexOf("type:'apirides'") >= 0;
     S.screen = { type: 'apirides', day: DAY, pk: 'mk' };
     r.browseManualAtBottom = scrApiRides().indexOf('Add Ride Manually') >= 0;
     S.screen = null;
@@ -557,6 +725,24 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     localStorage.setItem = origSetItem;
     const savedQ = papiData();
     r.quotaShedSaves = savedQ.waits === undefined && !!savedQ.stamps;
+
+    // ── the sweep/refresh save race: neither writer may wipe the other ──
+    // storage written MID-SWEEP must survive the sweep's save (merge, not clobber)
+    window.fetch = () => new Promise(res => setTimeout(() => res({ ok: true, json: () => Promise.resolve({ schedule: [{ date: DAY, type: 'OPERATING', openingTime: DAY + 'T21:00:00-04:00' }] }) }), 80));
+    localStorage.setItem('dtp__parkapi', JSON.stringify(Object.assign(papiData(), { shows: { mk: [{ id: 'ent-race', name: 'ZZ Race Show' }] }, stamps: {}, coolUntil: 0 })));
+    papiShowSweep('mk', DAY);
+    await new Promise(res => setTimeout(res, 20));
+    localStorage.setItem('dtp__parkapi', JSON.stringify(Object.assign(papiData(), { zzMarker: 'kept' })));
+    await new Promise(res => setTimeout(res, 400));
+    const stRace = papiData();
+    r.sweepMergesNotClobbers = stRace.zzMarker === 'kept' && !!(stRace.times && stRace.times['ent-race'] && stRace.times['ent-race'][DAY]);
+    // showtimes saved MID-REFRESH must survive the refresher's save
+    window.fetch = goodFetch;
+    localStorage.setItem('dtp__parkapi', JSON.stringify({ fetched: 0, crowdFetched: 0 }));
+    papiRefresh(true);
+    const stMid = papiData(); stMid.times = Object.assign(stMid.times || {}, { 'ent-race2': { [DAY]: '9:59 PM' } }); papiSave(stMid);
+    await new Promise(res => setTimeout(res, 400));
+    r.refreshKeepsSweepTimes = !!(papiData().times && papiData().times['ent-race2']) && papiData().times['ent-race2'][DAY] === '9:59 PM';
 
     // ── production build: the engine ships LIVE from Build 392 (user-approved promotion) ──
     const realBuild = window.BUILD;
