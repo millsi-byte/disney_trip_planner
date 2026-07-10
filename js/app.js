@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='381-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='382-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -1292,8 +1292,9 @@ function papiRideBox(id,val){
    planned time that slots it on the Day Plan. ── */
 function scrRideEdit(){
   var edit=S.screen.edit?RIDES.filter(function(x){return x.id===S.screen.edit;})[0]:null;
+  var seed=(!edit&&S.screen.seed)?S.screen.seed:null;
   var dy=(edit&&edit.day)||S.screen.day;
-  var body='<div class="field"><label class="field-label">Ride</label>'+papiRideBox('rd-name',edit?edit.name:'')+'</div>';
+  var body='<div class="field"><label class="field-label">Ride</label>'+papiRideBox('rd-name',edit?edit.name:(seed&&seed.name||''))+'</div>';
   body+='<div class="field"><label class="field-label">Planned time to ride <span class="opt">(slots it on the Day Plan)</span></label>'+timeField('rd-time',edit&&edit.rideTime?edit.rideTime:'')+'</div>';
   body+='<div class="field"><label class="field-label">Day</label><select class="field-select" id="rd-day">'+dayOptions(dy)+'</select></div>';
   var dayLLs=LLS.filter(function(l){return l.trip===S.tripId&&l.day===dy;});
@@ -1329,22 +1330,47 @@ function scrApiRides(){
   body+='</select></div>';
   var list=papiCatRides(pk);
   if(!list.length)body+='<div class="body-empty" style="text-align:left;padding:2px">Nothing cached yet — open Admin \u203a Live Disney Data and tap Refresh.</div>';
+  var sel=S.screen._sel=S.screen._sel||{};
+  var nsel=Object.keys(sel).length;
+  body+='<div class="body-empty" style="text-align:left;padding:2px 2px 8px">Tap a ride\u2019s name to plan it with the full form, or tick several and set all their times at once.</div>';
+  if(nsel)body+='<button class="btn-secondary" style="margin:0 0 10px" onclick="papiRideTimes()">'+IC.sparkles+' Set times for '+nsel+' selected \u2192</button>';
   var taken={};RIDES.forEach(function(r){if(r.trip===S.tripId&&r.day===d.date)taken[(r.name||'').toLowerCase()]=1;});
   list.forEach(function(rd){
-    var got=taken[rd.name.toLowerCase()],meta=papiRideMeta(rd.name);
-    body+='<div class="ov-card" style="margin:0 0 8px"><div class="item-row" style="padding:10px 12px"><div style="flex:1;min-width:0"><div class="item-name">'+esc(rd.name)+'</div>'+(meta||'')+'</div>'
+    var got=taken[rd.name.toLowerCase()],meta=papiRideMeta(rd.name),on=!!sel[rd.id];
+    body+='<div class="ov-card" style="margin:0 0 8px"><div class="item-row" style="padding:10px 12px"><div style="flex:1;min-width:0" onclick="openScreen({type:\'rideedit\',day:\''+d.date+'\',seed:{name:\''+esc(rd.name).replace(/'/g,'&#39;')+'\'}})"><div class="item-name">'+esc(rd.name)+'</div>'+(meta||'')+'</div>'
       +(got?'<span style="font-size:12px;color:var(--muted)">Planned</span>'
-           :'<button class="dp-addchip" onclick="papiAddRide(\''+rd.id+'\',\''+d.date+'\',\''+pk+'\')">'+IC.plus+' Plan</button>')
+           :'<button class="dp-addchip" style="'+(on?'background:#166534;color:#fff':'')+'" onclick="papiRideSel(\''+rd.id+'\')">'+(on?'\u2713 Selected':IC.plus+' Select')+'</button>')
       +'</div></div>';
   });
   body+='<div class="papi-attr" style="padding:6px 2px">Park data via ThemeParks.wiki</div>';
   return screenShell('Browse Rides',body,null,null,'Done');
 }
-function papiAddRide(entId,ds,pk){
-  var ent=papiCatRides(pk).filter(function(x){return x.id===entId;})[0];
-  if(!ent){toast('Ride not found in cache');return;}
-  RIDES.push({id:'rd'+Date.now(),trip:S.tripId,by:S.persona,name:ent.name,day:ds,rideTime:'',llId:'',who:'all',park:pk,apiKey:ent.id});
-  save('dtp_rides',RIDES);toast(ent.name+' planned — set a time from the Rides list');renderScreen_inplace2();
+function papiRideSel(entId){
+  S.screen._sel=S.screen._sel||{};
+  if(S.screen._sel[entId])delete S.screen._sel[entId];else S.screen._sel[entId]=1;
+  renderScreen_inplace2();
+}
+function papiRideTimes(){
+  openScreen({type:'ridetimes',day:S.screen.day,pk:S.screen.pk||dayPrimaryPark(S.screen.day)||'mk',sel:Object.keys(S.screen._sel||{})});
+}
+/* batch time entry: one row per selected ride; empty time = TBD */
+function scrRideTimes(){
+  var d=dayByDate(S.screen.day);if(!d)return scrGeneric();
+  var pk=S.screen.pk||'mk',ids=S.screen.sel||[];
+  var body='<div class="body-empty" style="text-align:left;padding:2px 2px 12px">Set a planned time for each ride — or leave one blank to add it as TBD.</div>';
+  ids.forEach(function(id,i){
+    var ent=papiCatRides(pk).filter(function(x){return x.id===id;})[0];if(!ent)return;
+    body+='<div class="field"><label class="field-label">'+esc(ent.name)+'</label>'+timeField('rt_'+i,'')+'</div>';
+  });
+  return screenShell('Set Ride Times',body,'Add '+ids.length+' ride'+(ids.length===1?'':'s'),'saveRideTimes()','Back');
+}
+function saveRideTimes(){
+  var pk=S.screen.pk||'mk',ids=S.screen.sel||[],ds=S.screen.day,n=0;
+  ids.forEach(function(id,i){
+    var ent=papiCatRides(pk).filter(function(x){return x.id===id;})[0];if(!ent)return;
+    RIDES.push({id:'rd'+Date.now()+'_'+i,trip:S.tripId,by:S.persona,name:ent.name,day:ds,rideTime:val('rt_'+i)||'',llId:'',who:'all',park:pk,apiKey:ent.id});n++;
+  });
+  save('dtp_rides',RIDES);toast(n+' ride'+(n===1?'':'s')+' planned');closeScreen();render();
 }
 /* ── pick-list: browse everything the API knows for a day's park ── */
 /* name-based grouping — the API has no official subtype, but names are
@@ -4735,6 +4761,7 @@ function renderScreen(){
   if(t==='nowpreview') return scrNowPreview();
   if(t==='apishows') return scrApiShows();
   if(t==='apirides') return scrApiRides();
+  if(t==='ridetimes') return scrRideTimes();
   if(t==='rideedit') return scrRideEdit();
   if(t==='parkapi') return scrParkApi();
   return scrGeneric();

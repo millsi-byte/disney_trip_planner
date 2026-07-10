@@ -253,6 +253,26 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.showsBrowseWorksWithoutCache = scrApiShows().indexOf('Happily Ever After') >= 0;
     S.screen = null;
 
+    // ── Browse rides: tap name → form seed; multi-select → batch time entry (blank = TBD) ──
+    S.screen = { type: 'apirides', day: DAY, pk: 'mk' };
+    let br = scrApiRides();
+    r.browseNameOpensForm = br.indexOf("type:'rideedit'") >= 0 && br.indexOf('seed:') >= 0;
+    papiRideSel('ent-ride1'); papiRideSel('ent-ride2');
+    br = scrApiRides();
+    r.browseMultiSelect = br.indexOf('Set times for 2 selected') >= 0;
+    papiRideTimes();
+    r.timesScreenLists = scrRideTimes().indexOf('ZZ Space Mountain') >= 0 && scrRideTimes().indexOf('ZZ Peter Pan') >= 0;
+    // save with no times typed → both created as TBD ('')
+    const ridesBefore = RIDES.length;
+    renderOverlay();      // materialize the form so val() can read the (empty) fields
+    saveRideTimes();
+    r.batchAddTBD = RIDES.length === ridesBefore + 2 && RIDES.slice(-2).every(x => x.rideTime === '' && x.day === DAY);
+    S.screen = null; renderOverlay();
+    // seeded form prefill
+    S.screen = { type: 'rideedit', day: DAY, seed: { name: 'ZZ Space Mountain' } };
+    r.formSeedPrefills = scrRideEdit().indexOf('ZZ Space Mountain') >= 0;
+    S.screen = null;
+
     // ── production build: engine fully inert ──
     const realBuild = window.BUILD;
     window.BUILD = realBuild.replace('-dev', '');
