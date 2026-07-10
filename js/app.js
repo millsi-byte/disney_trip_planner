@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='399-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='400-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -878,6 +878,7 @@ function wxWeekSummary(days){
    dtp__parkapi (double underscore: device-local, never syncs). Dev-gated
    through Build 391; live in production from Build 392. */
 var PAPI_IDS={mk:'75ea578a-adc8-4116-a54d-dccb60765ef9',ep:'47f90d2c-e191-4239-a466-5892ef59a88b',hs:'288747d1-8b4f-4a64-867e-ea7c9b27bad8',ak:'1c84a229-8862-4648-9c71-378ddd2c7693'};
+var PAPI_DEST='e957da41-3552-4cf6-b636-5babc5cbc4e5';   /* the WDW destination entity — its children include every restaurant + the resort hotels */
 /* curated headline entertainment per park: the daytime parade + the nighttime
    spectacular. kind decides which collection the record lands in. */
 var PAPI_HEADLINE={
@@ -1009,8 +1010,8 @@ function papiPublishCat(st){
   if(!st.rides||!st.shows||awaitingFirstCloudSync())return;
   var dset={};papiTrips().forEach(function(tr){tr.days.forEach(function(d){dset[d.date]=1;});});
   var trim=function(src){var out={};Object.keys(src||{}).forEach(function(id){Object.keys(src[id]||{}).forEach(function(ds){if(dset[ds])(out[id]=out[id]||{})[ds]=src[id][ds];});});return out;};
-  var cat={rides:st.rides,shows:st.shows,times:trim(st.times),timesList:trim(st.timesList),upd:Date.now()};
-  var sig=function(c){return JSON.stringify([c.rides||null,c.shows||null,c.times||null,c.timesList||null]);};
+  var cat={rides:st.rides,shows:st.shows,dining:st.dining||null,times:trim(st.times),timesList:trim(st.timesList),upd:Date.now()};
+  var sig=function(c){return JSON.stringify([c.rides||null,c.shows||null,c.dining||null,c.times||null,c.timesList||null]);};
   if(sig(cat)!==sig(PAPICAT)){PAPICAT=cat;save('dtp_papicat',PAPICAT);}
 }
 /* ── the refresher ──────────────────────────────────────────── */
@@ -1114,8 +1115,37 @@ function papiFetchSched(trips,st){
            Rides component (same response, zero extra requests) */
         st.rides=st.rides||{};
         st.rides[pk]=kids.filter(function(c){return c&&c.entityType==='ATTRACTION';}).map(function(c){return {id:c.id,name:c.name};});
+        st.dining=st.dining||{};
+        st.dining[pk]=kids.filter(function(c){return c&&c.entityType==='RESTAURANT';}).map(function(c){return {id:c.id,name:c.name};});
       }).catch(function(){});
     });
+  });
+  /* non-park dining: the destination's children carry every restaurant —
+     Disney Springs, the resort hotels (kept for a future resorts tie-in),
+     and any park restaurant the park feed missed. One call per 24h. */
+  chain=chain.then(function(){
+    st.stamps=st.stamps||{};var dk='child_dest';
+    if(st.stamps[dk]&&(Date.now()-st.stamps[dk])<24*3600*1000&&st.dining&&st.dining.ds)return;
+    return papiGet('/entity/'+PAPI_DEST+'/children','children').then(function(j){
+      st.stamps[dk]=Date.now();
+      var kids=(j&&j.children||[]);
+      var byId={};kids.forEach(function(c){if(c&&c.id)byId[c.id]=c;});
+      var parkIds={};Object.keys(PAPI_IDS).forEach(function(pk){parkIds[PAPI_IDS[pk]]=pk;});
+      var inPark={};st.dining=st.dining||{};
+      Object.keys(st.dining).forEach(function(k){(st.dining[k]||[]).forEach(function(rst){inPark[rst.id]=1;});});
+      var ds=[],rs=[],hotels=[];
+      kids.forEach(function(c){if(c&&c.entityType==='HOTEL')hotels.push({id:c.id,name:c.name});});
+      kids.forEach(function(c){
+        if(!c||c.entityType!=='RESTAURANT'||inPark[c.id])return;
+        /* walk parents: hotel → resort dining; park → that park; else Springs & more */
+        var par=c.parentId?byId[c.parentId]:null,hops=0;
+        while(par&&par.entityType!=='HOTEL'&&!parkIds[par.id]&&hops<6){par=par.parentId?byId[par.parentId]:null;hops++;}
+        if(par&&par.entityType==='HOTEL')rs.push({id:c.id,name:c.name,venue:par.name});
+        else if(par&&parkIds[par.id]){var pk3=parkIds[par.id];st.dining[pk3]=st.dining[pk3]||[];if(!st.dining[pk3].some(function(x){return x.id===c.id;}))st.dining[pk3].push({id:c.id,name:c.name});}
+        else ds.push({id:c.id,name:c.name});
+      });
+      st.dining.ds=ds;st.dining.rs=rs;st.hotels=hotels;
+    }).catch(function(){});
   });
   /* headline showtimes per matched entity per month */
   chain=chain.then(function(){
@@ -1214,10 +1244,11 @@ function papiFetchCrowd(tr,np,st){
   Object.keys(PAPI_IDS).forEach(function(pk){
     chain=chain.then(function(){
       return papiGet('/entity/'+PAPI_IDS[pk]+'/live','live').then(function(j){
-        var waits=[],byName={},byId={},gotShowtimes=false;
+        var waits=[],byName={},byId={},dnBy={},gotShowtimes=false;
         (j&&j.liveData||[]).forEach(function(e){
           var w=e&&e.queue&&e.queue.STANDBY&&e.queue.STANDBY.waitTime;
           if(typeof w==='number'&&e.status==='OPERATING')waits.push(w);
+          if(e&&e.entityType==='RESTAURANT'&&e.name)dnBy[e.name.toLowerCase()]={status:e.status||''};
           if(e&&e.entityType==='ATTRACTION'&&e.name){
             var paid=e.queue&&e.queue.PAID_RETURN_TIME,ret=e.queue&&e.queue.RETURN_TIME;
             var fc=null;
@@ -1248,7 +1279,7 @@ function papiFetchCrowd(tr,np,st){
             }
           }
         });
-        parks[pk]={by:byName,byId:byId};
+        parks[pk]={by:byName,byId:byId,dn:dnBy};
         if(gotShowtimes){try{papiApplyShows(papiTrips(),st);}catch(e2){}}
         /* park-level expected curve: average of Disney's per-ride forecast
            percentages per hour → "busiest around 1–4 PM" */
@@ -2636,6 +2667,52 @@ var RIDES=[];   /* planned rides — a plan to ride an attraction; may link an L
 var PAPICAT=load('dtp_papicat',{});
 function papiCatRides(pk){var st=papiData();return (st.rides&&st.rides[pk])||(PAPICAT.rides&&PAPICAT.rides[pk])||[];}
 function papiCatShows(pk){var st=papiData();return (st.shows&&st.shows[pk])||(PAPICAT.shows&&PAPICAT.shows[pk])||[];}
+function papiCatDining(loc){var st=papiData();return (st.dining&&st.dining[loc])||(PAPICAT.dining&&PAPICAT.dining[loc])||[];}
+var DN_LOCS=[['mk','Magic Kingdom'],['ep','EPCOT'],['hs','Hollywood Studios'],['ak','Animal Kingdom'],['ds','Disney Springs'],['rs','Resort']];
+/* live status for a restaurant (park feeds only — Springs/resort venues
+   aren't in the park live data) */
+function papiDineMeta(name){
+  if(!papiEnabled()||!name)return '';
+  var st=papiData(),wt=st.waits;if(!wt||!wt.parks)return '';
+  var lc=String(name).toLowerCase();
+  for(var k in wt.parks){var d=wt.parks[k].dn;
+    if(d&&d[lc]){var stt=d[lc].status;
+      if(stt&&stt!=='OPERATING')return '<div class="papi-line" style="padding:6px 2px 0">Live: ⚠️ Currently '+esc(stt.toLowerCase())+'</div>';
+      return '';
+    }}
+  return '';
+}
+/* restaurant autocomplete across every location; picking one sets the
+   form's location (and park) automatically. Free text always allowed. */
+function dnNameBox(id,v){
+  return '<input class="field-input" id="'+id+'" placeholder="Start typing a restaurant\u2026" autocomplete="off" value="'+esc(v||'')+'" oninput="dnNameSuggest(\''+id+'\')">'
+    +'<div id="'+id+'__sug"></div><div id="'+id+'__meta">'+papiDineMeta(v||'')+'</div>';
+}
+function dnNameSuggest(id){
+  var inp=document.getElementById(id),box=document.getElementById(id+'__sug');
+  if(!inp||!box)return;
+  var q=inp.value.trim().toLowerCase(),out=[];
+  if(q.length>=2){
+    DN_LOCS.forEach(function(L){
+      papiCatDining(L[0]).forEach(function(rst){
+        if(out.length>=8)return;
+        if(rst.name.toLowerCase().indexOf(q)<0)return;
+        out.push({n:rst.name,loc:L[0],lbl:L[1]+(rst.venue?(' \u00b7 '+rst.venue):'')});
+      });
+    });
+  }
+  box.innerHTML=out.map(function(x){return '<div class="papi-sug" data-n="'+esc(x.n)+'" data-loc="'+x.loc+'" onclick="dnNamePick(\''+id+'\',this.getAttribute(\'data-n\'),this.getAttribute(\'data-loc\'))">'+esc(x.n)+' <span class="papi-sugtag">'+esc(x.lbl)+'</span></div>';}).join('');
+  var m=document.getElementById(id+'__meta');if(m)m.innerHTML=papiDineMeta(inp.value.trim());
+}
+function dnNamePick(id,name,loc){
+  var inp=document.getElementById(id);if(inp)inp.value=name;
+  var box=document.getElementById(id+'__sug');if(box)box.innerHTML='';
+  if(loc==='ds'||loc==='rs')S._formLoc=loc;
+  else{S._formLoc='in';S._dnPark=loc;}
+  renderScreen_inplace2();
+  var e=document.getElementById('dd-park');if(e&&loc!=='ds'&&loc!=='rs')e.value=loc;
+  var m=document.getElementById(id+'__meta');if(m)m.innerHTML=papiDineMeta(name);
+}
 function ridesFor(date){return RIDES.filter(function(r){return r.trip===S.tripId&&r.day===date;});}
 /* parse a loose time string ("5:45 AM", "Evening", "Afternoon") to minutes for sorting */
 function mins(t){
@@ -3692,7 +3769,7 @@ function dayPlanItems(d){
     if(lg.depDate===date) out.push({t:lg.depTime,x:'Depart '+lg.depApt+' — '+lg.airline+(lg.num?' '+lg.num:''),type:'flight',who:f.who});
     if(lg.arrDate===date) out.push({t:lg.arrTime,x:'Arrive '+lg.arrApt+(lg.arrCity&&lg.arrCity!==lg.arrApt?' ('+lg.arrCity+')':''),type:'flight',who:f.who});
   });});
-  diningFor(date).forEach(function(dn){if(dn.status==='reserved'||dn.status==='planned')out.push({t:dn.time,x:dn.meal+' — '+dn.name,name:dn.name,meal:dn.meal,park:(dn.loc==='in'?dn.park:null),loc:dn.loc,type:'dining',who:dn.who,ref:dn.id,status:dn.status,dstatus:dn.status,soft:dn.status==='planned'});});
+  diningFor(date).forEach(function(dn){if(dn.status==='reserved'||dn.status==='planned')out.push({t:dn.time,x:dn.meal+' — '+dn.name,name:dn.name,meal:dn.meal,park:(dn.loc==='in'?dn.park:null),loc:dn.loc,area:dn.area||'',type:'dining',who:dn.who,ref:dn.id,status:dn.status,dstatus:dn.status,soft:dn.status==='planned'});});
   showsFor(date).forEach(function(s){if((s.status||'attend')==='attend')out.push({t:s.time,x:s.name,name:s.name,park:s.park,type:'show',who:s.who,ref:s.id,status:s.status||'attend'});});
   paradesFor(date).forEach(function(p){if((p.status||'attend')==='attend')out.push({t:p.time,x:p.name,name:p.name,park:p.park,type:'parade',who:p.who,ref:p.id,status:p.status||'attend'});});
   /* a planned ride that links a Lightning Lane ABSORBS it: one merged row
@@ -3775,7 +3852,7 @@ function dayPlanCard(d,pk){
       if(e.type==='ride'&&e.ll){ tags.push(planChip('ll')); if(e.ll.status)tags.push(statusBadge(e.ll.status)); }
       if((e.type==='dining'||e.type==='show'||e.type==='parade'||e.type==='ll')&&e.status) tags.push(statusBadge(e.status));
       if(e.type==='dining'){
-        tags.push(e.park&&PARKS[e.park]?'<span class="inpark-badge" style="background:'+PARKS[e.park].color+'">'+esc(PARKS[e.park].short)+'</span>':(e.loc==='in'?'<span class="inpark-badge" style="background:#8C9BAA">In-Park</span>':'<span class="nonpark-badge">Non-Park</span>'));
+        tags.push(e.park&&PARKS[e.park]?'<span class="inpark-badge" style="background:'+PARKS[e.park].color+'">'+esc(PARKS[e.park].short)+'</span>':(e.loc==='in'?'<span class="inpark-badge" style="background:#8C9BAA">In-Park</span>':(e.area==='ds'?'<span class="nonpark-badge">Springs</span>':e.area==='rs'?'<span class="nonpark-badge">Resort</span>':'<span class="nonpark-badge">Non-Park</span>')));
       }
       if((e.type==='show'||e.type==='parade')&&e.park&&PARKS[e.park]) tags.push('<span class="inpark-badge" style="background:'+PARKS[e.park].color+'">'+esc(PARKS[e.park].short)+'</span>');
       /* non-component rows keep the soft "Planned" hint */
@@ -3920,7 +3997,7 @@ function diningRow(dn){
   var o='<div class="item-row"><div style="flex:1;min-width:0"><div class="item-name">'+esc(dn.name)+'</div>';
   o+='<div style="display:flex;align-items:center;gap:6px;margin-top:4px;flex-wrap:wrap">';
   o+=statusBadge(dn.status);
-  o+=dpk?'<span class="inpark-badge" style="background:'+dpk.color+'">'+esc(dpk.short)+'</span>':(dn.loc==='in'?'<span class="inpark-badge" style="background:#8C9BAA">In-Park</span>':'<span class="nonpark-badge">Non-Park</span>');
+  o+=dpk?'<span class="inpark-badge" style="background:'+dpk.color+'">'+esc(dpk.short)+'</span>':(dn.loc==='in'?'<span class="inpark-badge" style="background:#8C9BAA">In-Park</span>':(dn.area==='ds'?'<span class="nonpark-badge">Springs</span>':dn.area==='rs'?'<span class="nonpark-badge">Resort</span>':'<span class="nonpark-badge">Non-Park</span>'));
   o+=whoChips(dn.who);
   o+='</div>';
   if(dn.status==='reserved'&&dn.conf&&dn.conf!=='walk-up') o+='<div class="item-conf">Confirmation '+esc(dn.conf)+'</div>';
@@ -5392,11 +5469,11 @@ function delFlight(id){
 function scrAddDining(){
   var edit=S.screen.edit?DINING.filter(function(x){return x.id===S.screen.edit;})[0]:null;
   var dseed=(!edit&&S.screen.seed)?S.screen.seed:null;
-  if(S._formInit!=='din'){S._formStatus.dd=edit?edit.status:((dseed&&dseed.status)||'planned');S._formLoc=edit?edit.loc:((dseed&&dseed.loc)||'in');S._formInit='din';}
+  if(S._formInit!=='din'){S._formStatus.dd=edit?edit.status:((dseed&&dseed.status)||'planned');S._formLoc=edit?(edit.loc==='in'?'in':(edit.area||'off')):((dseed&&dseed.loc)||'in');S._dnPark=null;S._formInit='din';}
   var st=S._formStatus.dd,loc=S._formLoc,pre=edit?edit.who:'all';
   var meals=['Breakfast','Lunch','Dinner','Drinks','Snack'];
   var body='';
-  body+='<div class="field"><label class="field-label">Restaurant</label><input class="field-input" id="dd-name" placeholder="e.g. Space 220" value="'+(edit?esc(edit.name):(dseed&&dseed.name?esc(dseed.name):''))+'"></div>';
+  body+='<div class="field"><label class="field-label">Restaurant</label>'+dnNameBox('dd-name',edit?edit.name:(dseed&&dseed.name||''))+'</div>';
   body+='<div class="field-row"><div class="field"><label class="field-label">Meal</label><select class="field-select" id="dd-meal">';
   var dmeal=edit?edit.meal:((dseed&&dseed.meal)||'Dinner');
   for(var m=0;m<meals.length;m++)body+='<option'+(dmeal===meals[m]?' selected':'')+'>'+meals[m]+'</option>';
@@ -5406,8 +5483,12 @@ function scrAddDining(){
   body+='<button class="seg-btn'+(st==='planned'?' on':'')+'" onclick="pickStatus(\'dd\',\'planned\')">Planned</button>';
   body+='<button class="seg-btn'+(st==='reserved'?' on book':'')+'" onclick="pickStatus(\'dd\',\'reserved\')">Reserved</button></div></div>';
   if(st==='reserved') body+='<div class="field"><label class="field-label">Confirmation #</label><input class="field-input" id="dd-conf" placeholder="DR-118455" value="'+(edit&&edit.conf?esc(edit.conf):'')+'"></div>';
-  body+='<div class="field"><label class="field-label">Location</label><div class="seg"><button class="seg-btn'+(loc==='in'?' on':'')+'" onclick="pickLoc(\'in\')">In-Park</button><button class="seg-btn'+(loc==='off'?' on':'')+'" onclick="pickLoc(\'off\')">Non-Park</button></div></div>';
-  if(loc==='in'){var _dy=(edit&&edit.day)||S.screen.day||'2026-07-15';body+='<div class="field"><label class="field-label">Which park</label><select class="field-select" id="dd-park">'+parkResOptions((edit&&edit.park)||dayPrimaryPark(_dy)||'mk')+'</select></div>';}
+  body+='<div class="field"><label class="field-label">Location</label><div class="seg">'
+    +'<button class="seg-btn'+(loc==='in'?' on':'')+'" onclick="pickLoc(\'in\')">In-Park</button>'
+    +'<button class="seg-btn'+(loc==='ds'?' on':'')+'" onclick="pickLoc(\'ds\')">Springs</button>'
+    +'<button class="seg-btn'+(loc==='rs'?' on':'')+'" onclick="pickLoc(\'rs\')">Resort</button>'
+    +'<button class="seg-btn'+(loc==='off'?' on':'')+'" onclick="pickLoc(\'off\')">Other</button></div></div>';
+  if(loc==='in'){var _dy=(edit&&edit.day)||S.screen.day||'2026-07-15';body+='<div class="field"><label class="field-label">Which park</label><select class="field-select" id="dd-park">'+parkResOptions(S._dnPark||(edit&&edit.park)||dayPrimaryPark(_dy)||'mk')+'</select></div>';}
   body+=whoSelectField(pre);
   body+=notifyField('Dining');
   body+='<div class="field"><label class="field-label">Appears on day</label><select class="field-select" id="dd-day">'+dayOptions((edit&&edit.day)||S.screen.day||'2026-07-15')+'</select></div>';
@@ -5423,7 +5504,9 @@ function saveDining(){
   var oldWho=edit?edit.who:[];
   var rec=edit||{id:'d'+Date.now(),trip:S.tripId,by:S.persona};
   rec.day=dy;rec.meal=val('dd-meal')||'Dinner';rec.name=nm;rec.time=val('dd-time')||'TBD';
-  rec.loc=S._formLoc||'in';rec.park=(S._formLoc==='in')?(val('dd-park')||dayPrimaryPark(dy)):null;
+  rec.loc=(S._formLoc==='in')?'in':'off';
+  rec.area=(S._formLoc==='ds'||S._formLoc==='rs')?S._formLoc:'';
+  rec.park=(S._formLoc==='in')?(val('dd-park')||dayPrimaryPark(dy)):null;
   rec.status=S._formStatus.dd||'planned';rec.conf=val('dd-conf')||'';rec.who=whoVal();
   if(!edit)DINING.push(rec);
   save('dtp_dining',DINING);afterWhoSave('Dining',rec,oldWho);S._who=null;toast('Dining saved');closeScreen();render();

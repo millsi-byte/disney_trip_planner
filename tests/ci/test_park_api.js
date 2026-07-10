@@ -51,7 +51,14 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     const goodFetch = (url) => {
       fetchCount++;
       let body = {};
-      if (url.indexOf('/children') >= 0) {
+      if (url.indexOf('e957da41') >= 0) {   // the WDW destination: hotels + non-park dining
+        body = { children: [
+          { id: 'hot-1', entityType: 'HOTEL', name: 'ZZ Grand Hotel', parentId: 'dest-root' },
+          { id: 'rest-rs', entityType: 'RESTAURANT', name: 'ZZ Resort Steakhouse', parentId: 'hot-1' },
+          { id: 'rest-ds', entityType: 'RESTAURANT', name: 'ZZ Springs Cafe', parentId: 'dest-root' },
+          { id: 'rest-park', entityType: 'RESTAURANT', name: 'ZZ Park Diner', parentId: MK },
+        ] };
+      } else if (url.indexOf('/children') >= 0) {
         body = { children: [
           { id: 'ent-fof', entityType: 'SHOW', name: 'Festival of Fantasy Parade' },
           { id: 'ent-hea', entityType: 'SHOW', name: 'Happily Ever After' },
@@ -61,6 +68,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
           { id: 'ent-many', entityType: 'SHOW', name: 'ZZ Many Show' },   // 5 daily showtimes → '+N more' truncation
           { id: 'ent-ride1', entityType: 'ATTRACTION', name: 'ZZ Space Mountain' },
           { id: 'ent-ride2', entityType: 'ATTRACTION', name: 'ZZ Peter Pan' },
+          { id: 'rest-park', entityType: 'RESTAURANT', name: 'ZZ Park Diner' },
         ] };
       } else if (url.indexOf('/live') >= 0) {
         body = { liveData: [
@@ -79,6 +87,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
               { time: DAY + 'T15:00:00-04:00', waitTime: 45, percentage: 85 },
             ] },
           { entityType: 'ATTRACTION', status: 'OPERATING', name: 'ZZ Other', queue: { STANDBY: { waitTime: 20 } } },
+          { entityType: 'RESTAURANT', status: 'REFURBISHMENT', name: 'ZZ Park Diner' },
           { entityType: 'SHOW', status: 'OPERATING', id: 'ent-hea', name: 'Happily Ever After',
             // REVERSED order on purpose — the stable sort must normalize it
             showtimes: liveLate ? [{ startTime: '2026-07-15T22:30:00-04:00' }] : [{ startTime: '2026-07-15T22:30:00-04:00' }, { startTime: '2026-07-15T20:30:00-04:00' }] },
@@ -324,6 +333,29 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     const ep15b = PARKHOURS.filter(h => h.park === 'ep' && h.day === DAY)[0];
     upsertHours('ep', DAY, { open: ep15b.open, close: ep15b.close, early: ep15b.early, late: ep15b.late, crowd: null });
     r.upsertNoChangeKeepsApi = ep15b.src === 'api';
+
+    // ── Build 400: dining catalog — parks, Disney Springs, resorts ──
+    const stD = papiData();
+    r.diningParkCaptured = !!stD.dining && (stD.dining.mk || []).some(x => x.name === 'ZZ Park Diner');
+    r.diningSprings = (stD.dining.ds || []).some(x => x.name === 'ZZ Springs Cafe');
+    r.diningResort = (stD.dining.rs || []).some(x => x.name === 'ZZ Resort Steakhouse' && x.venue === 'ZZ Grand Hotel');
+    r.hotelsCaptured = (stD.hotels || []).some(h => h.name === 'ZZ Grand Hotel');
+    r.diningPublished = (localStorage.getItem('dtp_papicat') || '').indexOf('ZZ Springs Cafe') >= 0;
+    r.dineMetaStatus = papiDineMeta('ZZ Park Diner').indexOf('refurbishment') >= 0;
+    S.screen = { type: 'adddining', day: DAY }; S._formInit = null;
+    renderOverlay();
+    document.getElementById('dd-name').value = 'zz springs';
+    dnNameSuggest('dd-name');
+    r.dineSuggests = document.getElementById('dd-name__sug').innerHTML.indexOf('ZZ Springs Cafe') >= 0 && document.getElementById('dd-name__sug').innerHTML.indexOf('Disney Springs') >= 0;
+    dnNamePick('dd-name', 'ZZ Springs Cafe', 'ds');
+    r.dinePickSetsLoc = S._formLoc === 'ds';
+    saveDining();
+    await new Promise(res => setTimeout(res, 200));
+    const scafe = DINING.filter(x => x.name === 'ZZ Springs Cafe')[0];
+    r.dineSavedArea = !!scafe && scafe.loc === 'off' && scafe.area === 'ds';
+    S.open = defOpen(); S.open.itin = true;
+    r.dineSpringsBadge = dayPlanCard(DAYS.filter(x => x.trip === 'jul26' && x.date === DAY)[0], PARKS.ep).indexOf('>Springs<') >= 0;
+    S.screen = null; renderOverlay();
 
     // NOW card: at 2:05 PM the 2:15 ride is next-up → current + expected wait in its line
     window.__nowOverride = { date: DAY, mins: 14 * 60 + 5 };
