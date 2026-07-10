@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='390-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='391-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -1303,6 +1303,16 @@ function papiNudge(){
   try{var st=papiData();st.fetched=0;papiSave(st);}catch(e){}
   setTimeout(function(){try{papiRefresh();}catch(e){}},2500);
 }
+/* NOW-card header control: refresh JUST the live waits/crowd (schedule
+   TTLs untouched) and let the finished run re-render the card */
+function nowRefreshWaits(){
+  if(!papiEnabled())return;
+  var np=nowParts();
+  if(!tripDays().some(function(d){return d.date===np.date;})){toast('Live waits are day-of \u2014 today isn\u2019t a trip day');return;}
+  toast('Refreshing live waits\u2026');
+  var st=papiData();st.crowdFetched=0;papiSave(st);
+  papiRefresh(true);
+}
 function papiForce(){
   if(!papiEnabled()){toast('Dev builds only');return;}
   toast('Refreshing live Disney data…');
@@ -1343,10 +1353,12 @@ function papiRideBits(name,apiKey,dayStr,timeStr){
   else if(w.ll==='multi')bits.push('LL Multi Pass'+(w.ret?(' \u00b7 next window '+w.ret):''));
   return bits;
 }
+/* make the wait minutes pop — small phones, park sunlight */
+function papiWaitHl(escaped){return String(escaped).replace(/(~?\d+ min)/g,'<strong class="papi-wait">$1</strong>');}
 function papiRideMeta(name,apiKey,dayStr,timeStr){
   var bits=papiRideBits(name,apiKey,dayStr,timeStr);
   if(!bits.length)return '';
-  return '<div class="papi-line" style="padding:6px 2px 0">Live: '+esc(bits.join(' \u00b7 '))+'</div>';
+  return '<div class="papi-line" style="padding:6px 2px 0">Live: '+papiWaitHl(esc(bits.join(' \u00b7 ')))+'</div>';
 }
 /* one-line summary of the park's expected-crowd curve \u2014 TODAY only */
 function papiParkExpected(pk,ds){
@@ -1770,7 +1782,7 @@ function nowCardHtml(){
     /* rides & LLs: current wait (or down status) + expected at the planned
        time — the same live bits the agenda rows show, minus LL-pass noise */
     if(e0.type==='ride'||e0.type==='ll'){
-      papiRideBits(e0.name,e0.apiKey||'',np.date,e0.t).slice(0,2).forEach(function(b){n2.push(esc(b));});
+      papiRideBits(e0.name,e0.apiKey||'',np.date,e0.t).slice(0,2).forEach(function(b){n2.push(papiWaitHl(esc(b)));});
     }
     headline=e0.x+(m0<99999?(' — in '+nowFmtCd(m0-nm)):'');
     body+='<div class="now-nextwrap"><div class="now-nlabel">Next up</div>';
@@ -1782,7 +1794,7 @@ function nowCardHtml(){
       body+='<div class="now-later">';
       for(var k=1;k<up.length&&k<4;k++){var ek=up[k],mk=mins(ek.t);
         var lb=(ek.type==='ride'||ek.type==='ll')?papiRideBits(ek.name,ek.apiKey||'',np.date,ek.t):[];
-        body+='<div class="now-lrow"><span class="now-li">'+nowIcon(ek.type)+'</span><span class="now-lx">'+esc(ek.x)+(lb.length?' <span class="now-lwait">· '+esc(lb[0])+'</span>':'')+'</span><span class="now-lt">'+(mk<99999?esc(ek.t):'')+'</span></div>';
+        body+='<div class="now-lrow"><span class="now-li">'+nowIcon(ek.type)+'</span><span class="now-lx">'+esc(ek.x)+(lb.length?' <span class="now-lwait">· '+papiWaitHl(esc(lb[0]))+'</span>':'')+'</span><span class="now-lt">'+(mk<99999?esc(ek.t):'')+'</span></div>';
       }
       body+='</div>';
     }
@@ -1795,7 +1807,9 @@ function nowCardHtml(){
     body+='<div class="now-nextwrap"><div class="now-empty">'+esc(headline)+'</div></div>';
   }
   var out='<div class="now" onclick="nowOpenAgenda('+todayIdx+(nextDpKey?',\''+nextDpKey+'\'':'')+')">';
-  out+='<div class="now-hd"><span class="now-live"></span><span class="now-t">Now</span><span class="now-park">'+esc(pk.name)+'</span>'+nowChevron()+'</div>';
+  out+='<div class="now-hd"><span class="now-live"></span><span class="now-t">Now</span><span class="now-park">'+esc(pk.name)+'</span>'
+    +(papiEnabled()?'<span class="now-rw" onclick="event.stopPropagation();nowRefreshWaits()">\u27f3 Waits</span>':'')
+    +nowChevron()+'</div>';
   if(sub)out+='<div class="now-sub">'+sub+'</div>';
   if(openNow){
     out+=body;

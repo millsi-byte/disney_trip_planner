@@ -157,13 +157,15 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     const wsm = st2.waits && st2.waits.by['zz space mountain'];
     r.liveWaitsCached = !!wsm && wsm.w === 60 && st2.waits.day === DAY;
     r.liveLLMetadata = !!wsm && wsm.ll === 'single' && wsm.price === 15 && st2.waits.by['zz peter pan'].ll === 'multi';
-    r.rideMetaLine = papiRideMeta('ZZ Space Mountain').indexOf('60 min standby') >= 0 && papiRideMeta('ZZ Space Mountain').indexOf('LL Single Pass $15') >= 0;
+    r.rideMetaLine = papiRideMeta('ZZ Space Mountain').indexOf('60 min</strong> standby now') >= 0 && papiRideMeta('ZZ Space Mountain').indexOf('LL Single Pass $15') >= 0;
+    r.waitHighlighted = papiRideMeta('ZZ Space Mountain').indexOf('<strong class="papi-wait">60 min</strong>') >= 0; // bold wait for sunlight readability
+    r.waitHighlighted = papiRideMeta('ZZ Space Mountain').indexOf('<strong class="papi-wait">60 min</strong>') >= 0; // bold wait for sunlight readability
 
     // ── Build 389: 4-park live sweep, apiKey joins, forecasts, expected crowds ──
     const stW = papiData();
     r.waitsAllParks = ['mk','ep','hs','ak'].every(pk => stW.waits.parks && stW.waits.parks[pk] && stW.waits.parks[pk].by['zz space mountain']);
-    r.waitsByIdJoin = papiRideMeta('Totally Renamed Ride', 'ent-ride1').indexOf('60 min standby') >= 0; // exact entity-id join beats the name
-    r.metaExpectedAtTime = papiRideMeta('ZZ Space Mountain', '', DAY, '2:00 PM').indexOf('~55 min expected at 2:00 PM') >= 0;
+    r.waitsByIdJoin = papiRideMeta('Totally Renamed Ride', 'ent-ride1').indexOf('60 min</strong> standby') >= 0; // exact entity-id join beats the name
+    r.metaExpectedAtTime = papiRideMeta('ZZ Space Mountain', '', DAY, '2:00 PM').indexOf('~55 min</strong> expected at 2:00 PM') >= 0;
     r.metaNoForecastOtherDay = papiRideMeta('ZZ Space Mountain', '', '2026-07-16', '2:00 PM').indexOf('expected at') < 0; // forecast is day-of only
     r.metaNextWindow = papiRideMeta('ZZ Peter Pan').indexOf('next window 2:40 PM') >= 0;
     r.parkExpectedLine = papiParkExpected('ep', DAY).indexOf('Expected today') >= 0 && papiParkExpected('ep', DAY).indexOf('3:00 PM') >= 0; // 3 PM is the peak hour
@@ -175,11 +177,12 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.rideOnDayPlan = !!rdItem && rdItem.x === 'ZZ Space Mountain' && rdItem.t === '2:15 PM';
     // today's Day Agenda rows carry the live line (merged ride zrd1 = ZZ Space Mountain)
     S.open = defOpen(); S.open.itin = true;
-    r.agendaRowLiveMeta = dayPlanCard(DAYS.filter(x => x.trip === 'jul26' && x.date === DAY)[0], PARKS.ep).indexOf('min standby now') >= 0;
+    r.agendaRowLiveMeta = dayPlanCard(DAYS.filter(x => x.trip === 'jul26' && x.date === DAY)[0], PARKS.ep).indexOf('standby now') >= 0;
     // NOW card: at 2:05 PM the 2:15 ride is next-up → current + expected wait in its line
     window.__nowOverride = { date: DAY, mins: 14 * 60 + 5 };
     const nowHtml = nowCardHtml();
-    r.nowNextUpWait = nowHtml.indexOf('min standby now') >= 0 && nowHtml.indexOf('expected at') >= 0;
+    r.nowNextUpWait = nowHtml.indexOf('standby now') >= 0 && nowHtml.indexOf('expected at') >= 0;
+    r.nowRefreshWaitsBtn = nowHtml.indexOf('nowRefreshWaits') >= 0; // header Waits refresh control (dev builds)
     window.__nowOverride = { date: DAY, mins: 10 * 60 };
     S.screen = { type: 'rideedit', day: DAY };
     const rdForm = scrRideEdit();
