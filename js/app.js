@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='395-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='396-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -1611,6 +1611,7 @@ function papiShowSweep(pk,ds){
     papiSave(st);
     papiPublishCat(st);
     if(S.screen&&(S.screen.type==='apishows'||S.screen.type==='showtimes'))renderScreen_inplace2();
+    else if(!S.screen)render();   /* day-view schedule cards show these times too */
   });
 }
 function scrApiShows(){
@@ -1679,6 +1680,72 @@ function papiAddShow(entId,ds,pkSel){
     papiSave(st);
     mk(papiShowTime(ent.id,ds,st)||'TBD');
   }).catch(function(){mk('TBD');});
+}
+/* ── schedule GHOSTS: the day's API-known entertainment that has no record
+   yet. Shown on the Daily Planning cards with scheduled times; interacting
+   materializes a real record (so attendance/editing work like any other). ── */
+function dayGhostParks(ds){
+  var out=[],p=dayPrimaryPark(ds);
+  if(p&&PAPI_IDS[p])out.push(p);
+  visitsFor(ds).forEach(function(v){if(v.park&&PAPI_IDS[v.park]&&out.indexOf(v.park)<0)out.push(v.park);});
+  return out;
+}
+function papiGhostRows(kind,ds){
+  if(!papiEnabled())return '';
+  var st=papiData(),o='';
+  var taken={};
+  SHOWS.concat(PARADES).forEach(function(r){if(r.trip===S.tripId&&r.day===ds){taken[(r.name||'').toLowerCase()]=1;if(r.apiKey)taken[r.apiKey]=1;}});
+  var pencil='width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;margin-left:8px';
+  dayGhostParks(ds).forEach(function(pk){
+    var xpk=PARKS[pk];
+    papiCatShows(pk).forEach(function(ent){
+      if(papiShowKind(ent.name)!==kind)return;
+      var lc=ent.name.toLowerCase();
+      if(taken[ent.id]||taken[lc])return;
+      taken[ent.id]=1;taken[lc]=1;
+      var tm=papiShowTime(ent.id,ds,st);
+      o+='<div class="item-row ghost-row"><div style="flex:1"><div class="item-name">'+esc(ent.name)+'</div>'
+        +'<div style="display:flex;align-items:center;gap:6px;margin-top:4px">'+(xpk?'<span class="inpark-badge" style="background:'+xpk.color+'">'+esc(xpk.short)+'</span>':'')
+        +'<span class="t-sub">On the schedule</span></div></div>'
+        +'<div class="item-time">'+(tm?esc(tm):'TBD')+'</div>'
+        +'<button class="hdr-icon" style="'+pencil+'" onclick="papiGhostEdit(\''+ent.id+'\',\''+ds+'\',\''+pk+'\')">'+IC.pencil+'</button>'
+        +'<div class="rsvp-row"><button class="rsvp-btn going" onclick="papiGhostAttend(\''+ent.id+'\',\''+ds+'\',\''+pk+'\')">Will attend</button></div>'
+        +'</div>';
+    });
+    if(kind==='night'){
+      ((st.events&&st.events[pk]&&st.events[pk][ds])||[]).forEach(function(ev){
+        var lc2=(ev.n||'').toLowerCase();if(taken[lc2])return;taken[lc2]=1;
+        o+='<div class="item-row ghost-row"><div style="flex:1"><div class="item-name">'+esc(ev.n)+'</div>'
+          +'<div style="display:flex;align-items:center;gap:6px;margin-top:4px">'+(xpk?'<span class="inpark-badge" style="background:'+xpk.color+'">'+esc(xpk.short)+'</span>':'')
+          +'<span class="t-sub">Special ticketed event</span></div></div>'
+          +'<div class="item-time">'+(ev.t?esc(ev.t):'TBD')+'</div>'
+          +'<div class="rsvp-row"><button class="rsvp-btn going" onclick="papiAddEvent(\''+esc(ev.n).replace(/'/g,'')+'\',\''+(ev.t||'')+'\',\''+ds+'\',\''+pk+'\')">Will attend</button></div>'
+          +'</div>';
+      });
+    }
+  });
+  return o;
+}
+/* materialize a ghost into a real record */
+function papiGhostRec(entId,ds,pk,status){
+  var st=papiData();
+  var ent=papiCatShows(pk).filter(function(x){return x.id===entId;})[0];
+  if(!ent){toast('Not in the cached list');return null;}
+  var isParade=papiShowKind(ent.name)==='parade',arr=isParade?PARADES:SHOWS;
+  var rec={id:(isParade?'paU_':'sU_')+Date.now(),trip:S.tripId,by:S.persona,name:ent.name,time:papiShowTime(entId,ds,st)||'TBD',day:ds,status:status,park:pk,who:'all',src:'api',apiKey:entId,apiUpd:Date.now()};
+  arr.push(rec);
+  save(isParade?'dtp_parades':'dtp_shows',isParade?PARADES:SHOWS);
+  return {rec:rec,isParade:isParade};
+}
+function papiGhostAttend(entId,ds,pk){
+  var m=papiGhostRec(entId,ds,pk,'attend');if(!m)return;
+  m.rec.rsvp={};m.rec.rsvp[S.persona]='in';
+  save(m.isParade?'dtp_parades':'dtp_shows',m.isParade?PARADES:SHOWS);
+  toast(m.rec.name+' — you\u2019re attending');render();
+}
+function papiGhostEdit(entId,ds,pk){
+  var m=papiGhostRec(entId,ds,pk,'scheduled');if(!m)return;
+  openScreen({type:m.isParade?'paradeedit':'showedit',edit:m.rec.id,day:ds});
 }
 function papiShowBatch(){
   openScreen({type:'showtimes',day:S.screen.day,pk:S.screen.pk||dayPrimaryPark(S.screen.day)||'mk',sel:Object.keys(S.screen._sel||{})});
@@ -3836,15 +3903,23 @@ function diningRow(dn){
 function showsCard(sh,pk,date){
   var key='shows';
   var o='<div class="card">';
-  o+=cardHead(key,'var(--hd-show)',pk.color,IC.star,'Night Show Schedule',sh.length?(sh.length+' show'+(sh.length>1?'s':'')):'Nothing yet');
+  o+=cardHead(key,'var(--hd-show)',pk.color,IC.star,'Nighttime Spectaculars',sh.length?(sh.length+' show'+(sh.length>1?'s':'')):'From the schedule');
   if(S.open[key]){
     o+='<div class="card-body">';
-    o+='<button class="add-link solo" onclick="openScreen({type:\'showedit\',day:\''+date+'\'})">'+IC.plus+' Add show</button>';
-    if(!sh.length) o+='<div class="body-empty">No shows'+(filterActive()?' for the current filter':'')+' on this day.</div>';
+    if(papiEnabled()){
+      o+='<button class="add-link solo" onclick="openScreen({type:\'apishows\',day:\''+date+'\'})">'+IC.sparkles+' Browse More Shows</button>';
+      if(typeof setTimeout==='function')setTimeout(function(){try{dayGhostParks(date).forEach(function(gp){papiShowSweep(gp,date);});}catch(e){}},0);
+    }else{
+      o+='<button class="add-link solo" onclick="openScreen({type:\'showedit\',day:\''+date+'\'})">'+IC.plus+' Add show</button>';
+    }
+    var ghosts=papiGhostRows('night',date);
+    if(!sh.length&&!ghosts) o+='<div class="body-empty">No shows'+(filterActive()?' for the current filter':'')+' on this day.</div>';
     for(var i=0;i<sh.length;i++){var x=sh[i];var xpk=x.park&&PARKS[x.park];
       o+='<div class="item-row"><div style="flex:1"><div class="item-name">'+esc(x.name)+'</div><div style="display:flex;align-items:center;gap:6px;margin-top:4px">'+statusBadge(x.status||'attend')+(xpk?'<span class="inpark-badge" style="background:'+xpk.color+'">'+esc(xpk.short)+'</span>':'')+whoChips(x.who)+'</div>'+(x.status==='scheduled'?'<div class="t-sub" style="margin-top:3px">On the schedule — tap Will attend to put it on your agenda</div>':'')+'</div><div class="item-time">'+esc(x.time)+'</div>';
       o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;margin-left:8px" onclick="openScreen({type:\'showedit\',edit:\''+x.id+'\',day:\''+x.day+'\'})">'+IC.pencil+'</button>'+rsvpRow('show',x.id)+'</div>';
     }
+    o+=ghosts;
+    if(papiEnabled())o+='<button class="add-link" onclick="openScreen({type:\'showedit\',day:\''+date+'\'})">'+IC.plus+' Add show manually</button>';
     o+='</div>';
   }
   return o+'</div>';
@@ -3856,12 +3931,16 @@ function paradesCard(par,pk,date){
   o+=cardHead(key,'var(--hd-parade)',pk.color,IC.sparkles,'Parade Schedule',par.length?(par.length+' parade'+(par.length>1?'s':'')):'Nothing yet');
   if(S.open[key]){
     o+='<div class="card-body">';
-    o+='<button class="add-link solo" onclick="openScreen({type:\'paradeedit\',day:\''+date+'\'})">'+IC.plus+' Add parade</button>';
-    if(!par.length) o+='<div class="body-empty">No parades'+(filterActive()?' for the current filter':'')+' on this day.</div>';
+    if(papiEnabled())o+='<button class="add-link solo" onclick="openScreen({type:\'apishows\',day:\''+date+'\'})">'+IC.sparkles+' Browse More Parades</button>';
+    else o+='<button class="add-link solo" onclick="openScreen({type:\'paradeedit\',day:\''+date+'\'})">'+IC.plus+' Add parade</button>';
+    var pghosts=papiGhostRows('parade',date);
+    if(!par.length&&!pghosts) o+='<div class="body-empty">No parades'+(filterActive()?' for the current filter':'')+' on this day.</div>';
     for(var i=0;i<par.length;i++){var x=par[i];var xpk=x.park&&PARKS[x.park];
       o+='<div class="item-row"><div style="flex:1"><div class="item-name">'+esc(x.name)+'</div><div style="display:flex;align-items:center;gap:6px;margin-top:4px">'+statusBadge(x.status||'attend')+(xpk?'<span class="inpark-badge" style="background:'+xpk.color+'">'+esc(xpk.short)+'</span>':'')+whoChips(x.who)+'</div>'+(x.status==='scheduled'?'<div class="t-sub" style="margin-top:3px">On the schedule — tap Will attend to put it on your agenda</div>':'')+'</div><div class="item-time">'+esc(x.time)+'</div>';
       o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;margin-left:8px" onclick="openScreen({type:\'paradeedit\',edit:\''+x.id+'\',day:\''+x.day+'\'})">'+IC.pencil+'</button>'+rsvpRow('parade',x.id)+'</div>';
     }
+    o+=pghosts;
+    if(papiEnabled())o+='<button class="add-link" onclick="openScreen({type:\'paradeedit\',day:\''+date+'\'})">'+IC.plus+' Add parade manually</button>';
     o+='</div>';
   }
   return o+'</div>';

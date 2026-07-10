@@ -57,6 +57,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
           { id: 'ent-hea', entityType: 'SHOW', name: 'Happily Ever After' },
           { id: 'ent-stage', entityType: 'SHOW', name: 'ZZ Some Stage Show' },
           { id: 'ent-quiet', entityType: 'SHOW', name: 'ZZ Quiet Show' },   // never publishes times → manual picker
+          { id: 'ent-glow', entityType: 'SHOW', name: 'ZZ Glow Spectacular' },   // night kind, non-headline → schedule ghost
           { id: 'ent-ride1', entityType: 'ATTRACTION', name: 'ZZ Space Mountain' },
           { id: 'ent-ride2', entityType: 'ATTRACTION', name: 'ZZ Peter Pan' },
         ] };
@@ -235,6 +236,28 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     // schedule cards explain scheduled-but-not-attending rows
     S.open = defOpen(); S.open.shows = true;
     r.scheduledRowHint = showsCard(showsFor('2026-07-18'), PARKS.ep, '2026-07-18').indexOf('On the schedule') >= 0;
+
+    // ── Build 396: schedule cards v2 — ghosts from the API cache ──
+    S.open = defOpen(); S.open.shows = true; S.open.parades = true;
+    let nsCard = showsCard(showsFor(DAY).filter(x => visible(x.who)), PARKS.ep, DAY);
+    r.nsCardRenamed = nsCard.indexOf('Nighttime Spectaculars') >= 0;
+    r.nsCardBrowse = nsCard.indexOf('Browse More Shows') >= 0 && nsCard.indexOf("type:'apishows'") >= 0;
+    r.nsGhostListed = nsCard.indexOf('ZZ Glow Spectacular') >= 0 && nsCard.indexOf('papiGhostAttend') >= 0;
+    r.nsEventGhost = nsCard.indexOf('H2O Glow After Hours') >= 0;
+    r.nsManualAdd = nsCard.indexOf('Add show manually') >= 0;
+    papiGhostAttend('ent-glow', DAY, 'ep');
+    const glow = SHOWS.filter(x => x.apiKey === 'ent-glow' && x.day === DAY)[0];
+    r.ghostAttendCreates = !!glow && glow.status === 'attend' && glow.rsvp && glow.rsvp[S.persona] === 'in';
+    r.ghostOnAgenda = dayPlanItems(DAYS.filter(x => x.trip === 'jul26' && x.date === DAY)[0]).some(i => i.type === 'show' && i.ref === glow.id);
+    nsCard = showsCard(showsFor(DAY).filter(x => visible(x.who)), PARKS.ep, DAY);
+    r.ghostDeduped = nsCard.indexOf("papiGhostAttend('ent-glow'") < 0;
+    SHOWS.splice(SHOWS.findIndex(x => x.id === glow.id), 1);
+    papiGhostEdit('ent-glow', DAY, 'ep');
+    r.ghostEditOpensForm = !!S.screen && S.screen.type === 'showedit' && SHOWS.some(x => x.apiKey === 'ent-glow' && x.day === DAY && x.status === 'scheduled');
+    S.screen = null; renderOverlay();
+    const paCard = paradesCard(paradesFor(DAY).filter(x => visible(x.who)), PARKS.ep, DAY);
+    r.paCardBrowse = paCard.indexOf('Browse More Parades') >= 0;
+    r.paNoDupGhost = paCard.indexOf('papiGhostAttend') < 0;   // the only parade entity already has a record
 
     // NOW card: at 2:05 PM the 2:15 ride is next-up → current + expected wait in its line
     window.__nowOverride = { date: DAY, mins: 14 * 60 + 5 };
