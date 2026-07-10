@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='384-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='385-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -1232,6 +1232,21 @@ function papiMiniStamp(){
   if(!papiEnabled())return '';
   var st=papiData();
   return '<div class="papi-line">Auto-updates from live Disney data'+(st.fetched?(' · checked '+papiAgo(st.fetched)):'')+'</div>';
+}
+/* shared section-top for every API-fed trip component: Browse (when the
+   section has a browse screen) beside a Refresh control, then the stamp */
+function papiSectionTop(browseType,browseLabel,dft){
+  if(!papiEnabled())return '';
+  var o='';
+  if(browseType){
+    o+='<div style="display:flex;gap:8px;margin:0 0 6px">'
+      +'<button class="btn-secondary" style="flex:1;width:auto;margin:0" onclick="openScreen({type:\''+browseType+'\',day:\''+dft+'\'})">'+IC.sparkles+' '+browseLabel+'</button>'
+      +'<button class="btn-secondary" style="flex:0 0 auto;width:auto;margin:0;white-space:nowrap" onclick="papiForce()">⟳ Refresh</button>'
+      +'</div>';
+  }else{
+    o+='<button class="btn-secondary" style="margin:0 0 6px" onclick="papiForce()">'+IC.sparkles+' Refresh Live Disney Data</button>';
+  }
+  return o+papiMiniStamp()+'<div style="height:8px"></div>';
 }
 /* the global console: status, run report, manual refresh, hours adoption */
 function scrParkApi(){
@@ -8034,10 +8049,7 @@ function scrSection(){
     if(!body) body=fnote('park visits');
     add='<button class="sec-add" onclick="openScreen({type:\'visedit\',day:\''+dft+'\'})">Add park visit</button>';
   }else if(sec==='hours'){
-    if(papiEnabled()){
-      body+='<button class="btn-secondary" style="margin:0 0 6px" onclick="papiForce()">'+IC.sparkles+' Refresh Live Disney Data</button>';
-      body+=papiMiniStamp()+'<div style="height:8px"></div>';
-    }
+    body+=papiSectionTop(null,null,dft);
     var anyH=false;
     for(var i4=0;i4<TD.length;i4++){var dhs=parkHoursFor(TD[i4].date);if(!dhs.length)continue;anyH=true;
       body+=dayHd(TD[i4].date);
@@ -8048,10 +8060,7 @@ function scrSection(){
     if(!anyH) body+='<div class="body-empty">No park hours yet.</div>';
     add='<button class="sec-add" onclick="openScreen({type:\'hoursedit\',day:\''+dft+'\'})">Add Park Hours Manually</button>';
   }else if(sec==='rides'){
-    if(papiEnabled()){
-      body+='<button class="btn-secondary" style="margin:0 0 6px" onclick="openScreen({type:\'apirides\',day:\''+dft+'\'})">'+IC.sparkles+' Browse Rides &amp; Attractions</button>';
-      body+=papiMiniStamp()+'<div style="height:8px"></div>';
-    }
+    body+=papiSectionTop('apirides','Browse Rides &amp; Attractions',dft);
     for(var ird=0;ird<TD.length;ird++){var rdl=ridesFor(TD[ird].date).filter(function(x){return visible(x.who);});if(!rdl.length)continue;
       body+=dayHd(TD[ird].date);
       for(var rj=0;rj<rdl.length;rj++){var rx=rdl[rj];
@@ -8064,10 +8073,7 @@ function scrSection(){
     if(!body)body=fnote('rides');
     add='<button class="sec-add" onclick="openScreen({type:\'rideedit\',day:\''+dft+'\'})">Add Ride Manually</button>';
   }else if(sec==='shows'){
-    if(papiEnabled()){
-      body+='<button class="btn-secondary" style="margin:0 0 6px" onclick="openScreen({type:\'apishows\',day:\''+dft+'\'})">'+IC.sparkles+' Browse Live Entertainment</button>';
-      body+=papiMiniStamp()+'<div style="height:8px"></div>';
-    }
+    body+=papiSectionTop('apishows','Browse Live Entertainment',dft);
     for(var ish=0;ish<TD.length;ish++){var shd=showsFor(TD[ish].date).filter(function(x){return visible(x.who);}).concat(paradesFor(TD[ish].date).filter(function(x){return visible(x.who);}));if(!shd.length)continue;
       body+=dayHd(TD[ish].date);
       for(var sj=0;sj<shd.length;sj++){var sx=shd[sj],spk=sx.park&&PARKS[sx.park];

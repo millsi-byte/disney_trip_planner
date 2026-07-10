@@ -319,11 +319,13 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.mergedSectionTitle = secHtml.indexOf('Live Entertainment') >= 0;
     r.mergedShowsParades = secHtml.indexOf('ZZ Merge Parade') >= 0 && secHtml.indexOf('Happily Ever After') >= 0;
     r.mergedTopBrowse = secHtml.indexOf('Browse Live Entertainment') >= 0 && secHtml.indexOf('Auto-assign') < 0;
+    r.showsTopRefresh = secHtml.indexOf('papiForce') >= 0; // every API-fed section refreshes from its top
     r.mergedAddManually = secHtml.indexOf('Add Live Entertainment Manually') >= 0;
     r.paradeRoutesToParadeEdit = secHtml.indexOf("type:'paradeedit',edit:'pa_zz'") >= 0;
     S.screen = { type: 'section', section: 'rides' };
     const ridesHtml = scrSection();
     r.ridesSectionRenamed = ridesHtml.indexOf('Rides &amp; Attractions') >= 0 && ridesHtml.indexOf('Browse Rides') >= 0;
+    r.ridesTopRefresh = ridesHtml.indexOf('papiForce') >= 0;
     S.screen = null;
     r.hubMerged = renderPlanHub().indexOf('Live Entertainment') >= 0 && renderPlanHub().indexOf('Night Shows') < 0 && renderPlanHub().indexOf('Rides & Attractions') >= 0;
 
