@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='396-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='397-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -981,6 +981,28 @@ function papiShowTimesList(entId,ds,st0){
   var st=st0||papiData();
   return (st.timesList&&st.timesList[entId]&&st.timesList[entId][ds])||(PAPICAT.timesList&&PAPICAT.timesList[entId]&&PAPICAT.timesList[entId][ds])||[];
 }
+/* compact times line for browse rows: first few + '+N more' */
+function papiTimesShort(entId,ds,st0){
+  var tl=papiShowTimesList(entId,ds,st0);
+  if(!tl.length)return papiShowTime(entId,ds,st0);
+  if(tl.length<=3)return tl.join(' & ');
+  return tl.slice(0,3).join(' & ')+' +'+(tl.length-3)+' more';
+}
+/* time input for a show/parade: published showtimes become a SELECTOR (no
+   made-up times for scheduled entertainment); the manual picker only appears
+   when nothing is published. A pre-existing custom value is kept as its own
+   option so editing never silently loses data. */
+function showTimeInput(id,cur,apiKey,ds){
+  var tl=apiKey?papiShowTimesList(apiKey,ds):[];
+  if(!tl.length)return timeField(id,cur||'');
+  var all=tl.join(' & ');
+  var h='<select class="field-select" id="'+id+'">';
+  if(cur&&cur!=='TBD'&&cur!==all&&tl.indexOf(cur)<0)h+='<option value="'+esc(cur)+'" selected>'+esc(cur)+' (current)</option>';
+  if(tl.length>1)h+='<option value="'+esc(all)+'"'+((cur===all||!cur)?' selected':'')+'>All showtimes ('+esc(all)+')</option>';
+  tl.forEach(function(t){h+='<option value="'+esc(t)+'"'+((cur===t||(tl.length===1&&!cur))?' selected':'')+'>'+esc(t)+'</option>';});
+  h+='<option value="TBD"'+(cur==='TBD'?' selected':'')+'>TBD</option></select>';
+  return h;
+}
 /* share the catalog (attraction/show lists + trip-range showtimes) with every
    device — only when content actually changed (dtp_papicat is blob-LWW synced) */
 function papiPublishCat(st){
@@ -1632,9 +1654,9 @@ function scrApiShows(){
   var groups={parade:[],night:[],show:[]};
   list.forEach(function(x){groups[papiShowKind(x.name)].push(x);});
   var row=function(s){
-    var got=taken[(s.name||'').toLowerCase()],on=!!sel[s.id],tm=papiShowTime(s.id,d.date,st);
+    var got=taken[(s.name||'').toLowerCase()],on=!!sel[s.id],tm=papiTimesShort(s.id,d.date,st);
     var kindT=papiShowKind(s.name)==='parade'?'paradeedit':'showedit';
-    return '<div class="ov-card" style="margin:0 0 8px"><div class="item-row" style="padding:10px 12px"><div style="flex:1;min-width:0" onclick="openScreen({type:\''+kindT+'\',day:\''+d.date+'\',seed:{name:\''+esc(s.name).replace(/'/g,'&#39;')+'\'}})"><div class="item-name">'+esc(s.name)+'</div>'+(tm?'<div class="item-time">'+esc(tm)+'</div>':'')+'</div>'
+    return '<div class="ov-card" style="margin:0 0 8px"><div class="item-row" style="padding:10px 12px"><div style="flex:1;min-width:0" onclick="openScreen({type:\''+kindT+'\',day:\''+d.date+'\',seed:{name:\''+esc(s.name).replace(/'/g,'&#39;')+'\',apiKey:\''+s.id+'\'}})"><div class="item-name">'+esc(s.name)+'</div>'+(tm?'<div class="item-time">'+esc(tm)+'</div>':'')+'</div>'
       +(got?'<span style="font-size:12px;color:var(--muted)">Added</span>'
            :'<button class="dp-addchip" style="'+(on?'background:var(--hd-show);color:#fff':'')+'" onclick="papiRideSel(\''+s.id+'\')">'+(on?'✓ Selected':IC.plus+' Select')+'</button>')
       +'</div></div>';
@@ -9153,7 +9175,7 @@ function scrShowEdit(){
   if(S._formInit!=='sh'){S._formStatus.sh=edit?(edit.status||'attend'):((sseed&&sseed.status)||'attend');S._formInit='sh';}
   var st=S._formStatus.sh,pre=edit?edit.who:'all';
   var body='<div class="field"><label class="field-label">Show name</label><input class="field-input" id="sh-name" placeholder="e.g. Happily Ever After" value="'+(edit?esc(edit.name):(sseed&&sseed.name?esc(sseed.name):''))+'"></div>';
-  body+='<div class="field"><label class="field-label">Time</label>'+timeField('sh-time',edit?edit.time:'')+'</div>';
+  body+='<div class="field"><label class="field-label">Time</label>'+showTimeInput('sh-time',edit?edit.time:'',(edit&&edit.apiKey)||(sseed&&sseed.apiKey)||'',(edit&&edit.day)||S.screen.day)+'</div>';
   body+='<div class="field"><label class="field-label">Status <span class="opt">(only Attend shows on the Day Plan)</span></label><div class="seg">';
   body+='<button class="seg-btn'+(st==='scheduled'?' on':'')+'" onclick="pickStatus(\'sh\',\'scheduled\')">Scheduled</button>';
   body+='<button class="seg-btn'+(st==='attend'?' on book':'')+'" onclick="pickStatus(\'sh\',\'attend\')">Attend</button></div></div>';
@@ -9188,7 +9210,7 @@ function scrParadeEdit(){
   if(S._formInit!=='pa'){S._formStatus.pa=edit?(edit.status||'attend'):((paseed&&paseed.status)||'attend');S._formInit='pa';}
   var st=S._formStatus.pa,pre=edit?edit.who:'all';
   var body='<div class="field"><label class="field-label">Parade name</label><input class="field-input" id="pa-name" placeholder="e.g. Festival of Fantasy Parade" value="'+(edit?esc(edit.name):(paseed&&paseed.name?esc(paseed.name):''))+'"></div>';
-  body+='<div class="field"><label class="field-label">Time</label>'+timeField('pa-time',edit?edit.time:'')+'</div>';
+  body+='<div class="field"><label class="field-label">Time</label>'+showTimeInput('pa-time',edit?edit.time:'',(edit&&edit.apiKey)||(paseed&&paseed.apiKey)||'',(edit&&edit.day)||S.screen.day)+'</div>';
   body+='<div class="field"><label class="field-label">Status <span class="opt">(only Attend shows on the Day Plan)</span></label><div class="seg">';
   body+='<button class="seg-btn'+(st==='scheduled'?' on':'')+'" onclick="pickStatus(\'pa\',\'scheduled\')">Scheduled</button>';
   body+='<button class="seg-btn'+(st==='attend'?' on book':'')+'" onclick="pickStatus(\'pa\',\'attend\')">Attend</button></div></div>';

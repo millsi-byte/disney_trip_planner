@@ -58,6 +58,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
           { id: 'ent-stage', entityType: 'SHOW', name: 'ZZ Some Stage Show' },
           { id: 'ent-quiet', entityType: 'SHOW', name: 'ZZ Quiet Show' },   // never publishes times → manual picker
           { id: 'ent-glow', entityType: 'SHOW', name: 'ZZ Glow Spectacular' },   // night kind, non-headline → schedule ghost
+          { id: 'ent-many', entityType: 'SHOW', name: 'ZZ Many Show' },   // 5 daily showtimes → '+N more' truncation
           { id: 'ent-ride1', entityType: 'ATTRACTION', name: 'ZZ Space Mountain' },
           { id: 'ent-ride2', entityType: 'ATTRACTION', name: 'ZZ Peter Pan' },
         ] };
@@ -84,6 +85,8 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
         ] };
       } else if (url.indexOf('/entity/ent-fof/schedule') >= 0) {
         body = { schedule: tripDates.map(d => ({ date: d, type: 'OPERATING', openingTime: d + 'T15:00:00-04:00' })) };
+      } else if (url.indexOf('/entity/ent-many/schedule') >= 0) {
+        body = { schedule: ['15','16','17','18','19'].map(h => ({ date: DAY, type: 'OPERATING', openingTime: DAY + 'T' + h + ':00:00-04:00' })) };
       } else if (url.indexOf('/entity/ent-quiet/schedule') >= 0) {
         body = { schedule: [] };
       } else if (url.indexOf('/entity/ent-hea/schedule') >= 0) {
@@ -258,6 +261,23 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     const paCard = paradesCard(paradesFor(DAY).filter(x => visible(x.who)), PARKS.ep, DAY);
     r.paCardBrowse = paCard.indexOf('Browse More Parades') >= 0;
     r.paNoDupGhost = paCard.indexOf('papiGhostAttend') < 0;   // the only parade entity already has a record
+
+    // ── Build 397: published-time constraints ──
+    const stM = papiData();
+    await papiFetchShowTimes(stM, 'ent-many', DAY.slice(0, 4), DAY.slice(5, 7));
+    papiSave(stM);
+    S.screen = { type: 'apishows', day: DAY, pk: 'mk' };
+    const brT = scrApiShows();
+    r.browseTimesTruncated = brT.indexOf('3:00 PM &amp; 4:00 PM &amp; 5:00 PM +2 more') >= 0;
+    r.browseSeedCarriesKey = brT.indexOf("apiKey:'ent-many'") >= 0;
+    S.screen = { type: 'showedit', day: DAY, seed: { name: 'ZZ Many Show', apiKey: 'ent-many' } };
+    S._formInit = null;
+    const cForm = scrShowEdit();
+    r.formTimeSelector = cForm.indexOf('id="sh-time"') >= 0 && cForm.indexOf('sh-time__h') < 0 && cForm.indexOf('>3:00 PM<') >= 0 && cForm.indexOf('All showtimes') >= 0;
+    S.screen = { type: 'showedit', day: DAY, seed: { name: 'ZZ Quiet Show', apiKey: 'ent-quiet' } };
+    S._formInit = null;
+    r.formManualWhenUnpublished = scrShowEdit().indexOf('sh-time__h') >= 0;
+    S.screen = null;
 
     // NOW card: at 2:05 PM the 2:15 ride is next-up → current + expected wait in its line
     window.__nowOverride = { date: DAY, mins: 14 * 60 + 5 };
