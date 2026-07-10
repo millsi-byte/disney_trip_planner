@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='377-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='378-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -989,6 +989,12 @@ function papiFetchSched(trips,st){
                Other TICKETED_EVENTs (party nights etc.) are ignored. */
             if(/early entry|early theme park entry/i.test(desc)){v.early=papiT(e.openingTime);return;}
             if(/extended evening/i.test(desc)){v.late=papiT(e.closingTime);return;}
+            if(e.type==='TICKETED_EVENT'&&desc){ /* party nights etc. — surface in Browse */
+              st.events=st.events||{};var evd=(st.events[pk]=st.events[pk]||{});
+              var lst=(evd[e.date]=evd[e.date]||[]);
+              if(!lst.some(function(x){return x.n===desc;}))lst.push({n:desc,t:papiT(e.openingTime)});
+              return;
+            }
             if(e.type==='EXTRA_HOURS'){
               if(!v.open||mins(papiT(e.openingTime))<=mins(v.open))v.early=papiT(e.openingTime);
               else v.late=papiT(e.closingTime);
@@ -1236,29 +1242,64 @@ function papiRideMetaRefresh(){
   if(inp&&el)el.innerHTML=papiRideMeta(inp.value.trim());
 }
 /* ── pick-list: browse everything the API knows for a day's park ── */
+/* name-based grouping — the API has no official subtype, but names are
+   reliable enough: parades/cavalcades vs fireworks-style nighttime shows */
+function papiShowKind(name){
+  if(/parade|cavalcade/i.test(name))return 'parade';
+  if(/firework|happily ever after|luminous|fantasmic|nighttime|spectacular|after dark/i.test(name))return 'night';
+  return 'show';
+}
+function papiBrowseDay(v){S.screen.day=v;renderScreen_inplace2();}
+function papiBrowsePark(v){S.screen.pk=v;renderScreen_inplace2();}
 function scrApiShows(){
   var d=dayByDate(S.screen.day);if(!d)return scrGeneric();
-  var st=papiData(),pk=dayPrimaryPark(d.date)||'mk';
+  var st=papiData(),pk=S.screen.pk||dayPrimaryPark(d.date)||'mk';
   var list=(st.shows&&st.shows[pk])||[];
-  var body='<div class="hub-section-label" style="margin-left:0">'+monOf(d.date)+' '+d.d+' · '+d.dl+' · '+(PARKS[pk]?esc(PARKS[pk].name):'')+'</div>';
-  body+='<div class="body-empty" style="text-align:left;padding:2px 2px 10px">Every show ThemeParks.wiki lists for this park. Tap one to add it to this day as an Attend item — its published times are fetched when you add it.</div>';
-  if(!list.length)body+='<div class="body-empty" style="text-align:left;padding:2px">Nothing cached yet — tap Refresh on the Park Hours screen first.</div>';
+  /* pick the date and park explicitly — no guessing */
+  var body='<div class="field"><label class="field-label">Day</label><select class="field-select" onchange="papiBrowseDay(this.value)">'+dayOptions(d.date)+'</select></div>';
+  body+='<div class="field"><label class="field-label">Park</label><select class="field-select" onchange="papiBrowsePark(this.value)">';
+  ['mk','ep','hs','ak'].forEach(function(k){body+='<option value="'+k+'"'+(k===pk?' selected':'')+'>'+esc(PARKS[k].name)+'</option>';});
+  body+='</select></div>';
+  if(!list.length)body+='<div class="body-empty" style="text-align:left;padding:2px">Nothing cached yet — open Admin \u203a Live Disney Data and tap Refresh.</div>';
   var taken={};SHOWS.concat(PARADES).forEach(function(r){if(r.trip===S.tripId&&r.day===d.date)taken[(r.name||'').toLowerCase()]=1;});
-  list.forEach(function(s){
+  var groups={parade:[],night:[],show:[]};
+  list.forEach(function(x){groups[papiShowKind(x.name)].push(x);});
+  var row=function(s){
     var got=taken[(s.name||'').toLowerCase()];
-    body+='<div class="ov-card" style="margin:0 0 8px"><div class="item-row" style="padding:10px 12px"><div style="flex:1;min-width:0"><div class="item-name">'+esc(s.name)+'</div></div>'
+    return '<div class="ov-card" style="margin:0 0 8px"><div class="item-row" style="padding:10px 12px"><div style="flex:1;min-width:0"><div class="item-name">'+esc(s.name)+'</div></div>'
       +(got?'<span style="font-size:12px;color:var(--muted)">Added</span>'
-           :'<button class="dp-addchip" onclick="papiAddShow(\''+s.id+'\',\''+d.date+'\')">'+IC.plus+' Add</button>')
+           :'<button class="dp-addchip" onclick="papiAddShow(\''+s.id+'\',\''+d.date+'\',\''+pk+'\')">'+IC.plus+' Add</button>')
       +'</div></div>';
-  });
+  };
+  var sec=function(lbl,arr){if(!arr.length)return '';var h='<div class="hub-section-label" style="margin-left:0">'+lbl+'</div>';arr.forEach(function(x){h+=row(x);});return h;};
+  body+=sec('Parades',groups.parade);
+  body+=sec('Nighttime Spectaculars',groups.night);
+  body+=sec('Other Shows',groups.show);
+  /* special ticketed events (party nights) come from the schedule feed */
+  var evs=(st.events&&st.events[pk]&&st.events[pk][d.date])||[];
+  if(evs.length){
+    body+='<div class="hub-section-label" style="margin-left:0">Special Events (this night)</div>';
+    evs.forEach(function(ev){
+      var got=taken[(ev.n||'').toLowerCase()];
+      body+='<div class="ov-card" style="margin:0 0 8px"><div class="item-row" style="padding:10px 12px"><div style="flex:1;min-width:0"><div class="item-name">'+esc(ev.n)+'</div>'+(ev.t?'<div class="item-time">'+esc(ev.t)+'</div>':'')+'</div>'
+        +(got?'<span style="font-size:12px;color:var(--muted)">Added</span>'
+             :'<button class="dp-addchip" onclick="papiAddEvent(\''+esc(ev.n).replace(/'/g,'')+'\',\''+(ev.t||'')+'\',\''+d.date+'\',\''+pk+'\')">'+IC.plus+' Add</button>')
+        +'</div></div>';
+    });
+  }
   body+='<div class="papi-attr" style="padding:6px 2px">Park data via ThemeParks.wiki</div>';
-  return screenShell('Browse Shows & Parades',body,null,null,'Done');
+  return screenShell('Browse Live Entertainment',body,null,null,'Done');
 }
-function papiAddShow(entId,ds){
-  var st=papiData(),pk=dayPrimaryPark(ds)||'mk';
+/* add a special ticketed event as a Scheduled show on that day */
+function papiAddEvent(name,tm,ds,pk){
+  SHOWS.push({id:'sE_'+Date.now(),trip:S.tripId,by:S.persona,name:name,time:tm||'TBD',day:ds,status:'attend',park:pk,who:'all',src:'api'});
+  save('dtp_shows',SHOWS);toast(name+' added');renderScreen_inplace2();
+}
+function papiAddShow(entId,ds,pkSel){
+  var st=papiData(),pk=pkSel||dayPrimaryPark(ds)||'mk';
   var ent=((st.shows||{})[pk]||[]).filter(function(s){return s.id===entId;})[0];
   if(!ent){toast('Show not found in cache');return;}
-  var isParade=/parade/i.test(ent.name),arr=isParade?PARADES:SHOWS;
+  var isParade=papiShowKind(ent.name)==='parade',arr=isParade?PARADES:SHOWS;
   var mk=function(tm){
     arr.push({id:(isParade?'paU_':'sU_')+Date.now(),trip:S.tripId,by:S.persona,name:ent.name,time:tm,day:ds,status:'attend',park:pk,who:'all',src:'api',apiKey:ent.id,apiUpd:Date.now()});
     save(isParade?'dtp_parades':'dtp_shows',isParade?PARADES:SHOWS);

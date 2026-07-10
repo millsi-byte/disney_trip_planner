@@ -153,6 +153,16 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     const llForm = (S._formInit = null, scrAddLL());
     r.formHasStandbyOption = llForm.indexOf('Standby') >= 0 && llForm.indexOf('papi-ridemeta') >= 0;
     S.screen = null;
+
+    // ── Browse: explicit day+park pickers, grouped, special events surfaced ──
+    S.screen = { type: 'apishows', day: DAY };
+    let bHtml = scrApiShows();
+    r.browseHasPickers = bHtml.indexOf('papiBrowseDay') >= 0 && bHtml.indexOf('papiBrowsePark') >= 0;
+    S.screen.pk = 'mk'; bHtml = scrApiShows();
+    r.browseGroups = bHtml.indexOf('Parades') >= 0 && bHtml.indexOf('Nighttime Spectaculars') >= 0 && bHtml.indexOf('Other Shows') >= 0;
+    r.browseSpecialEvents = bHtml.indexOf('Special Events') >= 0 && bHtml.indexOf('H2O Glow After Hours') >= 0;
+    r.browseParkSwitch = (S.screen.pk = 'ep', scrApiShows().indexOf('EPCOT') >= 0);
+    S.screen = null;
     const dl = papiRideDatalist();
     r.datalistHasRides = dl.indexOf('papi-ridelist') >= 0 && dl.indexOf('ZZ Space Mountain') >= 0;
     S.screen = { type: 'addll', day: DAY };
