@@ -61,8 +61,20 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
         ] };
       } else if (url.indexOf('/live') >= 0) {
         body = { liveData: [
-          { entityType: 'ATTRACTION', status: 'OPERATING', name: 'ZZ Space Mountain', queue: { STANDBY: { waitTime: 60 }, PAID_RETURN_TIME: { price: { amount: 1500 } } } },
-          { entityType: 'ATTRACTION', status: 'OPERATING', name: 'ZZ Peter Pan', queue: { STANDBY: { waitTime: 40 }, RETURN_TIME: {} } },
+          { id: 'ent-ride1', entityType: 'ATTRACTION', status: 'OPERATING', name: 'ZZ Space Mountain',
+            queue: { STANDBY: { waitTime: 60 }, PAID_RETURN_TIME: { price: { amount: 1500 } } },
+            forecast: [ // Disney's own hourly expected waits (day-of)
+              { time: DAY + 'T13:00:00-04:00', waitTime: 65, percentage: 80 },
+              { time: DAY + 'T14:00:00-04:00', waitTime: 55, percentage: 70 },
+              { time: DAY + 'T15:00:00-04:00', waitTime: 70, percentage: 90 },
+            ] },
+          { id: 'ent-ride2', entityType: 'ATTRACTION', status: 'OPERATING', name: 'ZZ Peter Pan',
+            queue: { STANDBY: { waitTime: 40 }, RETURN_TIME: { returnStart: DAY + 'T14:40:00-04:00' } },
+            forecast: [
+              { time: DAY + 'T13:00:00-04:00', waitTime: 30, percentage: 60 },
+              { time: DAY + 'T14:00:00-04:00', waitTime: 35, percentage: 65 },
+              { time: DAY + 'T15:00:00-04:00', waitTime: 45, percentage: 85 },
+            ] },
           { entityType: 'ATTRACTION', status: 'OPERATING', name: 'ZZ Other', queue: { STANDBY: { waitTime: 20 } } },
           { entityType: 'SHOW', status: 'OPERATING', id: 'ent-hea', name: 'Happily Ever After', showtimes: [{ startTime: '2026-07-15T20:30:00-04:00' }, { startTime: '2026-07-15T22:30:00-04:00' }] },
         ] };
@@ -146,11 +158,24 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.liveWaitsCached = !!wsm && wsm.w === 60 && st2.waits.day === DAY;
     r.liveLLMetadata = !!wsm && wsm.ll === 'single' && wsm.price === 15 && st2.waits.by['zz peter pan'].ll === 'multi';
     r.rideMetaLine = papiRideMeta('ZZ Space Mountain').indexOf('60 min standby') >= 0 && papiRideMeta('ZZ Space Mountain').indexOf('LL Single Pass $15') >= 0;
+
+    // ── Build 389: 4-park live sweep, apiKey joins, forecasts, expected crowds ──
+    const stW = papiData();
+    r.waitsAllParks = ['mk','ep','hs','ak'].every(pk => stW.waits.parks && stW.waits.parks[pk] && stW.waits.parks[pk].by['zz space mountain']);
+    r.waitsByIdJoin = papiRideMeta('Totally Renamed Ride', 'ent-ride1').indexOf('60 min standby') >= 0; // exact entity-id join beats the name
+    r.metaExpectedAtTime = papiRideMeta('ZZ Space Mountain', '', DAY, '2:00 PM').indexOf('~55 min expected at 2:00 PM') >= 0;
+    r.metaNoForecastOtherDay = papiRideMeta('ZZ Space Mountain', '', '2026-07-16', '2:00 PM').indexOf('expected at') < 0; // forecast is day-of only
+    r.metaNextWindow = papiRideMeta('ZZ Peter Pan').indexOf('next window 2:40 PM') >= 0;
+    r.parkExpectedLine = papiParkExpected('ep', DAY).indexOf('Expected today') >= 0 && papiParkExpected('ep', DAY).indexOf('3:00 PM') >= 0; // 3 PM is the peak hour
+    r.parkExpectedOnlyToday = papiParkExpected('ep', '2026-07-16') === '';
     // ── Planned Rides: own component; LL link supplies the window; LL form untouched ──
     LLS.push({ id: 'zll9', trip: 'jul26', day: DAY, ride: 'ZZNOWRIDE', tier: 'mp1', status: 'booked', winStart: '2:00 PM', winEnd: '3:00 PM', rideTime: '', who: 'all' });
     RIDES.push({ id: 'zrd1', trip: 'jul26', day: DAY, name: 'ZZ Space Mountain', rideTime: '2:15 PM', llId: 'zll9', who: 'all' });
     const rdItem = dayPlanItems(DAYS.filter(x => x.trip === 'jul26' && x.date === DAY)[0]).filter(i => i.type === 'ride')[0];
     r.rideOnDayPlan = !!rdItem && rdItem.x === 'ZZ Space Mountain' && rdItem.t === '2:15 PM';
+    // today's Day Agenda rows carry the live line (merged ride zrd1 = ZZ Space Mountain)
+    S.open = defOpen(); S.open.itin = true;
+    r.agendaRowLiveMeta = dayPlanCard(DAYS.filter(x => x.trip === 'jul26' && x.date === DAY)[0], PARKS.ep).indexOf('min standby now') >= 0;
     S.screen = { type: 'rideedit', day: DAY };
     const rdForm = scrRideEdit();
     r.rideFormAutocomplete = rdForm.indexOf('papiRideSuggest') >= 0 && rdForm.indexOf('rd-name__sug') >= 0;
@@ -240,7 +265,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     const beforeTTL = fetchCount;
     papiRefresh(true);                              // everything fetched recently → TTLs skip schedule/children
     await new Promise(res => setTimeout(res, 250));
-    r.ttlSkipsRefetch = (fetchCount - beforeTTL) <= 2;   // at most live-crowd call(s)
+    r.ttlSkipsRefetch = (fetchCount - beforeTTL) <= 5;   // at most the 4-park live sweep
     window.fetch = () => { fetchCount++; return Promise.reject(new TypeError('Failed to fetch')); };
     localStorage.removeItem('dtp__parkapi');         // no stamps → real fetches attempted → all fail
     papiRefresh(true);
