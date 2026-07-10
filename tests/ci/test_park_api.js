@@ -478,6 +478,14 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     await new Promise(res => setTimeout(res, 400));
     r.sweepReportsFailure = !!window.__papiSweepInfo && window.__papiSweepInfo.bad > 0 && window.__papiSweepInfo.got === 0;
     r.browseSaysFailed = scrApiShows().indexOf('Couldn’t fetch showtimes') >= 0;
+    // A successful live response with no times is different from a blocked
+    // request and must not leave unexplained bare rows.
+    window.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({ liveData: [] }) });
+    window.__papiSweepInfo = null;
+    localStorage.setItem('dtp__parkapi', JSON.stringify({ shows: { mk: [{ id: 'ent-hea', name: 'Happily Ever After' }] }, stamps: {}, coolUntil: 0, lastErr: stC.lastErr, lastOk: 0 }));
+    papiShowSweep('mk', DAY);
+    await new Promise(res => setTimeout(res, 200));
+    r.browseSaysNoPublished = scrApiShows().indexOf('No published showtimes for this day yet') >= 0;
     S.screen = null;
 
     // ── honest run summary: an all-cached run is UP TO DATE, not a failure ──
@@ -494,6 +502,18 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.browseWorksWithoutCache = scrApiRides().indexOf('ZZ Space Mountain') >= 0;
     S.screen = { type: 'apishows', day: DAY, pk: 'mk' };
     r.showsBrowseWorksWithoutCache = scrApiShows().indexOf('Happily Ever After') >= 0;
+    // The rows came from synced PAPICAT, so the sweep must use that same list.
+    // Day-of Browse uses the one-request live feed and populates both display
+    // text and the batch selector's discrete time list.
+    window.fetch = goodFetch;
+    window.__papiSweepInfo = null;
+    const beforeCatalogSweep = fetchCount;
+    papiShowSweep('mk', DAY);
+    r.fetchingStatusVisible = scrApiShows().indexOf('Fetching showtimes') >= 0;
+    await new Promise(res => setTimeout(res, 300));
+    const stCatalogSweep = papiData();
+    r.sweepUsesSyncedCatalog = fetchCount > beforeCatalogSweep && !!(stCatalogSweep.times && stCatalogSweep.times['ent-hea'] && stCatalogSweep.times['ent-hea'][DAY]);
+    r.liveSweepFillsTimesList = !!(stCatalogSweep.timesList && stCatalogSweep.timesList['ent-hea'] && stCatalogSweep.timesList['ent-hea'][DAY].length === 2);
     S.screen = null;
 
     // ── Browse rides: tap name → form seed; multi-select → batch time entry (blank = TBD) ──
@@ -728,7 +748,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
 
     // ── the sweep/refresh save race: neither writer may wipe the other ──
     // storage written MID-SWEEP must survive the sweep's save (merge, not clobber)
-    window.fetch = () => new Promise(res => setTimeout(() => res({ ok: true, json: () => Promise.resolve({ schedule: [{ date: DAY, type: 'OPERATING', openingTime: DAY + 'T21:00:00-04:00' }] }) }), 80));
+    window.fetch = () => new Promise(res => setTimeout(() => res({ ok: true, json: () => Promise.resolve({ liveData: [{ id: 'ent-race', entityType: 'SHOW', showtimes: [{ startTime: DAY + 'T21:00:00-04:00' }] }] }) }), 80));
     localStorage.setItem('dtp__parkapi', JSON.stringify(Object.assign(papiData(), { shows: { mk: [{ id: 'ent-race', name: 'ZZ Race Show' }] }, stamps: {}, coolUntil: 0 })));
     papiShowSweep('mk', DAY);
     await new Promise(res => setTimeout(res, 20));
