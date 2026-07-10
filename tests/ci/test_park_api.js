@@ -199,6 +199,18 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     // today's Day Agenda rows carry the live line (merged ride zrd1 = ZZ Space Mountain)
     S.open = defOpen(); S.open.itin = true;
     r.agendaRowLiveMeta = dayPlanCard(DAYS.filter(x => x.trip === 'jul26' && x.date === DAY)[0], PARKS.ep).indexOf('standby now') >= 0;
+    // ── rides carry the attendance row on the agenda + breakdown on the form ──
+    const dpRsvp = dayPlanCard(DAYS.filter(x => x.trip === 'jul26' && x.date === DAY)[0], PARKS.ep);
+    r.rideHasRsvpRow = dpRsvp.indexOf("rsvpSet('ride','zrd1','in')") >= 0 && dpRsvp.indexOf('Will attend') >= 0;
+    rsvpSet('ride', 'zrd1', 'out');
+    const zrdOut = RIDES.filter(x => x.id === 'zrd1')[0];
+    r.rideRsvpOutRemovesMe = zrdOut.rsvp && zrdOut.rsvp.scott === 'out' && zrdOut.who !== 'all' && zrdOut.who.indexOf('scott') < 0;
+    rsvpSet('ride', 'zrd1', 'out');   // toggle back off → cleared, back in who
+    r.rideRsvpClears = !RIDES.filter(x => x.id === 'zrd1')[0].rsvp;
+    S.screen = { type: 'rideedit', edit: 'zrd1', day: DAY };
+    r.rideFormAttendance = scrRideEdit().indexOf('Attendance') >= 0;
+    S.screen = null;
+
     // NOW card: at 2:05 PM the 2:15 ride is next-up → current + expected wait in its line
     window.__nowOverride = { date: DAY, mins: 14 * 60 + 5 };
     const nowHtml = nowCardHtml();
