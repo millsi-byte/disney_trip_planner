@@ -726,6 +726,24 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     const savedQ = papiData();
     r.quotaShedSaves = savedQ.waits === undefined && !!savedQ.stamps;
 
+    // ── the sweep/refresh save race: neither writer may wipe the other ──
+    // storage written MID-SWEEP must survive the sweep's save (merge, not clobber)
+    window.fetch = () => new Promise(res => setTimeout(() => res({ ok: true, json: () => Promise.resolve({ schedule: [{ date: DAY, type: 'OPERATING', openingTime: DAY + 'T21:00:00-04:00' }] }) }), 80));
+    localStorage.setItem('dtp__parkapi', JSON.stringify(Object.assign(papiData(), { shows: { mk: [{ id: 'ent-race', name: 'ZZ Race Show' }] }, stamps: {}, coolUntil: 0 })));
+    papiShowSweep('mk', DAY);
+    await new Promise(res => setTimeout(res, 20));
+    localStorage.setItem('dtp__parkapi', JSON.stringify(Object.assign(papiData(), { zzMarker: 'kept' })));
+    await new Promise(res => setTimeout(res, 400));
+    const stRace = papiData();
+    r.sweepMergesNotClobbers = stRace.zzMarker === 'kept' && !!(stRace.times && stRace.times['ent-race'] && stRace.times['ent-race'][DAY]);
+    // showtimes saved MID-REFRESH must survive the refresher's save
+    window.fetch = goodFetch;
+    localStorage.setItem('dtp__parkapi', JSON.stringify({ fetched: 0, crowdFetched: 0 }));
+    papiRefresh(true);
+    const stMid = papiData(); stMid.times = Object.assign(stMid.times || {}, { 'ent-race2': { [DAY]: '9:59 PM' } }); papiSave(stMid);
+    await new Promise(res => setTimeout(res, 400));
+    r.refreshKeepsSweepTimes = !!(papiData().times && papiData().times['ent-race2']) && papiData().times['ent-race2'][DAY] === '9:59 PM';
+
     // ── production build: the engine ships LIVE from Build 392 (user-approved promotion) ──
     const realBuild = window.BUILD;
     window.BUILD = realBuild.replace('-dev', '');
