@@ -145,7 +145,8 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     papiRefresh(true);
     await new Promise(res => setTimeout(res, 300));
     const scrHtml2 = document.getElementById('screen-host').innerHTML;
-    r.screenShowsStampAfterRefresh = scrHtml2.indexOf('Updated from live Disney data') >= 0;
+    r.screenShowsStampAfterRefresh = scrHtml2.indexOf('Checked live Disney data') >= 0;
+    r.screenShowsRunReport = scrHtml2.indexOf('Last run:') >= 0 && scrHtml2.indexOf('schedule fetches') >= 0;
     r.screenNoFailureOnSuccess = scrHtml2.indexOf('Last refresh failed') < 0;
     S.screen = null; renderOverlay();
 

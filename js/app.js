@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='371-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='372-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -896,11 +896,17 @@ function papiT(iso){
   var h=parseInt(iso.slice(11,13),10),m=iso.slice(14,16),ap=h>=12?'PM':'AM',h12=h%12;if(h12===0)h12=12;
   return h12+':'+m+' '+ap;
 }
-function papiGet(path){
-  return fetch('https://api.themeparks.wiki/v1'+path).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(j){window.__papiOk=(window.__papiOk||0)+1;return j;},function(e){
+function papiStat(){return window.__papiStat=window.__papiStat||{schedOk:0,schedErr:0,childOk:0,liveOk:0,created:0,updated:0,skippedUser:0};}
+function papiGet(path,kind){
+  return fetch('https://api.themeparks.wiki/v1'+path).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status+' on '+(kind||'request'));return r.json();}).then(function(j){
+    window.__papiOk=(window.__papiOk||0)+1;
+    var t=papiStat();if(kind==='sched')t.schedOk++;else if(kind==='children')t.childOk++;else if(kind==='live')t.liveOk++;
+    return j;
+  },function(e){
     /* remember the FIRST failure so the UI can say WHY a refresh did nothing
        (CSP/CORS blocks surface as an opaque "Failed to fetch") */
     if(!window.__papiErr)window.__papiErr=String(e&&e.message||e).slice(0,140);
+    if(kind==='sched')papiStat().schedErr++;
     throw e;
   });
 }
@@ -931,17 +937,21 @@ function papiRefresh(force){
   trips.forEach(function(tr){if(tr.days.some(function(d){return d.date===np.date;}))todayTrip=tr;});
   var wantCrowd=todayTrip&&(force||!st.crowdFetched||(now-st.crowdFetched)>60*60*1000);
   if(!wantSched&&!wantCrowd)return;
-  window.__papiInflight=true;window.__papiErr=null;window.__papiOk=0;
+  window.__papiInflight=true;window.__papiErr=null;window.__papiOk=0;window.__papiStat=null;
   var work=Promise.resolve();
   if(wantSched)work=work.then(function(){return papiFetchSched(trips,st);});
   if(wantCrowd)work=work.then(function(){return papiFetchCrowd(todayTrip,np,st);});
   var fin=function(){
     window.__papiInflight=false;
+    var t=papiStat();
     st.lastErr=window.__papiErr||null;st.lastOk=window.__papiOk||0;
+    st.lastStat={s:t.schedOk,se:t.schedErr,c:t.created,u:t.updated,k:t.skippedUser,at:Date.now()};
     papiSave(st);
     if(force){
-      if(st.lastOk>0)toast('Live Disney data updated ✓');
-      else toast('Refresh failed — '+(st.lastErr||'no response')+'');
+      if(t.created||t.updated)toast('Live data ✓ — '+(t.created?t.created+' added':'')+(t.created&&t.updated?', ':'')+(t.updated?t.updated+' refreshed':''));
+      else if(t.schedOk&&t.skippedUser)toast('Fetched OK — nothing to change ('+t.skippedUser+' records are yours)');
+      else if(t.schedOk)toast('Fetched OK — no changes needed');
+      else toast('Refresh failed — '+(st.lastErr||'no response'));
     }
     /* the Hours screen is usually OPEN during a manual refresh — update it,
        not just the app behind it (this was why refresh "did nothing") */
@@ -958,7 +968,7 @@ function papiFetchSched(trips,st){
   Object.keys(PAPI_IDS).forEach(function(pk){
     months.forEach(function(mo){
       chain=chain.then(function(){
-        return papiGet('/entity/'+PAPI_IDS[pk]+'/schedule/'+mo.y+'/'+mo.m).then(function(j){
+        return papiGet('/entity/'+PAPI_IDS[pk]+'/schedule/'+mo.y+'/'+mo.m,'sched').then(function(j){
           var entries=(j&&j.schedule||[]).filter(function(e){return e&&e.date;});
           var rec=st.hours[pk]=st.hours[pk]||{};
           /* two passes: OPERATING first so EXTRA_HOURS can be classified
@@ -980,7 +990,7 @@ function papiFetchSched(trips,st){
     });
     /* SHOW children (names for headline matching + the pick-list) */
     chain=chain.then(function(){
-      return papiGet('/entity/'+PAPI_IDS[pk]+'/children').then(function(j){
+      return papiGet('/entity/'+PAPI_IDS[pk]+'/children','children').then(function(j){
         var kids=(j&&j.children||[]);
         st.shows[pk]=kids.filter(function(c){return c&&c.entityType==='SHOW';}).map(function(c){return {id:c.id,name:c.name};});
         /* ride list too — feeds the LL form autocomplete now and the future
@@ -999,7 +1009,7 @@ function papiFetchSched(trips,st){
         if(!ent)return;
         months.forEach(function(mo){
           sub=sub.then(function(){
-            return papiGet('/entity/'+ent.id+'/schedule/'+mo.y+'/'+mo.m).then(function(j){
+            return papiGet('/entity/'+ent.id+'/schedule/'+mo.y+'/'+mo.m,'sched').then(function(j){
               var byDate={};
               (j&&j.schedule||[]).forEach(function(e){
                 if(!e||!e.date)return;var t=papiT(e.openingTime);if(!t)return;
@@ -1029,14 +1039,14 @@ function papiApplyHours(trips,st){
       Object.keys(PAPI_IDS).forEach(function(pk){
         var v=st.hours&&st.hours[pk]&&st.hours[pk][d.date];if(!v||!v.open)return;
         var ex=null;for(var i=0;i<PARKHOURS.length;i++){var h=PARKHOURS[i];if(h.trip===tr.trip.id&&h.park===pk&&h.day===d.date){ex=h;break;}}
-        if(ex&&ex.src!=='api')return;   /* a person's record — never touch */
+        if(ex&&ex.src!=='api'){papiStat().skippedUser++;return;}   /* a person's record — never touch */
         if(ex){
           if(ex.open!==v.open||ex.close!==v.close||(v.early||'')!==(ex.early||'')||(v.late||'')!==(ex.late||'')){
-            ex.open=v.open;ex.close=v.close;ex.early=v.early||'';ex.late=v.late||'';ex.apiUpd=now;changed=true;
+            ex.open=v.open;ex.close=v.close;ex.early=v.early||'';ex.late=v.late||'';ex.apiUpd=now;changed=true;papiStat().updated++;
           }
         }else{
           PARKHOURS.push({id:'hA_'+tr.trip.id+'_'+pk+'_'+d.date,trip:tr.trip.id,park:pk,day:d.date,open:v.open,close:v.close,early:v.early||'',late:v.late||'',crowd:null,src:'api',apiUpd:now});
-          changed=true;
+          changed=true;papiStat().created++;
         }
       });
     });
@@ -1057,14 +1067,14 @@ function papiApplyShows(trips,st){
           var ex=null,i;
           for(i=0;i<arr.length;i++){if(arr[i].trip===tr.trip.id&&arr[i].day===d.date&&arr[i].apiKey===ent.id){ex=arr[i];break;}}
           if(!ex){ /* fuzzy: a person already added this show by name that day → theirs */
-            for(i=0;i<arr.length;i++){if(arr[i].trip===tr.trip.id&&arr[i].day===d.date&&(arr[i].name||'').toLowerCase()===ent.name.toLowerCase()){return;}}
+            for(i=0;i<arr.length;i++){if(arr[i].trip===tr.trip.id&&arr[i].day===d.date&&(arr[i].name||'').toLowerCase()===ent.name.toLowerCase()){papiStat().skippedUser++;return;}}
           }
-          if(ex&&ex.src!=='api')return;
+          if(ex&&ex.src!=='api'){papiStat().skippedUser++;return;}
           if(ex){
-            if(ex.time!==tm){ex.time=tm;ex.apiUpd=now;if(hl.kind==='parade')paChanged=true;else chChanged=true;}
+            if(ex.time!==tm){ex.time=tm;ex.apiUpd=now;if(hl.kind==='parade')paChanged=true;else chChanged=true;papiStat().updated++;}
           }else{
             arr.push({id:(hl.kind==='parade'?'paA_':'sA_')+tr.trip.id+'_'+pk+'_'+d.date,trip:tr.trip.id,name:ent.name,time:tm,day:d.date,status:'scheduled',park:pk,who:'all',src:'api',apiKey:ent.id,apiUpd:now});
-            if(hl.kind==='parade')paChanged=true;else chChanged=true;
+            if(hl.kind==='parade')paChanged=true;else chChanged=true;papiStat().created++;
           }
         });
       });
@@ -1076,7 +1086,7 @@ function papiApplyShows(trips,st){
 /* day-of crowd estimate from live standby waits (top-10 average → 1-10) */
 function papiFetchCrowd(tr,np,st){
   var pk=dayPrimaryParkFor(tr.trip.id,np.date);if(!pk||!PAPI_IDS[pk])return Promise.resolve();
-  return papiGet('/entity/'+PAPI_IDS[pk]+'/live').then(function(j){
+  return papiGet('/entity/'+PAPI_IDS[pk]+'/live','live').then(function(j){
     var waits=[],byName={};
     (j&&j.liveData||[]).forEach(function(e){
       var w=e&&e.queue&&e.queue.STANDBY&&e.queue.STANDBY.waitTime;
@@ -1118,8 +1128,11 @@ function papiStampLine(){
   [PARKHOURS,SHOWS,PARADES].forEach(function(arr){arr.forEach(function(r){if(r.trip===S.tripId&&r.src==='api'&&r.apiUpd>newest)newest=r.apiUpd;});});
   var st=papiData();
   var o='<div class="papi-line">';
-  o+=newest?('Updated from live Disney data · '+papiAgo(newest)):'Live Disney data: not fetched yet';
+  o+=st.fetched?('Checked live Disney data '+papiAgo(st.fetched)):'Live Disney data: not fetched yet';
   o+=' · <a href="#" onclick="event.preventDefault();papiForce()">Refresh</a>';
+  if(st.lastStat){var L=st.lastStat;
+    o+='<div>Last run: '+L.s+' schedule fetches'+(L.se?(' ('+L.se+' failed)'):'')+' · '+L.c+' added · '+L.u+' refreshed'+(L.k?(' · '+L.k+' skipped (yours)'):'')+'</div>';
+  }
   if(st.lastErr&&!st.lastOk)o+='<div style="color:#B91C1C">Last refresh failed: '+esc(st.lastErr)+'</div>';
   o+='<div class="papi-attr">Park data via ThemeParks.wiki</div></div>';
   return o;
