@@ -468,6 +468,12 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     papiShowSweep('mk', DAY);
     await new Promise(res => setTimeout(res, 150));
     r.sweepHonorsCooldown = fetchCount === beforeSweep;
+
+    // ── honest run summary: an all-cached run is UP TO DATE, not a failure ──
+    r.summaryUpToDate = papiRunSummary({ schedOk: 0, schedErr: 0, created: 0, updated: 0, skippedUser: 0 }, null, 0).indexOf('Up to date') === 0;
+    r.summaryYours = papiRunSummary({ schedOk: 0, schedErr: 0, created: 0, updated: 0, skippedUser: 3 }, null, 0).indexOf('3 records are yours') > 0;
+    r.summaryRealFailure = papiRunSummary({ schedOk: 0, schedErr: 4, created: 0, updated: 0, skippedUser: 0 }, 'HTTP 429 on sched', 0).indexOf('Refresh failed') === 0;
+    r.summaryChanges = papiRunSummary({ schedOk: 2, schedErr: 0, created: 1, updated: 2, skippedUser: 0 }, null, 5).indexOf('1 added, 2 refreshed') > 0;
     r.blockedDeviceHint = papiStampLine().indexOf('blocking the data service') >= 0;
 
     // ── blocked-device catalog: a device that can't fetch still gets ride lists via sync ──

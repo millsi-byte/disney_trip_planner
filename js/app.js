@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='403-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='404-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -1014,6 +1014,15 @@ function papiPublishCat(st){
   var sig=function(c){return JSON.stringify([c.rides||null,c.shows||null,c.dining||null,c.times||null,c.timesList||null]);};
   if(sig(cat)!==sig(PAPICAT)){PAPICAT=cat;save('dtp_papicat',PAPICAT);}
 }
+/* one honest sentence for a forced run. The subtle case: a run where every
+   fetch was TTL-skipped and nothing changed has ALL counters at zero — that
+   is "up to date", NOT "failed" (mislabelling it burned real trust). */
+function papiRunSummary(t,lastErr,okCount){
+  if(t.created||t.updated)return 'Live data ✓ — '+(t.created?t.created+' added':'')+(t.created&&t.updated?', ':'')+(t.updated?t.updated+' refreshed':'');
+  if(!okCount&&(t.schedErr||lastErr))return 'Refresh failed — '+(lastErr||'no response');
+  if(t.skippedUser)return 'Up to date — nothing to change ('+t.skippedUser+' records are yours)';
+  return 'Up to date — nothing new to apply';
+}
 /* ── the refresher ──────────────────────────────────────────── */
 function papiRefresh(force){
   if(!papiEnabled())return;
@@ -1044,12 +1053,7 @@ function papiRefresh(force){
     if(t.schedErr>0&&!t.schedOk)st.coolUntil=Date.now()+10*60*1000;   /* total failure → back off 10m */
     else if(st.lastOk>0)st.coolUntil=0;
     papiSave(st);
-    if(force){
-      if(t.created||t.updated)toast('Live data ✓ — '+(t.created?t.created+' added':'')+(t.created&&t.updated?', ':'')+(t.updated?t.updated+' refreshed':''));
-      else if(t.schedOk&&t.skippedUser)toast('Fetched OK — nothing to change ('+t.skippedUser+' records are yours)');
-      else if(t.schedOk)toast('Fetched OK — no changes needed');
-      else toast('Refresh failed — '+(st.lastErr||'no response'));
-    }
+    if(force)toast(papiRunSummary(t,st.lastErr,st.lastOk));
     /* the Hours screen is usually OPEN during a manual refresh — update it,
        not just the app behind it (this was why refresh "did nothing") */
     try{if(S.screen)renderScreen_inplace2();else render();}catch(e){}
