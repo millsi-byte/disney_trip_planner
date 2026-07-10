@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='379-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='380-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -932,6 +932,7 @@ function papiRefresh(force){
   var trips=papiTrips();if(!trips.length){if(force)toast('No upcoming trip with dates to fill');return;}
   var st=papiData(),now=Date.now();
   if(window.__papiInflight){if(force)toast('Already refreshing…');return;}
+  if(!force&&st.coolUntil&&now<st.coolUntil)return;   /* backing off after a blocked run */
   var wantSched=force||!st.fetched||(now-st.fetched)>12*3600*1000;
   var np=nowParts(),todayTrip=null;
   trips.forEach(function(tr){if(tr.days.some(function(d){return d.date===np.date;}))todayTrip=tr;});
@@ -946,6 +947,8 @@ function papiRefresh(force){
     var t=papiStat();
     st.lastErr=window.__papiErr||null;st.lastOk=window.__papiOk||0;
     st.lastStat={s:t.schedOk,se:t.schedErr,c:t.created,u:t.updated,k:t.skippedUser,at:Date.now()};
+    if(t.schedErr>0&&!t.schedOk)st.coolUntil=Date.now()+10*60*1000;   /* total failure → back off 10m */
+    else if(st.lastOk>0)st.coolUntil=0;
     papiSave(st);
     if(force){
       if(t.created||t.updated)toast('Live data ✓ — '+(t.created?t.created+' added':'')+(t.created&&t.updated?', ':'')+(t.updated?t.updated+' refreshed':''));
@@ -968,7 +971,10 @@ function papiFetchSched(trips,st){
   Object.keys(PAPI_IDS).forEach(function(pk){
     months.forEach(function(mo){
       chain=chain.then(function(){
+        st.stamps=st.stamps||{};var sk='sched_'+pk+'_'+mo.y+mo.m;
+        if(st.stamps[sk]&&(Date.now()-st.stamps[sk])<6*3600*1000)return;   /* polite: 6h TTL even on force */
         return papiGet('/entity/'+PAPI_IDS[pk]+'/schedule/'+mo.y+'/'+mo.m,'sched').then(function(j){
+          st.stamps[sk]=Date.now();
           var entries=(j&&j.schedule||[]).filter(function(e){return e&&e.date;});
           var rec=st.hours[pk]=st.hours[pk]||{};
           /* two passes: OPERATING first so EXTRA_HOURS can be classified
@@ -1005,7 +1011,10 @@ function papiFetchSched(trips,st){
     });
     /* SHOW children (names for headline matching + the pick-list) */
     chain=chain.then(function(){
+      st.stamps=st.stamps||{};var ck='child_'+pk;
+      if(st.stamps[ck]&&(Date.now()-st.stamps[ck])<24*3600*1000&&st.shows[pk])return;
       return papiGet('/entity/'+PAPI_IDS[pk]+'/children','children').then(function(j){
+        st.stamps[ck]=Date.now();
         var kids=(j&&j.children||[]);
         st.shows[pk]=kids.filter(function(c){return c&&c.entityType==='SHOW';}).map(function(c){return {id:c.id,name:c.name};});
         /* ride list too — feeds the LL form autocomplete now and the future
@@ -1026,7 +1035,10 @@ function papiFetchSched(trips,st){
         if(st.hlNames.indexOf(ent.name)<0)st.hlNames.push(ent.name);
         months.forEach(function(mo){
           sub=sub.then(function(){
+            var hk='sched_'+ent.id+'_'+mo.y+mo.m;
+            if(st.stamps[hk]&&(Date.now()-st.stamps[hk])<6*3600*1000)return;
             return papiGet('/entity/'+ent.id+'/schedule/'+mo.y+'/'+mo.m,'sched').then(function(j){
+              st.stamps[hk]=Date.now();
               var byDate={};
               (j&&j.schedule||[]).forEach(function(e){
                 if(!e||!e.date)return;var t=papiT(e.openingTime);if(!t)return;
@@ -1163,7 +1175,11 @@ function papiStampLine(){
     o+='<div>Last run: '+L.s+' schedule fetches'+(L.se?(' ('+L.se+' failed)'):'')+' · '+L.c+' added · '+L.u+' refreshed'+(L.k?(' · '+L.k+' skipped (yours)'):'')+'</div>';
   }
   if(st.hlNames&&st.hlNames.length)o+='<div>Headline shows: '+esc(st.hlNames.join(', '))+'</div>';
-  if(st.lastErr&&!st.lastOk)o+='<div style="color:#B91C1C">Last refresh failed: '+esc(st.lastErr)+'</div>';
+  if(st.lastErr&&!st.lastOk){
+    o+='<div style="color:#B91C1C">Last refresh failed: '+esc(st.lastErr)+'</div>';
+    if(/failed to fetch/i.test(st.lastErr))o+='<div>This device\u2019s browser is likely blocking the data service (ad-block / tracking protection) or it\u2019s briefly rate-limited. Data fetched by other devices still syncs here.</div>';
+    if(st.coolUntil&&Date.now()<st.coolUntil)o+='<div>Auto-retry paused \u2248'+Math.ceil((st.coolUntil-Date.now())/60000)+'m (manual Refresh still works).</div>';
+  }
   o+='<div class="papi-attr">Park data via ThemeParks.wiki</div></div>';
   return o;
 }

@@ -226,6 +226,24 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.newTripShowTBD = SHOWS.some(x => x.trip === 'zt2' && x.day === '2026-07-20' && x.apiKey === 'ent-hea' && x.time === 'TBD' && x.status === 'scheduled');
     r.stampListsHeadlines = papiStampLine().indexOf('Happily Ever After') >= 0;
 
+    // ── rate-limit politeness: TTLs survive force; cooldown after a blocked run ──
+    window.fetch = goodFetch;
+    const beforeTTL = fetchCount;
+    papiRefresh(true);                              // everything fetched recently → TTLs skip schedule/children
+    await new Promise(res => setTimeout(res, 250));
+    r.ttlSkipsRefetch = (fetchCount - beforeTTL) <= 2;   // at most live-crowd call(s)
+    window.fetch = () => { fetchCount++; return Promise.reject(new TypeError('Failed to fetch')); };
+    localStorage.removeItem('dtp__parkapi');         // no stamps → real fetches attempted → all fail
+    papiRefresh(true);
+    await new Promise(res => setTimeout(res, 250));
+    const stC = papiData();
+    r.cooldownSet = stC.coolUntil > Date.now();
+    const beforeCool = fetchCount;
+    papiRefresh(false);                              // auto refresh must honor the cooldown
+    await new Promise(res => setTimeout(res, 100));
+    r.cooldownHonored = fetchCount === beforeCool;
+    r.blockedDeviceHint = papiStampLine().indexOf('blocking the data service') >= 0;
+
     // ── production build: engine fully inert ──
     const realBuild = window.BUILD;
     window.BUILD = realBuild.replace('-dev', '');
