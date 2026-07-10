@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='370-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='371-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -897,7 +897,12 @@ function papiT(iso){
   return h12+':'+m+' '+ap;
 }
 function papiGet(path){
-  return fetch('https://api.themeparks.wiki/v1'+path).then(function(r){if(!r.ok)throw new Error('papi '+r.status);return r.json();});
+  return fetch('https://api.themeparks.wiki/v1'+path).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(j){window.__papiOk=(window.__papiOk||0)+1;return j;},function(e){
+    /* remember the FIRST failure so the UI can say WHY a refresh did nothing
+       (CSP/CORS blocks surface as an opaque "Failed to fetch") */
+    if(!window.__papiErr)window.__papiErr=String(e&&e.message||e).slice(0,140);
+    throw e;
+  });
 }
 /* trips worth refreshing: any trip whose day range isn't entirely in the past */
 function papiTrips(){
@@ -917,21 +922,32 @@ function papiMonths(days){
 /* ── the refresher ──────────────────────────────────────────── */
 function papiRefresh(force){
   if(!papiEnabled())return;
-  if(awaitingFirstCloudSync())return;   /* never write while first sync is pending */
-  var trips=papiTrips();if(!trips.length)return;
+  if(awaitingFirstCloudSync()){if(force)toast('Still syncing — try again in a moment');return;}
+  var trips=papiTrips();if(!trips.length){if(force)toast('No upcoming trip with dates to fill');return;}
   var st=papiData(),now=Date.now();
-  if(window.__papiInflight)return;
+  if(window.__papiInflight){if(force)toast('Already refreshing…');return;}
   var wantSched=force||!st.fetched||(now-st.fetched)>12*3600*1000;
   var np=nowParts(),todayTrip=null;
   trips.forEach(function(tr){if(tr.days.some(function(d){return d.date===np.date;}))todayTrip=tr;});
   var wantCrowd=todayTrip&&(force||!st.crowdFetched||(now-st.crowdFetched)>60*60*1000);
   if(!wantSched&&!wantCrowd)return;
-  window.__papiInflight=true;
+  window.__papiInflight=true;window.__papiErr=null;window.__papiOk=0;
   var work=Promise.resolve();
   if(wantSched)work=work.then(function(){return papiFetchSched(trips,st);});
   if(wantCrowd)work=work.then(function(){return papiFetchCrowd(todayTrip,np,st);});
-  work.then(function(){window.__papiInflight=false;papiSave(st);try{render();}catch(e){}})
-      .catch(function(){window.__papiInflight=false;papiSave(st);});
+  var fin=function(){
+    window.__papiInflight=false;
+    st.lastErr=window.__papiErr||null;st.lastOk=window.__papiOk||0;
+    papiSave(st);
+    if(force){
+      if(st.lastOk>0)toast('Live Disney data updated ✓');
+      else toast('Refresh failed — '+(st.lastErr||'no response')+'');
+    }
+    /* the Hours screen is usually OPEN during a manual refresh — update it,
+       not just the app behind it (this was why refresh "did nothing") */
+    try{if(S.screen)renderScreen_inplace2();else render();}catch(e){}
+  };
+  work.then(fin,fin);
 }
 /* park hours + headline showtimes for every relevant trip */
 function papiFetchSched(trips,st){
@@ -943,15 +959,21 @@ function papiFetchSched(trips,st){
     months.forEach(function(mo){
       chain=chain.then(function(){
         return papiGet('/entity/'+PAPI_IDS[pk]+'/schedule/'+mo.y+'/'+mo.m).then(function(j){
-          (j&&j.schedule||[]).forEach(function(e){
-            if(!e||!e.date)return;
-            var rec=st.hours[pk]=st.hours[pk]||{};var v=rec[e.date]=rec[e.date]||{};
-            if(e.type==='OPERATING'){v.open=papiT(e.openingTime);v.close=papiT(e.closingTime);}
-            else if(e.type==='EXTRA_HOURS'){
-              /* before regular open → early entry; otherwise extended evening */
-              if(!v.open||papiT(e.openingTime)===''||mins(papiT(e.openingTime))<=mins(v.open||'11:59 PM'))v.early=papiT(e.openingTime);
-              else v.late=papiT(e.closingTime);
-            }
+          var entries=(j&&j.schedule||[]).filter(function(e){return e&&e.date;});
+          var rec=st.hours[pk]=st.hours[pk]||{};
+          /* two passes: OPERATING first so EXTRA_HOURS can be classified
+             against the real open time regardless of array order */
+          entries.forEach(function(e){
+            if(e.type!=='OPERATING')return;
+            var v=rec[e.date]=rec[e.date]||{};
+            v.open=papiT(e.openingTime);v.close=papiT(e.closingTime);
+          });
+          entries.forEach(function(e){
+            if(e.type!=='EXTRA_HOURS')return;
+            var v=rec[e.date]=rec[e.date]||{};
+            /* before regular open → early entry; otherwise extended evening */
+            if(!v.open||mins(papiT(e.openingTime))<=mins(v.open))v.early=papiT(e.openingTime);
+            else v.late=papiT(e.closingTime);
           });
         }).catch(function(){});
       });
@@ -1094,9 +1116,11 @@ function papiStampLine(){
   if(!papiEnabled())return '';
   var newest=0;
   [PARKHOURS,SHOWS,PARADES].forEach(function(arr){arr.forEach(function(r){if(r.trip===S.tripId&&r.src==='api'&&r.apiUpd>newest)newest=r.apiUpd;});});
+  var st=papiData();
   var o='<div class="papi-line">';
   o+=newest?('Updated from live Disney data · '+papiAgo(newest)):'Live Disney data: not fetched yet';
   o+=' · <a href="#" onclick="event.preventDefault();papiForce()">Refresh</a>';
+  if(st.lastErr&&!st.lastOk)o+='<div style="color:#B91C1C">Last refresh failed: '+esc(st.lastErr)+'</div>';
   o+='<div class="papi-attr">Park data via ThemeParks.wiki</div></div>';
   return o;
 }

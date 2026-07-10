@@ -37,10 +37,11 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     const MK = '75ea578a-adc8-4116-a54d-dccb60765ef9';
     const EP = '47f90d2c-e191-4239-a466-5892ef59a88b';
     let fetchCount = 0;
+    // evening EXTRA_HOURS deliberately FIRST: classification must not depend on array order
     const sched = (dates) => ({ schedule: dates.flatMap(d => ([
+      { date: d, type: 'EXTRA_HOURS', openingTime: d + 'T23:00:00-04:00', closingTime: d + 'T01:00:00-04:00' },
       { date: d, type: 'OPERATING', openingTime: d + 'T09:00:00-04:00', closingTime: d + 'T23:00:00-04:00' },
       { date: d, type: 'EXTRA_HOURS', openingTime: d + 'T08:30:00-04:00', closingTime: d + 'T09:00:00-04:00' },
-      { date: d, type: 'EXTRA_HOURS', openingTime: d + 'T23:00:00-04:00', closingTime: d + 'T01:00:00-04:00' },
     ])) });
     const tripDates = ['2026-07-14','2026-07-15','2026-07-16','2026-07-17','2026-07-18','2026-07-19'];
     window.fetch = (url) => {
@@ -137,6 +138,25 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     S.screen = { type: 'addll', day: DAY };
     r.llFormWiresDatalist = scrAddLL().indexOf('list="papi-ridelist"') >= 0;
     S.screen = null;
+
+    // ── a manual refresh with the Hours screen OPEN updates the screen itself ──
+    openScreen({ type: 'hoursplan', day: DAY });
+    localStorage.setItem('dtp__parkapi', JSON.stringify(Object.assign(papiData(), { fetched: 0, crowdFetched: 0 })));
+    papiRefresh(true);
+    await new Promise(res => setTimeout(res, 300));
+    const scrHtml2 = document.getElementById('screen-host').innerHTML;
+    r.screenShowsStampAfterRefresh = scrHtml2.indexOf('Updated from live Disney data') >= 0;
+    r.screenNoFailureOnSuccess = scrHtml2.indexOf('Last refresh failed') < 0;
+    S.screen = null; renderOverlay();
+
+    // ── blocked fetch (CSP/CORS/offline): failure must be VISIBLE, not silent ──
+    window.fetch = () => { fetchCount++; return Promise.reject(new TypeError('Failed to fetch')); };
+    localStorage.removeItem('dtp__parkapi');
+    papiRefresh(true);
+    await new Promise(res => setTimeout(res, 300));
+    const stF = papiData();
+    r.failureRecorded = !!stF.lastErr && stF.lastOk === 0;
+    r.stampShowsFailure = papiStampLine().indexOf('Last refresh failed') >= 0 && papiStampLine().indexOf('Failed to fetch') >= 0;
 
     // ── production build: engine fully inert ──
     const realBuild = window.BUILD;
