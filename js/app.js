@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='383-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='384-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -925,6 +925,47 @@ function papiMonths(days){
   days.forEach(function(d){var k=d.date.slice(0,7);if(!seen[k]){seen[k]=1;out.push({y:d.date.slice(0,4),m:d.date.slice(5,7)});}});
   return out;
 }
+/* one entity's showtimes for one month → st.times (joined "8:30 & 10:30 PM")
+   + st.timesList (discrete times, for the batch-add selector). 6h TTL per
+   entity+month; shared by the headline chain, single Add, and the Browse
+   sweep. Mutates the CALLER's st — the caller decides when to papiSave. */
+function papiFetchShowTimes(st,entId,y,m){
+  st.stamps=st.stamps||{};st.times=st.times||{};st.timesList=st.timesList||{};
+  var hk='sched_'+entId+'_'+y+m;
+  if(st.stamps[hk]&&(Date.now()-st.stamps[hk])<6*3600*1000)return Promise.resolve(false);
+  return papiGet('/entity/'+entId+'/schedule/'+y+'/'+m,'sched').then(function(j){
+    st.stamps[hk]=Date.now();
+    var byDate={};
+    (j&&j.schedule||[]).forEach(function(e){
+      if(!e||!e.date)return;var t=papiT(e.openingTime);if(!t)return;
+      (byDate[e.date]=byDate[e.date]||[]).push(t);
+    });
+    var tm=st.times[entId]=st.times[entId]||{};
+    var tl=st.timesList[entId]=st.timesList[entId]||{};
+    Object.keys(byDate).forEach(function(ds){tm[ds]=byDate[ds].join(' & ');tl[ds]=byDate[ds];});
+    return true;
+  });
+}
+/* cached showtime lookups — device cache first, then the synced catalog
+   (a fetch-blocked device reads what another device published) */
+function papiShowTime(entId,ds,st0){
+  var st=st0||papiData();
+  return (st.times&&st.times[entId]&&st.times[entId][ds])||(PAPICAT.times&&PAPICAT.times[entId]&&PAPICAT.times[entId][ds])||'';
+}
+function papiShowTimesList(entId,ds,st0){
+  var st=st0||papiData();
+  return (st.timesList&&st.timesList[entId]&&st.timesList[entId][ds])||(PAPICAT.timesList&&PAPICAT.timesList[entId]&&PAPICAT.timesList[entId][ds])||[];
+}
+/* share the catalog (attraction/show lists + trip-range showtimes) with every
+   device — only when content actually changed (dtp_papicat is blob-LWW synced) */
+function papiPublishCat(st){
+  if(!st.rides||!st.shows||awaitingFirstCloudSync())return;
+  var dset={};papiTrips().forEach(function(tr){tr.days.forEach(function(d){dset[d.date]=1;});});
+  var trim=function(src){var out={};Object.keys(src||{}).forEach(function(id){Object.keys(src[id]||{}).forEach(function(ds){if(dset[ds])(out[id]=out[id]||{})[ds]=src[id][ds];});});return out;};
+  var cat={rides:st.rides,shows:st.shows,times:trim(st.times),timesList:trim(st.timesList),upd:Date.now()};
+  var sig=function(c){return JSON.stringify([c.rides||null,c.shows||null,c.times||null,c.timesList||null]);};
+  if(sig(cat)!==sig(PAPICAT)){PAPICAT=cat;save('dtp_papicat',PAPICAT);}
+}
 /* ── the refresher ──────────────────────────────────────────── */
 function papiRefresh(force){
   if(!papiEnabled())return;
@@ -1034,20 +1075,7 @@ function papiFetchSched(trips,st){
         if(!ent)return;
         if(st.hlNames.indexOf(ent.name)<0)st.hlNames.push(ent.name);
         months.forEach(function(mo){
-          sub=sub.then(function(){
-            var hk='sched_'+ent.id+'_'+mo.y+mo.m;
-            if(st.stamps[hk]&&(Date.now()-st.stamps[hk])<6*3600*1000)return;
-            return papiGet('/entity/'+ent.id+'/schedule/'+mo.y+'/'+mo.m,'sched').then(function(j){
-              st.stamps[hk]=Date.now();
-              var byDate={};
-              (j&&j.schedule||[]).forEach(function(e){
-                if(!e||!e.date)return;var t=papiT(e.openingTime);if(!t)return;
-                (byDate[e.date]=byDate[e.date]||[]).push(t);
-              });
-              var tm=st.times[ent.id]=st.times[ent.id]||{};
-              Object.keys(byDate).forEach(function(ds){tm[ds]=byDate[ds].join(' & ');});
-            }).catch(function(){});
-          });
+          sub=sub.then(function(){return papiFetchShowTimes(st,ent.id,mo.y,mo.m).catch(function(){});});
         });
       });
     });
@@ -1057,13 +1085,7 @@ function papiFetchSched(trips,st){
     st.fetched=Date.now();
     papiApplyHours(trips,st);
     papiApplyShows(trips,st);
-    /* share the catalog with every device (only when it actually changed) */
-    if(st.rides&&st.shows&&!awaitingFirstCloudSync()){
-      var cat={rides:st.rides,shows:st.shows,upd:Date.now()};
-      if(JSON.stringify(cat.rides)!==JSON.stringify(PAPICAT.rides||null)||JSON.stringify(cat.shows)!==JSON.stringify(PAPICAT.shows||null)){
-        PAPICAT=cat;save('dtp_papicat',PAPICAT);
-      }
-    }
+    papiPublishCat(st);
   });
 }
 /* write hours into PARKHOURS — api-owned records only, deterministic ids,
@@ -1382,24 +1404,53 @@ function papiShowKind(name){
 }
 function papiBrowseDay(v){S.screen.day=v;renderScreen_inplace2();}
 function papiBrowsePark(v){S.screen.pk=v;renderScreen_inplace2();}
+/* background-fill showtimes for every show listed in Browse. Per-entity 6h
+   TTLs make a repeat sweep cost ~0 requests; re-renders the open Browse
+   screen only when something new actually arrived. */
+function papiShowSweep(pk,ds){
+  if(!papiEnabled())return;
+  var key=pk+'_'+ds.slice(0,7);
+  window.__papiSweep=window.__papiSweep||{};
+  if(window.__papiSweep[key])return;
+  var st=papiData(),list=(st.shows&&st.shows[pk])||[];
+  if(!list.length)return;   /* fetch-blocked device: times arrive via the synced catalog */
+  window.__papiSweep[key]=1;
+  var y=ds.slice(0,4),m=ds.slice(5,7),got=0,chain=Promise.resolve();
+  list.forEach(function(s){
+    chain=chain.then(function(){return papiFetchShowTimes(st,s.id,y,m).then(function(f){if(f)got++;},function(){});});
+  });
+  chain.then(function(){
+    delete window.__papiSweep[key];
+    if(!got)return;
+    papiSave(st);
+    papiPublishCat(st);
+    if(S.screen&&(S.screen.type==='apishows'||S.screen.type==='showtimes'))renderScreen_inplace2();
+  });
+}
 function scrApiShows(){
   var d=dayByDate(S.screen.day);if(!d)return scrGeneric();
   var st=papiData(),pk=S.screen.pk||dayPrimaryPark(d.date)||'mk';
   var list=papiCatShows(pk);
+  setTimeout(function(){try{papiShowSweep(pk,d.date);}catch(e){}},0);
   /* pick the date and park explicitly — no guessing */
   var body='<div class="field"><label class="field-label">Day</label><select class="field-select" onchange="papiBrowseDay(this.value)">'+dayOptions(d.date)+'</select></div>';
   body+='<div class="field"><label class="field-label">Park</label><select class="field-select" onchange="papiBrowsePark(this.value)">';
   ['mk','ep','hs','ak'].forEach(function(k){body+='<option value="'+k+'"'+(k===pk?' selected':'')+'>'+esc(PARKS[k].name)+'</option>';});
   body+='</select></div>';
   if(!list.length)body+='<div class="body-empty" style="text-align:left;padding:2px">Nothing cached yet — open Admin \u203a Live Disney Data and tap Refresh.</div>';
+  var sel=S.screen._sel=S.screen._sel||{};
+  var nsel=Object.keys(sel).length;
+  if(list.length)body+='<div class="body-empty" style="text-align:left;padding:2px 2px 8px">Tap a show’s name to add it with the full form, or tick several and set all their times at once.</div>';
+  if(nsel)body+='<button class="btn-secondary" style="margin:0 0 10px" onclick="papiShowBatch()">'+IC.sparkles+' Set times for '+nsel+' selected →</button>';
   var taken={};SHOWS.concat(PARADES).forEach(function(r){if(r.trip===S.tripId&&r.day===d.date)taken[(r.name||'').toLowerCase()]=1;});
   var groups={parade:[],night:[],show:[]};
   list.forEach(function(x){groups[papiShowKind(x.name)].push(x);});
   var row=function(s){
-    var got=taken[(s.name||'').toLowerCase()];
-    return '<div class="ov-card" style="margin:0 0 8px"><div class="item-row" style="padding:10px 12px"><div style="flex:1;min-width:0"><div class="item-name">'+esc(s.name)+'</div></div>'
+    var got=taken[(s.name||'').toLowerCase()],on=!!sel[s.id],tm=papiShowTime(s.id,d.date,st);
+    var kindT=papiShowKind(s.name)==='parade'?'paradeedit':'showedit';
+    return '<div class="ov-card" style="margin:0 0 8px"><div class="item-row" style="padding:10px 12px"><div style="flex:1;min-width:0" onclick="openScreen({type:\''+kindT+'\',day:\''+d.date+'\',seed:{name:\''+esc(s.name).replace(/'/g,'&#39;')+'\'}})"><div class="item-name">'+esc(s.name)+'</div>'+(tm?'<div class="item-time">'+esc(tm)+'</div>':'')+'</div>'
       +(got?'<span style="font-size:12px;color:var(--muted)">Added</span>'
-           :'<button class="dp-addchip" onclick="papiAddShow(\''+s.id+'\',\''+d.date+'\',\''+pk+'\')">'+IC.plus+' Add</button>')
+           :'<button class="dp-addchip" style="'+(on?'background:var(--hd-show);color:#fff':'')+'" onclick="papiRideSel(\''+s.id+'\')">'+(on?'✓ Selected':IC.plus+' Select')+'</button>')
       +'</div></div>';
   };
   var sec=function(lbl,arr){if(!arr.length)return '';var h='<div class="hub-section-label" style="margin-left:0">'+lbl+'</div>';arr.forEach(function(x){h+=row(x);});return h;};
@@ -1436,15 +1487,51 @@ function papiAddShow(entId,ds,pkSel){
     save(isParade?'dtp_parades':'dtp_shows',isParade?PARADES:SHOWS);
     toast(ent.name+' added');renderScreen_inplace2();
   };
-  var cached=st.times&&st.times[ent.id]&&st.times[ent.id][ds];
+  var cached=papiShowTime(ent.id,ds,st);
   if(cached){mk(cached);return;}
   toast('Fetching times…');
-  papiGet('/entity/'+ent.id+'/schedule/'+ds.slice(0,4)+'/'+ds.slice(5,7)).then(function(j){
-    var ts=[];(j&&j.schedule||[]).forEach(function(e){if(e&&e.date===ds){var t=papiT(e.openingTime);if(t)ts.push(t);}});
-    var tm=ts.length?ts.join(' & '):'TBD';
-    var t2=papiData();t2.times=t2.times||{};(t2.times[ent.id]=t2.times[ent.id]||{})[ds]=tm;papiSave(t2);
-    mk(tm);
+  papiFetchShowTimes(st,ent.id,ds.slice(0,4),ds.slice(5,7)).then(function(){
+    papiSave(st);
+    mk(papiShowTime(ent.id,ds,st)||'TBD');
   }).catch(function(){mk('TBD');});
+}
+function papiShowBatch(){
+  openScreen({type:'showtimes',day:S.screen.day,pk:S.screen.pk||dayPrimaryPark(S.screen.day)||'mk',sel:Object.keys(S.screen._sel||{})});
+}
+/* batch time entry for shows: published showtimes become a selector
+   (each time / all / TBD); unpublished ones get the manual picker */
+function scrShowTimes(){
+  var d=dayByDate(S.screen.day);if(!d)return scrGeneric();
+  var pk=S.screen.pk||'mk',ids=S.screen.sel||[],st=papiData();
+  var body='<div class="body-empty" style="text-align:left;padding:2px 2px 12px">Pick a time for each — published showtimes are offered where Disney has them. TBD adds it without a time.</div>';
+  ids.forEach(function(id,i){
+    var ent=papiCatShows(pk).filter(function(x){return x.id===id;})[0];if(!ent)return;
+    var tl=papiShowTimesList(id,d.date,st);
+    body+='<div class="field"><label class="field-label">'+esc(ent.name)+'</label>';
+    if(tl.length){
+      var all=tl.join(' & ');
+      body+='<select class="field-select" id="st_'+i+'">';
+      if(tl.length>1)body+='<option value="'+esc(all)+'" selected>All showtimes ('+esc(all)+')</option>';
+      tl.forEach(function(t){body+='<option value="'+esc(t)+'"'+(tl.length===1?' selected':'')+'>'+esc(t)+'</option>';});
+      body+='<option value="TBD">TBD</option></select>';
+    }else{
+      body+=timeField('st_'+i,'');
+    }
+    body+='</div>';
+  });
+  return screenShell('Set Showtimes',body,'Add '+ids.length+' show'+(ids.length===1?'':'s'),'saveShowTimes()','Back');
+}
+function saveShowTimes(){
+  var pk=S.screen.pk||'mk',ids=S.screen.sel||[],ds=S.screen.day,n=0,gotP=false,gotS=false;
+  ids.forEach(function(id,i){
+    var ent=papiCatShows(pk).filter(function(x){return x.id===id;})[0];if(!ent)return;
+    var isParade=papiShowKind(ent.name)==='parade',arr=isParade?PARADES:SHOWS;
+    arr.push({id:(isParade?'paU_':'sU_')+Date.now()+'_'+i,trip:S.tripId,by:S.persona,name:ent.name,time:val('st_'+i)||'TBD',day:ds,status:'attend',park:pk,who:'all',src:'api',apiKey:ent.id,apiUpd:Date.now()});
+    if(isParade)gotP=true;else gotS=true;n++;
+  });
+  if(gotP)save('dtp_parades',PARADES);
+  if(gotS)save('dtp_shows',SHOWS);
+  toast(n+' show'+(n===1?'':'s')+' added');closeScreen();render();
 }
 /* type → emoji + human context for a plan item */
 function nowIcon(t){return ({dining:'🍽',ll:'⚡',show:'🎭',parade:'🎭',flight:'✈️',resort:'🏨',rebook:'🔁',manual:'📍'})[t]||'•';}
@@ -4761,6 +4848,7 @@ function renderScreen(){
   if(t==='apishows') return scrApiShows();
   if(t==='apirides') return scrApiRides();
   if(t==='ridetimes') return scrRideTimes();
+  if(t==='showtimes') return scrShowTimes();
   if(t==='rideedit') return scrRideEdit();
   if(t==='parkapi') return scrParkApi();
   return scrGeneric();
@@ -7946,6 +8034,10 @@ function scrSection(){
     if(!body) body=fnote('park visits');
     add='<button class="sec-add" onclick="openScreen({type:\'visedit\',day:\''+dft+'\'})">Add park visit</button>';
   }else if(sec==='hours'){
+    if(papiEnabled()){
+      body+='<button class="btn-secondary" style="margin:0 0 6px" onclick="papiForce()">'+IC.sparkles+' Refresh Live Disney Data</button>';
+      body+=papiMiniStamp()+'<div style="height:8px"></div>';
+    }
     var anyH=false;
     for(var i4=0;i4<TD.length;i4++){var dhs=parkHoursFor(TD[i4].date);if(!dhs.length)continue;anyH=true;
       body+=dayHd(TD[i4].date);
@@ -7954,8 +8046,7 @@ function scrSection(){
       }
     }
     if(!anyH) body+='<div class="body-empty">No park hours yet.</div>';
-    body+=papiMiniStamp();
-    add='<button class="sec-add" onclick="openScreen({type:\'hoursedit\',day:\''+dft+'\'})">Add park hours</button>';
+    add='<button class="sec-add" onclick="openScreen({type:\'hoursedit\',day:\''+dft+'\'})">Add Park Hours Manually</button>';
   }else if(sec==='rides'){
     if(papiEnabled()){
       body+='<button class="btn-secondary" style="margin:0 0 6px" onclick="openScreen({type:\'apirides\',day:\''+dft+'\'})">'+IC.sparkles+' Browse Rides &amp; Attractions</button>';

@@ -55,6 +55,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
           { id: 'ent-fof', entityType: 'SHOW', name: 'Festival of Fantasy Parade' },
           { id: 'ent-hea', entityType: 'SHOW', name: 'Happily Ever After' },
           { id: 'ent-stage', entityType: 'SHOW', name: 'ZZ Some Stage Show' },
+          { id: 'ent-quiet', entityType: 'SHOW', name: 'ZZ Quiet Show' },   // never publishes times → manual picker
           { id: 'ent-ride1', entityType: 'ATTRACTION', name: 'ZZ Space Mountain' },
           { id: 'ent-ride2', entityType: 'ATTRACTION', name: 'ZZ Peter Pan' },
         ] };
@@ -67,6 +68,8 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
         ] };
       } else if (url.indexOf('/entity/ent-fof/schedule') >= 0) {
         body = { schedule: tripDates.map(d => ({ date: d, type: 'OPERATING', openingTime: d + 'T15:00:00-04:00' })) };
+      } else if (url.indexOf('/entity/ent-quiet/schedule') >= 0) {
+        body = { schedule: [] };
       } else if (url.indexOf('/entity/ent-hea/schedule') >= 0) {
         // no published times for 07-20 → the item must still create as TBD
         body = { schedule: tripDates.filter(d => d !== '2026-07-20').flatMap(d => ([
@@ -168,8 +171,14 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     S.screen.pk = 'mk'; bHtml = scrApiShows();
     r.browseGroups = bHtml.indexOf('Parades') >= 0 && bHtml.indexOf('Nighttime Spectaculars') >= 0 && bHtml.indexOf('Other Shows') >= 0;
     r.browseSpecialEvents = bHtml.indexOf('Special Events') >= 0 && bHtml.indexOf('H2O Glow After Hours') >= 0;
+    // every row with cached showtimes carries them (not just Special Events)
+    r.browseRowShowsTime = bHtml.indexOf('8:30 PM &amp; 10:30 PM') >= 0 && bHtml.indexOf('3:00 PM') >= 0;
+    // rides-style flow: name-tap opens the right form; chips select
+    r.browseShowNameOpensForm = bHtml.indexOf("type:'showedit'") >= 0 && bHtml.indexOf("type:'paradeedit'") >= 0 && bHtml.indexOf('seed:') >= 0;
     r.browseParkSwitch = (S.screen.pk = 'ep', scrApiShows().indexOf('EPCOT') >= 0);
     S.screen = null;
+    // let the browse sweeps triggered above settle before counting fetches later
+    await new Promise(res => setTimeout(res, 300));
     r.datalistHasRides = papiRideDatalist().indexOf('ZZ Space Mountain') >= 0; // still available for future use
 
     // ── a manual refresh with the Live Disney Data console OPEN updates it in place ──
@@ -271,6 +280,36 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     // seeded form prefill
     S.screen = { type: 'rideedit', day: DAY, seed: { name: 'ZZ Space Mountain' } };
     r.formSeedPrefills = scrRideEdit().indexOf('ZZ Space Mountain') >= 0;
+    S.screen = null;
+
+    // ── Browse shows: multi-select → batch screen; published times become a
+    //    selector (each / all / TBD), unpublished ones the manual picker.
+    //    Still on the PAPICAT-only device: times must come from the catalog. ──
+    S.screen = { type: 'apishows', day: DAY, pk: 'mk' };
+    scrApiShows();
+    papiRideSel('ent-fof'); papiRideSel('ent-hea'); papiRideSel('ent-quiet');
+    r.showMultiSelect = scrApiShows().indexOf('Set times for 3 selected') >= 0;
+    r.showTimesFromCatalog = scrApiShows().indexOf('8:30 PM &amp; 10:30 PM') >= 0; // device cache is empty here
+    papiShowBatch();
+    renderOverlay();
+    const stHtml = document.getElementById('screen-host').innerHTML;
+    r.batchSelectorForPublished = stHtml.indexOf('All showtimes (8:30 PM &amp; 10:30 PM)') >= 0 && stHtml.indexOf('id="st_1"') >= 0;
+    r.batchSelectorHasTBD = stHtml.indexOf('>TBD<') >= 0;
+    r.batchManualForUnpublished = stHtml.indexOf('st_2__h') >= 0; // ZZ Quiet Show → manual time picker
+    const showsBefore = SHOWS.length, parBefore = PARADES.length;
+    saveShowTimes();
+    const newPar = PARADES[PARADES.length - 1];
+    r.batchRoutesParade = PARADES.length === parBefore + 1 && newPar.name === 'Festival of Fantasy Parade' && newPar.time === '3:00 PM' && newPar.src === 'api' && newPar.status === 'attend';
+    r.batchShowFromSelector = SHOWS.some(s => s.apiKey === 'ent-hea' && s.day === DAY && s.time === '8:30 PM & 10:30 PM' && s.status === 'attend');
+    r.batchUnpublishedTBD = SHOWS.some(s => s.apiKey === 'ent-quiet' && s.day === DAY && s.time === 'TBD');
+    r.batchCounts = SHOWS.length === showsBefore + 2;
+    S.screen = null; renderOverlay();
+
+    // ── Park Hours section: refresh + last-checked on top, manual add renamed ──
+    S.screen = { type: 'section', section: 'hours' };
+    const hrsHtml = scrSection();
+    r.hoursTopRefresh = hrsHtml.indexOf('papiForce') >= 0 && hrsHtml.indexOf('Auto-updates from live Disney data') >= 0;
+    r.hoursAddManually = hrsHtml.indexOf('Add Park Hours Manually') >= 0 && hrsHtml.indexOf('>Add park hours<') < 0;
     S.screen = null;
 
     // ── merged Live Entertainment section + renamed Rides & Attractions ──
