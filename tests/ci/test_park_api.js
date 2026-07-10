@@ -176,6 +176,11 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     // today's Day Agenda rows carry the live line (merged ride zrd1 = ZZ Space Mountain)
     S.open = defOpen(); S.open.itin = true;
     r.agendaRowLiveMeta = dayPlanCard(DAYS.filter(x => x.trip === 'jul26' && x.date === DAY)[0], PARKS.ep).indexOf('min standby now') >= 0;
+    // NOW card: at 2:05 PM the 2:15 ride is next-up → current + expected wait in its line
+    window.__nowOverride = { date: DAY, mins: 14 * 60 + 5 };
+    const nowHtml = nowCardHtml();
+    r.nowNextUpWait = nowHtml.indexOf('min standby now') >= 0 && nowHtml.indexOf('expected at') >= 0;
+    window.__nowOverride = { date: DAY, mins: 10 * 60 };
     S.screen = { type: 'rideedit', day: DAY };
     const rdForm = scrRideEdit();
     r.rideFormAutocomplete = rdForm.indexOf('papiRideSuggest') >= 0 && rdForm.indexOf('rd-name__sug') >= 0;

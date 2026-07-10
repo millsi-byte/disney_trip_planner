@@ -679,6 +679,7 @@ button{font-family:inherit}
 .now-li{font-size:15px;width:20px;text-align:center;flex-shrink:0}
 .now-lx{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .now-lt{color:var(--muted);font-weight:600;font-variant-numeric:tabular-nums}
+.now-lwait{color:var(--muted);font-size:11.5px;font-weight:500}
 .now-empty{font-size:13px;color:var(--muted)}
 .now-tap{padding:9px 14px;border-top:1px solid var(--border);font-size:12px;font-weight:700;color:var(--mk);display:flex;justify-content:space-between}
 .now-pre .now-hd{background:linear-gradient(100deg,var(--mk),#8a63c9);justify-content:center}
