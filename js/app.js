@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='375-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='376-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -1148,9 +1148,6 @@ function papiStampLine(){
   var st=papiData();
   var o='<div class="papi-line">';
   o+=st.fetched?('Checked live Disney data '+papiAgo(st.fetched)):'Live Disney data: not fetched yet';
-  o+=' · <a href="#" onclick="event.preventDefault();papiForce()">Refresh</a>';
-  if(PARKHOURS.some(function(h){return h.trip===S.tripId&&h.src!=='api';}))
-    o+=' · <a href="#" onclick="event.preventDefault();papiAdoptHours()">Use live hours</a>';
   if(st.lastStat){var L=st.lastStat;
     o+='<div>Last run: '+L.s+' schedule fetches'+(L.se?(' ('+L.se+' failed)'):'')+' · '+L.c+' added · '+L.u+' refreshed'+(L.k?(' · '+L.k+' skipped (yours)'):'')+'</div>';
   }
@@ -1173,6 +1170,21 @@ function papiAdoptHours(){
   toast('Hours switched to live data — refreshing\u2026');
   var st=papiData();st.fetched=0;papiSave(st);
   papiRefresh(true);
+}
+/* quiet per-section note — no controls; the global console lives in Admin */
+function papiMiniStamp(){
+  if(!papiEnabled())return '';
+  var st=papiData();
+  return '<div class="papi-line">Auto-updates from live Disney data'+(st.fetched?(' · checked '+papiAgo(st.fetched)):'')+'</div>';
+}
+/* the global console: status, run report, manual refresh, hours adoption */
+function scrParkApi(){
+  var body='<div class="body-empty" style="text-align:left;padding:0 2px 12px;font-size:14px;color:var(--ink)">One engine keeps park hours, headline parades &amp; night shows, and the day-of crowd estimate current for every trip with dates. It checks schedules every 12 hours (hourly for crowd during the trip), fills new trips within seconds, and never touches anything a person created or edited.</div>';
+  body+=papiStampLine();
+  body+='<button class="btn-secondary" style="margin:12px 0 0" onclick="papiForce()">'+IC.sparkles+' Refresh now</button>';
+  if(PARKHOURS.some(function(h){return h.trip===S.tripId&&h.src!=='api';}))
+    body+='<button class="btn-secondary" style="margin:10px 0 0" onclick="papiAdoptHours()">Use live data for this trip\u2019s hours</button>';
+  return screenShell('Live Disney Data',body,null,null,'Done');
 }
 /* a new trip (or changed dates) shouldn't wait out the 12h throttle —
    clear it and refresh shortly after the current call stack settles */
@@ -3427,6 +3439,8 @@ function renderAdminHub(){
     o+='<div class="hub-section-label">Testing (dev build only)</div>';
     o+='<button class="hub-row" onclick="openScreen({type:\'nowpreview\'})"><div class="hub-icon" style="background:#B45309">'+IC.clock+'</div>'
       +'<div class="hub-main"><div class="hub-title">Preview NOW card</div><div class="hub-sub">'+(nowPreviewGet()?'Currently previewing a day':'Jump the day/time to test any state')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
+    o+='<button class="hub-row" onclick="openScreen({type:\'parkapi\'})"><div class="hub-icon" style="background:#0E7490">'+IC.sparkles+'</div>'
+      +'<div class="hub-main"><div class="hub-title">Live Disney Data</div><div class="hub-sub">'+(papiData().fetched?('Checked '+papiAgo(papiData().fetched)):'Hours, shows & crowd auto-fill')+'</div></div><div class="chev">'+IC.chev+'</div></button>';
   }
   o+='<div class="hub-section-label">Manage</div>';
   o+='<button class="hub-row" onclick="openScreen({type:\'parties\'})"><div class="hub-icon" style="background:#6B4FA0">'+IC.home+'</div>'
@@ -4533,6 +4547,7 @@ function renderScreen(){
   if(t==='backupview')return scrBackupView();
   if(t==='nowpreview') return scrNowPreview();
   if(t==='apishows') return scrApiShows();
+  if(t==='parkapi') return scrParkApi();
   return scrGeneric();
 }
 function scrNotifs(){
@@ -7723,7 +7738,7 @@ function scrSection(){
       }
     }
     if(!anyH) body+='<div class="body-empty">No park hours yet.</div>';
-    if(papiEnabled())body+=papiStampLine();
+    body+=papiMiniStamp();
     add='<button class="sec-add" onclick="openScreen({type:\'hoursedit\',day:\''+dft+'\'})">Add park hours</button>';
   }else if(sec==='shows'){
     if(SHOWS.some(function(s){return s.trip===S.tripId;}))
@@ -7735,6 +7750,8 @@ function scrSection(){
       }
     }
     if(!body)body=fnote('night shows');
+    if(papiEnabled())body+='<button class="add-link solo" style="margin:6px 0 0" onclick="openScreen({type:\'apishows\',day:\''+dft+'\'})">'+IC.sparkles+' Browse live shows &amp; parades</button>';
+    body+=papiMiniStamp();
     add='<button class="sec-add" onclick="openScreen({type:\'showedit\',day:\''+dft+'\'})">Add show</button>';
   }else if(sec==='parades'){
     if(PARADES.some(function(p){return p.trip===S.tripId;}))
@@ -7746,6 +7763,8 @@ function scrSection(){
       }
     }
     if(!body)body=fnote('parades');
+    if(papiEnabled())body+='<button class="add-link solo" style="margin:6px 0 0" onclick="openScreen({type:\'apishows\',day:\''+dft+'\'})">'+IC.sparkles+' Browse live shows &amp; parades</button>';
+    body+=papiMiniStamp();
     add='<button class="sec-add" onclick="openScreen({type:\'paradeedit\',day:\''+dft+'\'})">Add parade</button>';
   }else if(sec==='tickets'){
     var tkl=TICKETS.filter(function(x){return x.trip===S.tripId&&visible(x.who);});
@@ -7924,10 +7943,7 @@ function scrHoursPlan(){
     body+='<div class="ov-card" style="margin:0 0 8px"><div class="item-row" style="padding:10px 12px"><span style="background:'+(hpk?hpk.color:'#999')+';width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:5px"></span><div style="flex:1;min-width:0"><div class="item-name">'+(hpk?esc(hpk.name):esc(hh.park))+'</div><div class="item-time">'+esc((hh.open||'—')+' – '+(hh.close||'—'))+'</div>'+((hh.early||hh.late)?'<div class="hrs-extra">'+(hh.early?'<span class="cond-chip">Early '+esc(hh.early)+'</span>':'')+(hh.late?'<span class="cond-chip">Late '+esc(hh.late)+'</span>':'')+'</div>':'')+'</div>'+crowdPill(hh.crowd)+'<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;margin-left:8px" onclick="openScreen({type:\'hoursedit\',edit:\''+hh.id+'\',day:\''+d.date+'\'})">'+IC.pencil+'</button></div></div>';
   }
   if(!phl.length) body+='<div class="body-empty" style="text-align:left;padding:2px 2px 4px">No park hours set for this day.</div>';
-  if(papiEnabled()){
-    body+='<button class="add-link solo" style="margin:6px 0 0" onclick="openScreen({type:\'apishows\',day:\''+d.date+'\'})">'+IC.sparkles+' Browse shows &amp; parades (live data)</button>';
-    body+=papiStampLine();
-  }
+  body+=papiMiniStamp();
   body+='</div>';
   return screenShell('Edit Park Hours & Crowds',body,null,null,'Done');
 }

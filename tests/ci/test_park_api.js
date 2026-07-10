@@ -146,8 +146,8 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.llFormWiresDatalist = scrAddLL().indexOf('list="papi-ridelist"') >= 0;
     S.screen = null;
 
-    // ── a manual refresh with the Hours screen OPEN updates the screen itself ──
-    openScreen({ type: 'hoursplan', day: DAY });
+    // ── a manual refresh with the Live Disney Data console OPEN updates it in place ──
+    openScreen({ type: 'parkapi' });
     localStorage.setItem('dtp__parkapi', JSON.stringify(Object.assign(papiData(), { fetched: 0, crowdFetched: 0 })));
     papiRefresh(true);
     await new Promise(res => setTimeout(res, 300));
@@ -155,6 +155,13 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.screenShowsStampAfterRefresh = scrHtml2.indexOf('Checked live Disney data') >= 0;
     r.screenShowsRunReport = scrHtml2.indexOf('Last run:') >= 0 && scrHtml2.indexOf('schedule fetches') >= 0;
     r.screenNoFailureOnSuccess = scrHtml2.indexOf('Last refresh failed') < 0;
+    S.screen = null; renderOverlay();
+
+    // ── the Hours day screen carries only the quiet auto-updates note, no controls ──
+    openScreen({ type: 'hoursplan', day: DAY });
+    const hoursHtml = document.getElementById('screen-host').innerHTML;
+    r.hoursScreenQuietNote = hoursHtml.indexOf('Auto-updates from live Disney data') >= 0;
+    r.hoursScreenNoControls = hoursHtml.indexOf('papiForce') < 0 && hoursHtml.indexOf('Last run:') < 0;
     S.screen = null; renderOverlay();
 
     // ── blocked fetch (CSP/CORS/offline): failure must be VISIBLE, not silent ──
