@@ -307,6 +307,24 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.tierFreeWhenUnknown = llForm399.indexOf("pickTier('sp')") >= 0 && llForm399.indexOf("pickTier('mp1')") >= 0;
     S.screen = null; renderOverlay();
 
+    // ── Build 399: park-visit form must not steal API hours ownership ──
+    // (the EPCOT record is still api-owned; MK was deliberately user-edited earlier)
+    const epVisit = VISITS.filter(v => v.trip === 'jul26' && v.day === DAY)[0];
+    S.screen = { type: 'visedit', edit: epVisit.id, day: DAY }; S._formInit = null;
+    renderOverlay();
+    const visHtml = document.getElementById('screen-host').innerHTML;
+    r.visitHoursReadOnly = visHtml.indexOf('vh-open') < 0 && visHtml.indexOf('From live Disney data') >= 0 && visHtml.indexOf('vh-crowd') >= 0;
+    // saving with a crowd pick keeps the hours record api-owned, only crowd flips
+    document.getElementById('vh-crowd').value = '9';
+    const epRec = PARKHOURS.filter(h => h.park === 'ep' && h.day === DAY)[0];
+    saveVisit();
+    await new Promise(res => setTimeout(res, 300));
+    r.visitKeepsHoursApi = epRec.src === 'api' && epRec.crowd === 9 && epRec.crowdSrc === undefined;
+    // diff-aware upsert: identical values change nothing and keep ownership
+    const ep15b = PARKHOURS.filter(h => h.park === 'ep' && h.day === DAY)[0];
+    upsertHours('ep', DAY, { open: ep15b.open, close: ep15b.close, early: ep15b.early, late: ep15b.late, crowd: null });
+    r.upsertNoChangeKeepsApi = ep15b.src === 'api';
+
     // NOW card: at 2:05 PM the 2:15 ride is next-up → current + expected wait in its line
     window.__nowOverride = { date: DAY, mins: 14 * 60 + 5 };
     const nowHtml = nowCardHtml();

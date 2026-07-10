@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='398-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='399-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -9028,12 +9028,21 @@ function scrVisitEdit(){
   body+=notifyField('Park visit');
   /* inline park hours & crowd — prefilled from / saved to the Park Hours item */
   var eh=hoursFor(edit?edit.park:'mk',(edit&&edit.day)||S.screen.day)||{};
-  body+='<div class="field-group"><div class="field-group-title">Park hours & crowd <span style="text-transform:none;font-weight:600;color:var(--muted)">(optional · saved as a Park Hours item)</span></div>';
-  body+='<div class="field-row"><div class="field"><label class="field-label">Opening</label>'+timeField('vh-open',eh.open||'')+'</div>';
-  body+='<div class="field"><label class="field-label">Closing</label>'+timeField('vh-close',eh.close||'')+'</div></div>';
-  body+='<div class="field-row"><div class="field"><label class="field-label">Early Entry</label>'+timeField('vh-early',eh.early||'')+'</div>';
-  body+='<div class="field"><label class="field-label">Extended / Late</label>'+timeField('vh-late',eh.late||'')+'</div></div>';
-  body+='<div class="field"><label class="field-label">Expected crowd</label><select class="field-select" id="vh-crowd">'+crowdOptions(eh.crowd!=null?eh.crowd:null)+'</select></div></div>';
+  if(eh.src==='api'){
+    /* live-data-owned hours: display only — a casual visit save must not
+       take ownership and freeze auto-updates. Crowd stays editable. */
+    body+='<div class="field-group"><div class="field-group-title">Park hours & crowd</div>';
+    body+='<div class="papi-line" style="padding:2px 2px 8px">'+esc((eh.open||'—')+' – '+(eh.close||'—'))+(eh.early?' · Early '+esc(eh.early):'')+(eh.late?' · Late '+esc(eh.late):'')
+      +'<br>From live Disney data · <a href="#" onclick="event.preventDefault();openScreen({type:\'hoursedit\',edit:\''+eh.id+'\',day:\''+eh.day+'\'})">Edit park hours</a></div>';
+    body+='<div class="field"><label class="field-label">Expected crowd</label><select class="field-select" id="vh-crowd">'+crowdOptions(eh.crowd!=null?eh.crowd:null)+'</select></div></div>';
+  }else{
+    body+='<div class="field-group"><div class="field-group-title">Park hours & crowd <span style="text-transform:none;font-weight:600;color:var(--muted)">(optional · saved as a Park Hours item)</span></div>';
+    body+='<div class="field-row"><div class="field"><label class="field-label">Opening</label>'+timeField('vh-open',eh.open||'')+'</div>';
+    body+='<div class="field"><label class="field-label">Closing</label>'+timeField('vh-close',eh.close||'')+'</div></div>';
+    body+='<div class="field-row"><div class="field"><label class="field-label">Early Entry</label>'+timeField('vh-early',eh.early||'')+'</div>';
+    body+='<div class="field"><label class="field-label">Extended / Late</label>'+timeField('vh-late',eh.late||'')+'</div></div>';
+    body+='<div class="field"><label class="field-label">Expected crowd</label><select class="field-select" id="vh-crowd">'+crowdOptions(eh.crowd!=null?eh.crowd:null)+'</select></div></div>';
+  }
   /* extra-hours perks you actually plan to use — these drive the day's tags */
   body+='<div class="field"><label class="field-label">Extra hours you plan to use</label>';
   body+='<label class="chk-row"><input type="checkbox" id="vs-early"'+((edit&&edit.earlyEntry)?' checked':'')+'> Early Entry</label>';
@@ -9057,11 +9066,25 @@ function scrVisitEdit(){
   return screenShell(edit?'Edit Park Visit':'Add Park Visit',body,'Save','saveVisit()');
 }
 function upsertHours(park,day,vals){
+  /* field-granular + diff-aware: only fields actually CHANGED take
+     ownership, and hours vs crowd own themselves independently — setting a
+     crowd number must not freeze the API's hours auto-updates (and vice
+     versa). Keys absent from vals are left completely untouched. */
   var anything=vals.open||vals.close||vals.early||vals.late||(vals.crowd!=null);
   var ex=hoursFor(park,day);
   if(!anything){return;}
-  if(ex){ex.open=vals.open;ex.close=vals.close;ex.early=vals.early;ex.late=vals.late;ex.crowd=vals.crowd;delete ex.src;delete ex.apiUpd;delete ex.crowdSrc;delete ex.crowdUpd;}
-  else{PARKHOURS.push({id:'h'+Date.now(),trip:S.tripId,park:park,day:day,open:vals.open,close:vals.close,early:vals.early,late:vals.late,crowd:vals.crowd});}
+  if(ex){
+    var hoursChanged=false,changedAny=false;
+    ['open','close','early','late'].forEach(function(k){
+      if(!(k in vals))return;
+      var nv=vals[k]||'';
+      if((ex[k]||'')!==nv){ex[k]=nv;hoursChanged=true;changedAny=true;}
+    });
+    if(hoursChanged){delete ex.src;delete ex.apiUpd;}
+    if(('crowd' in vals)&&vals.crowd!=null&&vals.crowd!==ex.crowd){ex.crowd=vals.crowd;delete ex.crowdSrc;delete ex.crowdUpd;changedAny=true;}
+    if(!changedAny)return;
+  }
+  else{PARKHOURS.push({id:'h'+Date.now(),trip:S.tripId,park:park,day:day,open:vals.open||'',close:vals.close||'',early:vals.early||'',late:vals.late||'',crowd:vals.crowd!=null?vals.crowd:null});}
   save('dtp_hours',PARKHOURS);
 }
 function saveVisit(){
@@ -9076,7 +9099,9 @@ function saveVisit(){
   if(!edit)VISITS.push(rec);
   save('dtp_visits',VISITS);afterWhoSave('Park visit',rec,oldWho);
   var c=val('vh-crowd');
-  upsertHours(rec.park,rec.day,{open:val('vh-open'),close:val('vh-close'),early:val('vh-early'),late:val('vh-late'),crowd:c?parseInt(c,10):null});
+  var exh=hoursFor(rec.park,rec.day);
+  if(exh&&exh.src==='api')upsertHours(rec.park,rec.day,{crowd:c?parseInt(c,10):null});
+  else upsertHours(rec.park,rec.day,{open:val('vh-open'),close:val('vh-close'),early:val('vh-early'),late:val('vh-late'),crowd:c?parseInt(c,10):null});
   S._who=null;toast('Park visit saved');closeScreen();render();
 }
 function delVisit(id){
