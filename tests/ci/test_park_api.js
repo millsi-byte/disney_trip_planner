@@ -229,7 +229,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     const dp395 = dayPlanCard(DAYS.filter(x => x.trip === 'jul26' && x.date === DAY)[0], PARKS.ep);
     r.agendaTimelessTBD = dp395.indexOf('>TBD</div>') >= 0;   // timeless component items say TBD, not blank
     RIDES.splice(RIDES.findIndex(x => x.id === 'ztbd'), 1);
-    r.agendaLiveEntChip = dp395.indexOf('Add Live Entertainment') >= 0 && dp395.indexOf("type:'apishows'") >= 0;
+    r.agendaLiveEntChip = dp395.indexOf(' Entertainment</button>') >= 0 && dp395.indexOf("type:'apishows'") >= 0;
     S.screen = { type: 'section', section: 'll' };
     r.llSectionRebookAdd = scrSection().indexOf('Add Rolling Re-book') >= 0;
     S.screen = null;
@@ -590,7 +590,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     // ── Build 388: Day Agenda quick-add Ride chip + Browse Rides manual add ──
     S.open = defOpen(); S.open.itin = true;
     const dpHtml = dayPlanCard(DAYS.filter(x => x.trip === 'jul26' && x.date === DAY)[0], PARKS[dayPrimaryPark(DAY)] || PARKS.mk);
-    r.agendaAddRideChip = dpHtml.indexOf('Add Ride') >= 0 && dpHtml.indexOf("type:'apirides'") >= 0;
+    r.agendaAddRideChip = dpHtml.indexOf(' Ride</button>') >= 0 && dpHtml.indexOf("type:'apirides'") >= 0;
     S.screen = { type: 'apirides', day: DAY, pk: 'mk' };
     r.browseManualAtBottom = scrApiRides().indexOf('Add Ride Manually') >= 0;
     S.screen = null;
