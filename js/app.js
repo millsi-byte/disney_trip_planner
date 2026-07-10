@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='386-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='387-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -1398,7 +1398,6 @@ function scrApiRides(){
   var sel=S.screen._sel=S.screen._sel||{};
   var nsel=Object.keys(sel).length;
   body+='<div class="body-empty" style="text-align:left;padding:2px 2px 8px">Tap a ride\u2019s name to plan it with the full form, or tick several and set all their times at once.</div>';
-  if(nsel)body+='<button class="btn-secondary" style="margin:0 0 10px" onclick="papiRideTimes()">'+IC.sparkles+' Set times for '+nsel+' selected \u2192</button>';
   var taken={};RIDES.forEach(function(r){if(r.trip===S.tripId&&r.day===d.date)taken[(r.name||'').toLowerCase()]=1;});
   list.forEach(function(rd){
     var got=taken[rd.name.toLowerCase()],meta=papiRideMeta(rd.name),on=!!sel[rd.id];
@@ -1408,7 +1407,16 @@ function scrApiRides(){
       +'</div></div>';
   });
   body+='<div class="papi-attr" style="padding:6px 2px">Park data via ThemeParks.wiki</div>';
-  return screenShell('Browse Rides',body,null,null,'Done');
+  return screenShell('Browse Rides',body,null,null,'Done',papiSelBar(nsel,'papiRideTimes()','ride'));
+}
+/* sticky footer action bar for the Browse multi-select flows — flies in on
+   the FIRST selection (per screen), then just updates its count */
+function papiSelBar(nsel,action,noun){
+  if(!nsel){if(S.screen)S.screen._selBarOn=0;return null;}
+  var fly=S.screen&&!S.screen._selBarOn;if(S.screen)S.screen._selBarOn=1;
+  return '<div class="papi-selbar'+(fly?' fly':'')+'">'
+    +'<div class="papi-selhint">Keep selecting '+noun+'s — or schedule the ones you’ve picked.</div>'
+    +'<button class="btn-primary" style="margin:0" onclick="'+action+'">'+IC.sparkles+' Set times for '+nsel+' selected →</button></div>';
 }
 function papiRideSel(entId){
   S.screen._sel=S.screen._sel||{};
@@ -1497,7 +1505,6 @@ function scrApiShows(){
   var sel=S.screen._sel=S.screen._sel||{};
   var nsel=Object.keys(sel).length;
   if(list.length)body+='<div class="body-empty" style="text-align:left;padding:2px 2px 8px">Tap a show’s name to add it with the full form, or tick several and set all their times at once.</div>';
-  if(nsel)body+='<button class="btn-secondary" style="margin:0 0 10px" onclick="papiShowBatch()">'+IC.sparkles+' Set times for '+nsel+' selected →</button>';
   var taken={};SHOWS.concat(PARADES).forEach(function(r){if(r.trip===S.tripId&&r.day===d.date)taken[(r.name||'').toLowerCase()]=1;});
   var groups={parade:[],night:[],show:[]};
   list.forEach(function(x){groups[papiShowKind(x.name)].push(x);});
@@ -1526,7 +1533,7 @@ function scrApiShows(){
     });
   }
   body+='<div class="papi-attr" style="padding:6px 2px">Park data via ThemeParks.wiki</div>';
-  return screenShell('Browse Live Entertainment',body,null,null,'Done');
+  return screenShell('Browse Live Entertainment',body,null,null,'Done',papiSelBar(nsel,'papiShowBatch()','show'));
 }
 /* add a special ticketed event as a Scheduled show on that day */
 function papiAddEvent(name,tm,ds,pk){

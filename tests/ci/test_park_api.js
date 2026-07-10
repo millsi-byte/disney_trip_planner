@@ -267,9 +267,19 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     S.screen = { type: 'apirides', day: DAY, pk: 'mk' };
     let br = scrApiRides();
     r.browseNameOpensForm = br.indexOf("type:'rideedit'") >= 0 && br.indexOf('seed:') >= 0;
+    r.selBarHiddenWhenNone = br.indexOf('papi-selbar') < 0;
     papiRideSel('ent-ride1'); papiRideSel('ent-ride2');
     br = scrApiRides();
     r.browseMultiSelect = br.indexOf('Set times for 2 selected') >= 0;
+    // the action bar lives in the PINNED FOOTER (flies in from the bottom),
+    // not at the top of the scrolling body where it went unseen
+    r.selBarInFooter = br.indexOf('screen-foot') >= 0 && br.indexOf('papi-selbar') > br.indexOf('screen-foot');
+    r.selBarNotInBody = br.substring(br.indexOf('screen-body'), br.indexOf('screen-foot')).indexOf('Set times for') < 0;
+    r.selBarHint = br.indexOf('Keep selecting') >= 0;
+    // slide-in animation plays only on the FIRST selection, not every tick
+    S.screen._selBarOn = 0;
+    r.selBarFliesFirstTime = scrApiRides().indexOf('papi-selbar fly') >= 0;
+    r.selBarNoRefly = scrApiRides().indexOf('papi-selbar fly') < 0;
     papiRideTimes();
     r.timesScreenLists = scrRideTimes().indexOf('ZZ Space Mountain') >= 0 && scrRideTimes().indexOf('ZZ Peter Pan') >= 0;
     // save with no times typed → both created as TBD ('')
@@ -373,6 +383,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     scrApiShows();
     papiRideSel('ent-fof'); papiRideSel('ent-hea'); papiRideSel('ent-quiet');
     r.showMultiSelect = scrApiShows().indexOf('Set times for 3 selected') >= 0;
+    r.showSelBarInFooter = scrApiShows().indexOf('papi-selbar') > scrApiShows().indexOf('screen-foot');
     r.showTimesFromCatalog = scrApiShows().indexOf('8:30 PM &amp; 10:30 PM') >= 0; // device cache is empty here
     papiShowBatch();
     renderOverlay();
