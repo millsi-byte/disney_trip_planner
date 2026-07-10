@@ -143,16 +143,23 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.liveWaitsCached = !!wsm && wsm.w === 60 && st2.waits.day === DAY;
     r.liveLLMetadata = !!wsm && wsm.ll === 'single' && wsm.price === 15 && st2.waits.by['zz peter pan'].ll === 'multi';
     r.rideMetaLine = papiRideMeta('ZZ Space Mountain').indexOf('60 min standby') >= 0 && papiRideMeta('ZZ Space Mountain').indexOf('LL Single Pass $15') >= 0;
-    // standby ride type: firm plan on the Day Plan, no LL fields saved
-    LLS.push({ id: 'zsb', trip: 'jul26', day: DAY, ride: 'ZZ Standby Ride', tier: 'none', status: 'planning', rideTime: '11:00 AM', who: 'all' });
-    const sbItem = dayPlanItems(DAYS.filter(x => x.trip === 'jul26' && x.date === DAY)[0]).filter(i => i.x === 'ZZ Standby Ride')[0];
-    r.standbyOnPlanNotSoft = !!sbItem && !sbItem.soft && sbItem.t === '11:00 AM';
-    r.standbyTag = tagShort('none') === 'SB' && tagLbl('none') === 'Standby';
+    // ── Planned Rides: own component; LL link supplies the window; LL form untouched ──
+    LLS.push({ id: 'zll9', trip: 'jul26', day: DAY, ride: 'ZZNOWRIDE', tier: 'mp1', status: 'booked', winStart: '2:00 PM', winEnd: '3:00 PM', rideTime: '', who: 'all' });
+    RIDES.push({ id: 'zrd1', trip: 'jul26', day: DAY, name: 'ZZ Space Mountain', rideTime: '2:15 PM', llId: 'zll9', who: 'all' });
+    const rdItem = dayPlanItems(DAYS.filter(x => x.trip === 'jul26' && x.date === DAY)[0]).filter(i => i.type === 'ride')[0];
+    r.rideOnDayPlan = !!rdItem && rdItem.x === 'ZZ Space Mountain' && rdItem.t === '2:15 PM';
+    S.screen = { type: 'rideedit', day: DAY };
+    const rdForm = scrRideEdit();
+    r.rideFormAutocomplete = rdForm.indexOf('papiRideSuggest') >= 0 && rdForm.indexOf('rd-name__sug') >= 0;
+    r.rideFormLLLink = rdForm.indexOf('rd-ll') >= 0 && rdForm.indexOf('ZZNOWRIDE') >= 0;
     S.screen = { type: 'addll', day: DAY };
     S._formInit = null; S._formTier = null;
-    const llForm = (S._formInit = null, scrAddLL());
-    r.formHasStandbyOption = llForm.indexOf('Standby') >= 0 && llForm.indexOf('papi-ridemeta') >= 0;
-    S.screen = null;
+    const llForm = scrAddLL();
+    r.llFormRestored = llForm.indexOf('Standby') < 0 && llForm.indexOf('Ride Window') >= 0 && llForm.indexOf('papi-ridelist') < 0;
+    S.screen = { type: 'apirides', day: DAY, pk: 'mk' };
+    const brHtml = scrApiRides();
+    r.browseRidesPickers = brHtml.indexOf('papiBrowseDay') >= 0 && brHtml.indexOf('ZZ Space Mountain') >= 0;
+    r.planHubLiveGroup = (S.screen = null, renderPlanHub().indexOf('Live data refresh') >= 0 && renderPlanHub().indexOf('Planned Rides') >= 0);
 
     // ── Browse: explicit day+park pickers, grouped, special events surfaced ──
     S.screen = { type: 'apishows', day: DAY };
@@ -163,11 +170,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.browseSpecialEvents = bHtml.indexOf('Special Events') >= 0 && bHtml.indexOf('H2O Glow After Hours') >= 0;
     r.browseParkSwitch = (S.screen.pk = 'ep', scrApiShows().indexOf('EPCOT') >= 0);
     S.screen = null;
-    const dl = papiRideDatalist();
-    r.datalistHasRides = dl.indexOf('papi-ridelist') >= 0 && dl.indexOf('ZZ Space Mountain') >= 0;
-    S.screen = { type: 'addll', day: DAY };
-    r.llFormWiresDatalist = scrAddLL().indexOf('list="papi-ridelist"') >= 0;
-    S.screen = null;
+    r.datalistHasRides = papiRideDatalist().indexOf('ZZ Space Mountain') >= 0; // still available for future use
 
     // ── a manual refresh with the Live Disney Data console OPEN updates it in place ──
     openScreen({ type: 'parkapi' });

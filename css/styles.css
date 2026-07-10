@@ -697,3 +697,6 @@ button{font-family:inherit}
 .papi-line a{color:var(--hd-plan);font-weight:600;text-decoration:none}
 .papi-attr{font-size:10.5px;color:var(--muted);opacity:.7;margin-top:2px}
 .ll-tag.sb{background:#E5E7EB;color:#374151}
+.papi-sug{padding:9px 12px;border:1px solid var(--border);border-top:0;background:var(--card);font-size:14px;cursor:pointer}
+.papi-sug:first-child{border-top:1px solid var(--border);border-radius:8px 8px 0 0;margin-top:4px}
+.papi-sug:last-child{border-radius:0 0 8px 8px}
