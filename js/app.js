@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='393-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='394-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -1476,6 +1476,7 @@ function scrRideEdit(){
   body+='</select></div>';
   body+=whoSelectField(edit?edit.who:'all');
   if(edit)body+='<button class="btn-danger-link" onclick="delRide(\''+edit.id+'\')">Delete this planned ride</button>';
+  if(edit)body+=rsvpFormSection(edit);
   return screenShell(edit?'Edit Planned Ride':'Add Planned Ride',body,'Save','saveRide()');
 }
 function saveRide(){
@@ -2093,6 +2094,7 @@ function notifLabel(cat,it){
   if(cat==='Lightning Lane')return it.ride||'a Lightning Lane';
   if(cat==='Park reservation')return (it.park&&PARKS[it.park]?PARKS[it.park].name:'a park')+' reservation';
   if(cat==='Re-book')return it.text||'a re-book';
+  if(cat==='Ride')return it.name||'a ride';
   if(cat==='Show')return it.name||'a show';
   if(cat==='Parade')return it.name||'a parade';
   if(cat==='Flight')return it.label||'a flight';
@@ -2370,6 +2372,7 @@ function rsvpRecord(type,id){
   if(type==='ll'){var l=LLS.filter(function(x){return x.id===id;})[0];return l?{rec:l,cat:'Lightning Lane',save:function(){save('dtp_lls',LLS);}}:null;}
   if(type==='show'){var s=SHOWS.filter(function(x){return x.id===id;})[0];return s?{rec:s,cat:'Show',save:function(){save('dtp_shows',SHOWS);}}:null;}
   if(type==='parade'){var pa=PARADES.filter(function(x){return x.id===id;})[0];return pa?{rec:pa,cat:'Parade',save:function(){save('dtp_parades',PARADES);}}:null;}
+  if(type==='ride'){var rd=RIDES.filter(function(x){return x.id===id;})[0];return rd?{rec:rd,cat:'Ride',save:function(){save('dtp_rides',RIDES);}}:null;}
   if(type==='manual'){var pp=String(id).split('|'),dd=dayByDate(pp[0]),it=dd&&dd.itin&&dd.itin[parseInt(pp[1],10)];return it?{rec:it,cat:'Plan',save:function(){saveDays();}}:null;}
   return null;
 }
@@ -3684,8 +3687,7 @@ function dayPlanCard(d,pk){
       o+='</div>';
       if(e.type==='manual') o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;align-self:flex-start" onclick="openScreen({type:\'stopedit\',day:\''+d.date+'\',idx:'+e.idx+'})">'+IC.pencil+'</button>';
       else if(e.ref&&DPLAN_EDIT[e.type]) o+='<button class="hdr-icon" style="width:30px;height:30px;background:#F3F1EC;color:#6B7280;flex-shrink:0;align-self:flex-start" onclick="openScreen({type:\''+DPLAN_EDIT[e.type]+'\',edit:\''+e.ref+'\',day:\''+d.date+'\'})">'+IC.pencil+'</button>';
-      if(e.ref&&(e.type==='dining'||e.type==='ll'||e.type==='show'||e.type==='parade')) o+=rsvpRow(e.type,e.ref);
-      else if(e.type==='ride'&&e.ll) o+=rsvpRow('ll',e.ll.id);   /* the absorbed LL keeps its RSVPs */
+      if(e.ref&&(e.type==='dining'||e.type==='ll'||e.type==='show'||e.type==='parade'||e.type==='ride')) o+=rsvpRow(e.type,e.ref);
       else if(e.type==='manual'&&!e.priv) o+=rsvpRow('manual',d.date+'|'+e.idx);
       o+='</div>';
     }
