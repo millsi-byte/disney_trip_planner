@@ -279,6 +279,34 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.formManualWhenUnpublished = scrShowEdit().indexOf('sh-time__h') >= 0;
     S.screen = null;
 
+    // ── Build 398: batch rows can CREATE a Lightning Lane; tier locks to live Single/Multi ──
+    S.screen = { type: 'apirides', day: DAY, pk: 'mk', _sel: { 'ent-ride2': 1 } };
+    papiRideTimes();
+    renderOverlay();
+    r.batchHasCreateLL = document.getElementById('screen-host').innerHTML.indexOf('__new') >= 0;
+    document.getElementById('rl_0').value = '__new';
+    const llsBefore = LLS.length;
+    saveRideTimes();
+    await new Promise(res => setTimeout(res, 300));
+    const mintedLL = LLS[LLS.length - 1];
+    const mintedRide = RIDES[RIDES.length - 1];
+    r.batchMintsPlannedLL = LLS.length === llsBefore + 1 && mintedLL.ride === 'ZZ Peter Pan' && mintedLL.status === 'planning' && mintedLL.tier === 'mp1' && mintedRide.llId === mintedLL.id;
+
+    S.screen = { type: 'addll', day: DAY }; S._formInit = null;
+    renderOverlay();
+    document.getElementById('ll-ride').value = 'ZZ Space Mountain';   // live: Single Pass
+    let llForm399 = scrAddLL();
+    r.tierLockedSingle = llForm399.indexOf('Single Pass ride') >= 0 && llForm399.indexOf("pickTier('mp1')") < 0;
+    document.getElementById('ll-ride').value = 'ZZ Peter Pan';        // live: Multi Pass
+    S._formInit = null; S._formTier = null;
+    llForm399 = scrAddLL();
+    r.tierLockedMulti = llForm399.indexOf('Multi Pass ride') >= 0 && llForm399.indexOf("pickTier('sp')") < 0 && llForm399.indexOf("pickTier('mp1')") >= 0;
+    document.getElementById('ll-ride').value = 'ZZ Unknown Coaster';
+    S._formInit = null; S._formTier = null;
+    llForm399 = scrAddLL();
+    r.tierFreeWhenUnknown = llForm399.indexOf("pickTier('sp')") >= 0 && llForm399.indexOf("pickTier('mp1')") >= 0;
+    S.screen = null; renderOverlay();
+
     // NOW card: at 2:05 PM the 2:15 ride is next-up → current + expected wait in its line
     window.__nowOverride = { date: DAY, mins: 14 * 60 + 5 };
     const nowHtml = nowCardHtml();

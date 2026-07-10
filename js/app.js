@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='397-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
+var BUILD='398-dev';   /* DEV BRANCH — never deploys to the live site. Drop the -dev suffix only when merging to production. */
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -1577,30 +1577,38 @@ function scrRideTimes(){
   var d=dayByDate(S.screen.day);if(!d)return scrGeneric();
   var pk=S.screen.pk||'mk',ids=S.screen.sel||[];
   var un=llUnlinked(d.date);
-  var body='<div class="body-empty" style="text-align:left;padding:2px 2px 12px">Set a planned time for each ride — or leave one blank to add it as TBD.'+(un.length?' Rides can attach one of the day’s Lightning Lanes.':'')+'</div>';
+  var body='<div class="body-empty" style="text-align:left;padding:2px 2px 12px">Set a planned time for each ride — or leave one blank to add it as TBD. Each ride can attach one of the day’s Lightning Lanes — or create a new one.</div>';
   ids.forEach(function(id,i){
     var ent=papiCatRides(pk).filter(function(x){return x.id===id;})[0];if(!ent)return;
     body+='<div class="field"><label class="field-label">'+esc(ent.name)+'</label>'+timeField('rt_'+i,'');
-    if(un.length){
-      var m=llNameMatch(d.date,ent.name);
-      body+='<select class="field-select" id="rl_'+i+'" style="margin-top:6px">';
-      body+='<option value=""'+(!m?' selected':'')+'>— no Lightning Lane —</option>';
-      un.forEach(function(l){body+='<option value="'+l.id+'"'+(m&&m.id===l.id?' selected':'')+'>⚡ '+esc(l.ride)+' ('+tagShort(l.tier)+(l.status==='booked'?' · Booked':'')+')</option>';});
-      body+='</select>';
-    }
+    var m=llNameMatch(d.date,ent.name);
+    body+='<select class="field-select" id="rl_'+i+'" style="margin-top:6px">';
+    body+='<option value=""'+(!m?' selected':'')+'>— no Lightning Lane —</option>';
+    un.forEach(function(l){body+='<option value="'+l.id+'"'+(m&&m.id===l.id?' selected':'')+'>⚡ '+esc(l.ride)+' ('+tagShort(l.tier)+(l.status==='booked'?' · Booked':'')+')</option>';});
+    body+='<option value="__new">+ Create a new Lightning Lane (planned)</option>';
+    body+='</select>';
     body+='</div>';
   });
   return screenShell('Set Ride Times',body,'Add '+ids.length+' ride'+(ids.length===1?'':'s'),'saveRideTimes()','Back');
 }
 function saveRideTimes(){
-  var pk=S.screen.pk||'mk',ids=S.screen.sel||[],ds=S.screen.day,n=0;
-  var hadLL=llUnlinked(ds).length>0;
+  var pk=S.screen.pk||'mk',ids=S.screen.sel||[],ds=S.screen.day,n=0,llsMade=0;
   ids.forEach(function(id,i){
     var ent=papiCatRides(pk).filter(function(x){return x.id===id;})[0];if(!ent)return;
-    var llId=hadLL?(val('rl_'+i)||''):'';
+    var llSel=val('rl_'+i),llId='';
+    if(llSel==='__new'){
+      /* mint a PLANNED Lightning Lane — tier from live data when known */
+      var lw=papiRideLive(ent.name,ent.id);
+      var tier=(lw&&lw.ll==='multi')?'mp1':'sp';
+      var ll={id:'ll'+Date.now()+'_'+i,trip:S.tripId,by:S.persona,conf:'',bookDate:'',day:ds,park:pk,ride:ent.name,tier:tier,who:'all',winStart:'',winEnd:'',window:'~TBD',status:'planning'};
+      LLS.push(ll);llId=ll.id;llsMade++;
+    }else llId=llSel||'';
     RIDES.push({id:'rd'+Date.now()+'_'+i,trip:S.tripId,by:S.persona,name:ent.name,day:ds,rideTime:val('rt_'+i)||'',llId:llId,who:'all',park:pk,apiKey:ent.id});n++;
   });
-  save('dtp_rides',RIDES);toast(n+' ride'+(n===1?'':'s')+' planned');closeScreen();render();
+  if(llsMade)save('dtp_lls',LLS);
+  save('dtp_rides',RIDES);
+  toast(n+' ride'+(n===1?'':'s')+' planned'+(llsMade?(' \u00b7 '+llsMade+' Lightning Lane'+(llsMade===1?'':'s')+' created as Planned \u2014 set the windows from the Lightning Lanes section'):''));
+  closeScreen();render();
 }
 /* ── pick-list: browse everything the API knows for a day's park ── */
 /* name-based grouping — the API has no official subtype, but names are
@@ -5490,10 +5498,21 @@ function scrAddLL(){
   body+='<div class="field"><label class="field-label">Ride</label>'+llRideBox('ll-ride',edit?edit.ride:(llseed&&llseed.ride?llseed.ride:''))+'</div>';
   if(S.screen.linkRide)body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px">Will be attached to your planned ride when saved.</div>';
   else if(!edit)body+='<div class="body-empty" style="text-align:left;padding:0 2px 8px">Picking a ride you haven’t planned yet also creates the planned ride for you.</div>';
-  body+='<div class="field"><label class="field-label">Tier</label><div class="seg">';
-  body+='<button class="seg-btn'+(tier==='sp'?' on':'')+'" onclick="pickTier(\'sp\')">SP</button>';
-  body+='<button class="seg-btn'+(tier==='mp1'?' on':'')+'" onclick="pickTier(\'mp1\')">T1</button>';
-  body+='<button class="seg-btn'+(tier==='mp2'?' on':'')+'" onclick="pickTier(\'mp2\')">T2</button></div></div>';
+  /* live data knows Single vs Multi Pass — lock the tier to what the ride
+     actually offers (day-of signal; unknown rides keep the full choice) */
+  var llRideNow=val('ll-ride')||(edit?edit.ride:(llseed&&llseed.ride)||'');
+  var llLive=papiRideLive(llRideNow,'');
+  var lockSp=!!(llLive&&llLive.ll==='single'),lockMp=!!(llLive&&llLive.ll==='multi');
+  if(lockSp&&S._formTier!=='sp')S._formTier='sp';
+  if(lockMp&&S._formTier==='sp')S._formTier='mp1';
+  tier=S._formTier;
+  body+='<div class="field"><label class="field-label">Tier'+(lockSp?' <span class="opt">(Single Pass ride — live data)</span>':lockMp?' <span class="opt">(Multi Pass ride — live data)</span>':'')+'</label><div class="seg">';
+  if(!lockMp)body+='<button class="seg-btn'+(tier==='sp'?' on':'')+'" onclick="pickTier(\'sp\')">SP</button>';
+  if(!lockSp){
+    body+='<button class="seg-btn'+(tier==='mp1'?' on':'')+'" onclick="pickTier(\'mp1\')">T1</button>';
+    body+='<button class="seg-btn'+(tier==='mp2'?' on':'')+'" onclick="pickTier(\'mp2\')">T2</button>';
+  }
+  body+='</div></div>';
   body+='<div class="field"><label class="field-label">Status <span class="opt">(only Booked shows on the Day Plan)</span></label><div class="seg">';
   body+='<button class="seg-btn'+(stt==='planning'?' on':'')+'" onclick="pickStatus(\'ll\',\'planning\')">Planned</button>';
   body+='<button class="seg-btn'+(stt==='booked'?' on book':'')+'" onclick="pickStatus(\'ll\',\'booked\')">Booked</button></div></div>';
@@ -5555,6 +5574,7 @@ function llRidePick(id,name){
   var inp=document.getElementById(id),box=document.getElementById(id+'__sug');
   if(inp)inp.value=name;if(box)box.innerHTML='';
   var m=document.getElementById(id+'__meta');if(m)m.innerHTML=papiRideMeta(name);
+  if(S.screen&&S.screen.type==='addll')renderScreen_inplace2();   /* tier lock follows the pick */
 }
 function saveLL(){
   var edit=S.screen.edit?LLS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
