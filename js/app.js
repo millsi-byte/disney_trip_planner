@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='410-dev';
+var BUILD='411-dev';
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -3450,7 +3450,7 @@ function tdHideDone(){try{return localStorage.getItem('bt_tdHideDone')==='1';}ca
 function tdToggleHideDone(){try{localStorage.setItem('bt_tdHideDone',tdHideDone()?'0':'1');}catch(e){}refreshTodo();}
 /* everyone-mode ('each') to-dos: the creator + every assignee each check off
    their OWN copy (doneBy map); the task is finished only when all have */
-function tdRequired(t){var req=[t.by].concat(t.who||[]),out=[],seen={};req.forEach(function(p){if(p&&!seen[p]){seen[p]=1;out.push(p);}});return out;}
+function tdRequired(t){var req=(t.who&&t.who.length)?t.who.slice():[t.by],out=[],seen={};req.forEach(function(p){if(p&&!seen[p]){seen[p]=1;out.push(p);}});return out;}
 function tdDoneFor(t,pid){return t.each?!!(t.doneBy&&t.doneBy[pid]):!!t.done;}
 function tdMyDone(t){return tdDoneFor(t,S.persona);}
 function tdNotDone(t){return !tdMyDone(t);}
@@ -3496,13 +3496,19 @@ function refreshTodo(){
   render();
 }
 
-function tdToggle(id){
+function tdToggle(id,pid){
   var t=tdById(id);if(!t)return;
   if(!tdCanCheck(t)){toast('Only the creator, an assignee or an admin can check this');return;}
+  var target=pid||S.persona;
+  if(target!==S.persona&&!todoOversight()){toast('Only an admin can check someone else\u2019s copy');return;}
   if(t.each){
-    if(tdRequired(t).indexOf(S.persona)<0){toast('Each person checks off their own on this one');return;}
+    var req=tdRequired(t);
+    if(req.indexOf(target)<0){
+      var nm=req.map(function(p){var pp=person(p);return pp?pp.name:'';}).filter(Boolean).join(', ');
+      toast('Each person checks off their own \u2014 this one is for '+(nm||'the assignees'));return;
+    }
     t.doneBy=t.doneBy||{};
-    if(t.doneBy[S.persona])delete t.doneBy[S.persona];else t.doneBy[S.persona]=1;
+    if(t.doneBy[target])delete t.doneBy[target];else t.doneBy[target]=1;
   }else t.done=!t.done;
   saveTODO();refreshTodo();
 }
@@ -3523,7 +3529,7 @@ function tdSave(){
   if(edit&&!tdCanEdit(edit)){toast('Only the creator or an admin can edit this');S.tdForm=null;refreshTodo();return;}
   var creator=edit?edit.by:S.persona;
   var oldWho=edit?(edit.who||[]):[];
-  var who=S._who?tripMembers().filter(function(id){return id!==creator&&S._who.has(id);}):[];
+  var who=S._who?tripMembers().filter(function(id){return S._who.has(id);}):[];
   var rec=edit||{id:'td'+Date.now(),trip:S.tripId,by:S.persona,done:false};
   rec.n=nm;rec.when=val('td-when');rec.who=who;rec.priv=!!S._tdPriv;
   rec.each=!!S._tdEach;if(rec.each&&!rec.doneBy)rec.doneBy={};
@@ -4979,7 +4985,7 @@ function todoEveryoneView(){
     var b=pbHead(pid,done,items.length);
     b+='<div class="card" style="padding:6px 0 0">';
     if(!shown.length)b+='<div class="body-empty" style="text-align:left;padding:6px 12px">'+(hide&&items.length?'All done.':'No items.')+'</div>';
-    for(var k=0;k<shown.length;k++)b+=todoRowOrEditor(shown[k]);
+    for(var k=0;k<shown.length;k++)b+=todoRowOrEditor(shown[k],null,pid);
     b+='</div>';
     blocks.push(b);
   }
@@ -5005,12 +5011,12 @@ function todoStarter(){
   o+='</div></div>';
   return o;
 }
-function todoRowOrEditor(t,drag){
+function todoRowOrEditor(t,drag,forPid){
   if(S.tdForm&&S.tdForm.id===t.id)return todoRow(t,true)+todoEditor(t);
-  return todoRow(t,false,drag);
+  return todoRow(t,false,drag,forPid);
 }
-function todoRow(t,expanded,drag){
-  var me=S.persona;
+function todoRow(t,expanded,drag,forPid){
+  var me=S.persona,vp=forPid||me,tArg=forPid?('\''+t.id+'\',\''+forPid+'\''):('\''+t.id+'\'');
   var canEdit=tdCanEdit(t), amAssignee=t.who&&t.who.indexOf(me)>=0;
   var pend=S._deltd==='tdrm_'+t.id;
   var sub=[];
@@ -5025,12 +5031,12 @@ function todoRow(t,expanded,drag){
   var dg=drag&&!expanded;
   var o='<div class="pk-row'+(expanded?' expanded':'')+(dg?' dgrow':'')+'"'+(dg?' data-dg="'+drag.group+'" data-di="'+drag.idx+'"':'')+'>';
   if(dg)o+=dgHandle();
-  var myDn=tdMyDone(t);
-  o+='<div class="chkbox'+(myDn?' on':'')+'" onclick="tdToggle(\''+t.id+'\')">'+(myDn?IC.checkw:'')+'</div>';
+  var myDn=tdDoneFor(t,vp);
+  o+='<div class="chkbox'+(myDn?' on':'')+'" onclick="tdToggle('+tArg+')">'+(myDn?IC.checkw:'')+'</div>';
   var meta='';
   if(t.when)meta+='<span class="td-when">'+esc(t.when)+'</span>';
   if(sub.length)meta+='<span class="pk-by">'+sub.join(' · ')+'</span>';
-  o+='<div class="pk-name'+(myDn?' done':'')+'" onclick="tdToggle(\''+t.id+'\')">'+esc(t.n)+(meta?'<div class="td-meta">'+meta+'</div>':'')+'</div>';
+  o+='<div class="pk-name'+(myDn?' done':'')+'" onclick="tdToggle('+tArg+')">'+esc(t.n)+(meta?'<div class="td-meta">'+meta+'</div>':'')+'</div>';
   if(expanded){
     o+='<button class="hdr-icon pk-edit-on" style="width:30px;height:30px;flex-shrink:0" title="Close" onclick="tdCancelForm()">'+IC.chevUp+'</button>';
   }else if(canEdit){
@@ -5053,9 +5059,9 @@ function todoEditor(item){
   if(!item)o+='<div class="inline-editor-title">'+IC.pencil+' New task</div>';
   o+='<div class="field" style="margin:0"><label class="field-label">Task</label><input class="field-input" id="td-name" placeholder="e.g. Refill prescriptions" value="'+(item?esc(item.n):'')+'"></div>';
   o+='<div class="field" style="margin:0"><label class="field-label">When <span class="opt">(optional)</span></label><input class="field-input" id="td-when" placeholder="e.g. 14 days" value="'+(item&&item.when?esc(item.when):'')+'"></div>';
-  o+=todoAssignField(creator);
+  o+=todoAssignField(creator,true);
   o+='<div class="field" style="margin:0"><label class="field-label">Completion</label><div class="seg"><button class="seg-btn'+(!S._tdEach?' on':'')+'" onclick="tdFormEach(false)">One person completes it</button><button class="seg-btn'+(S._tdEach?' on book':'')+'" onclick="tdFormEach(true)">Everyone checks their own</button></div></div>';
-  if(S._tdEach)o+='<div class="priv-note">You and each assigned person get your own checkbox \u2014 the task is finished only when everyone has checked it off.</div>';
+  if(S._tdEach)o+='<div class="priv-note">Each person ticked under Assign to gets their own checkbox \u2014 tick yourself if this is also yours to do. The task is finished only when everyone has checked theirs off.</div>';
   o+='<div class="field" style="margin:0"><label class="field-label">Privacy</label><div class="seg"><button class="seg-btn'+(!S._tdPriv?' on':'')+'" onclick="tdFormPriv(false)">Visible</button><button class="seg-btn'+(S._tdPriv?' on book':'')+'" onclick="tdFormPriv(true)">'+IC.lock+' Hidden</button></div></div>';
   if(S._tdPriv)o+='<div class="priv-note">Hidden from the trip owner and admins. Anyone you assign it to still sees it; otherwise it\'s just yours.</div>';
   o+=notifyField('To Do');
@@ -5063,13 +5069,13 @@ function todoEditor(item){
   o+='</div>';
   return o;
 }
-function todoAssignField(creator){
-  var mem=tripMembers().filter(function(id){return id!==creator;});
+function todoAssignField(creator,includeSelf){
+  var mem=includeSelf?tripMembers():tripMembers().filter(function(id){return id!==creator;});
   var h='<div class="field" style="margin:0"><label class="field-label">Assign to <span class="opt">(optional — also shows on their list)</span></label>';
-  if(!mem.length){h+='<div class="body-empty" style="text-align:left;padding:2px 0">No one else on this trip to assign to.</div>';return h+'</div>';}
+  if(!mem.filter(function(id){return id!==creator;}).length&&!includeSelf){h+='<div class="body-empty" style="text-align:left;padding:2px 0">No one else on this trip to assign to.</div>';return h+'</div>';}
   h+='<div class="whoselect">';
   for(var i=0;i<mem.length;i++){var p=person(mem[i]);if(!p)continue;var on=S._who&&S._who.has(p.id);
-    h+='<div class="who-opt'+(on?' on':'')+'" onclick="toggleWho(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+'<span class="wcheck">'+IC.checkw.replace('currentColor','#15803D')+'</span></div>';
+    h+='<div class="who-opt'+(on?' on':'')+'" onclick="toggleWho(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+(includeSelf&&p.id===creator?' <span class="opt">(you)</span>':'')+'<span class="wcheck">'+IC.checkw.replace('currentColor','#15803D')+'</span></div>';
   }
   return h+'</div></div>';
 }
