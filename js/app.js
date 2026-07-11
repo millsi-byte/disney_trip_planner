@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='407';
+var BUILD='409';
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -1032,8 +1032,8 @@ function papiPublishCat(st){
   if(!st.rides||!st.shows||awaitingFirstCloudSync())return;
   var dset={};papiTrips().forEach(function(tr){tr.days.forEach(function(d){dset[d.date]=1;});});
   var trim=function(src){var out={};Object.keys(src||{}).forEach(function(id){Object.keys(src[id]||{}).forEach(function(ds){if(dset[ds])(out[id]=out[id]||{})[ds]=src[id][ds];});});return out;};
-  var cat={rides:st.rides,shows:st.shows,dining:st.dining||null,times:trim(st.times),timesList:trim(st.timesList),upd:Date.now()};
-  var sig=function(c){return JSON.stringify([c.rides||null,c.shows||null,c.dining||null,c.times||null,c.timesList||null]);};
+  var cat={rides:st.rides,shows:st.shows,dining:st.dining||null,hotels:st.hotels||null,times:trim(st.times),timesList:trim(st.timesList),upd:Date.now()};
+  var sig=function(c){return JSON.stringify([c.rides||null,c.shows||null,c.dining||null,c.hotels||null,c.times||null,c.timesList||null]);};
   if(sig(cat)!==sig(PAPICAT)){PAPICAT=cat;save('dtp_papicat',PAPICAT);}
 }
 /* one honest sentence for a forced run. The subtle case: a run where every
@@ -1268,6 +1268,35 @@ function papiApplyShows(trips,st){
   if(chChanged)save('dtp_shows',SHOWS);
   if(paChanged)save('dtp_parades',PARADES);
 }
+/* Day-of official-time sync: once the live feed has verified performance
+   times for TODAY, update matching show/parade records — including the
+   user's own hand-entered/imported ones (planning guesses give way to the
+   official schedule on the day). FUTURE days are never touched, and a time
+   that IS one of today's official times is kept — the person chose a
+   specific performance. Ownership (src) is not changed. */
+function papiLiveTimeSync(st,ds){
+  if(!st.timesLive)return;
+  var nameToId={};
+  Object.keys(st.shows||{}).forEach(function(pk){(st.shows[pk]||[]).forEach(function(x){nameToId[(x.name||'').toLowerCase()]=x.id;});});
+  var chS=false,chP=false,now=Date.now();
+  [[SHOWS,'s'],[PARADES,'p']].forEach(function(pair){
+    pair[0].forEach(function(r){
+      if(r.day!==ds)return;
+      var eid=r.apiKey||nameToId[(r.name||'').toLowerCase()];
+      if(!eid||!st.timesLive[eid]||!st.timesLive[eid][ds])return;
+      var tl=(st.timesList&&st.timesList[eid]&&st.timesList[eid][ds])||[];
+      if(!tl.length)return;
+      if(tl.indexOf(r.time)>=0)return;   /* they picked one of today's real times */
+      var joined=tl.join(' & ');
+      if(r.time===joined)return;
+      r.time=joined;r.apiUpd=now;
+      if(pair[1]==='p')chP=true;else chS=true;
+      papiStat().updated++;
+    });
+  });
+  if(chS)save('dtp_shows',SHOWS);
+  if(chP)save('dtp_parades',PARADES);
+}
 /* day-of crowd estimate from live standby waits (top-10 average → 1-10) */
 function papiFetchCrowd(tr,np,st){
   /* live feed for ALL FOUR parks (4 calls, hourly on trip days): current
@@ -1333,6 +1362,7 @@ function papiFetchCrowd(tr,np,st){
     /* legacy alias `by` = the primary park's map (older readers) */
     st.waits={day:np.date,pk:primary||'',upd:Date.now(),parks:parks,by:(primary&&parks[primary]?parks[primary].by:{})};
     st.crowdFetched=Date.now();   /* always stamp — a closed park must not retry every minute */
+    try{papiLiveTimeSync(st,np.date);}catch(e){}   /* official day-of times onto today's records */
   });
 }
 /* park for a date within a SPECIFIC trip (dayPrimaryPark is active-trip only) */
@@ -2742,7 +2772,19 @@ var PAPICAT=load('dtp_papicat',{});
 function papiCatRides(pk){var st=papiData();return (st.rides&&st.rides[pk])||(PAPICAT.rides&&PAPICAT.rides[pk])||[];}
 function papiCatShows(pk){var st=papiData();return (st.shows&&st.shows[pk])||(PAPICAT.shows&&PAPICAT.shows[pk])||[];}
 function papiCatDining(loc){var st=papiData();return (st.dining&&st.dining[loc])||(PAPICAT.dining&&PAPICAT.dining[loc])||[];}
-var DN_LOCS=[['mk','Magic Kingdom'],['ep','EPCOT'],['hs','Hollywood Studios'],['ak','Animal Kingdom'],['ds','Disney Springs'],['rs','Resort']];
+function papiCatHotels(){var st=papiData();return (st.hotels&&st.hotels.length)?st.hotels:((PAPICAT.hotels&&PAPICAT.hotels.length)?PAPICAT.hotels:[]);}
+/* the API has NO hotel entities for WDW (verified: destination /children is
+   parks/attractions/shows/restaurants only) — resorts are a stable, curated
+   list. Any hotels the API ever adds merge in on top. */
+var WDW_RESORTS=["Disney's All-Star Movies Resort","Disney's All-Star Music Resort","Disney's All-Star Sports Resort","Disney's Animal Kingdom Lodge","Disney's Art of Animation Resort","Disney's Beach Club Resort","Disney's BoardWalk Inn","Disney's Caribbean Beach Resort","Disney's Contemporary Resort","Disney's Coronado Springs Resort","Disney's Fort Wilderness Resort & Campground","Disney's Grand Floridian Resort & Spa","Disney's Old Key West Resort","Disney's Polynesian Village Resort","Disney's Pop Century Resort","Disney's Port Orleans Resort - French Quarter","Disney's Port Orleans Resort - Riverside","Disney's Riviera Resort","Disney's Saratoga Springs Resort & Spa","Disney's Wilderness Lodge","Disney's Yacht Club Resort","Bay Lake Tower at Disney's Contemporary Resort","Walt Disney World Swan","Walt Disney World Dolphin","Shades of Green"];
+function rsAllResorts(){
+  var out=WDW_RESORTS.slice(),seen={};out.forEach(function(n){seen[n.toLowerCase()]=1;});
+  papiCatHotels().forEach(function(h){if(h&&h.name&&!seen[h.name.toLowerCase()]){seen[h.name.toLowerCase()]=1;out.push(h.name);}});
+  return out;
+}
+/* badge-sized resort name: "Disney's Pop Century Resort" -> "Pop Century" */
+function rsShort(n){return String(n||'').replace(/^Disney's\s+/i,'').replace(/\s+(Resort\s*&\s*(Spa|Campground)|Resort|Villas)\s*$/i,'').trim();}
+var DN_LOCS=[['mk','Magic Kingdom'],['ep','EPCOT'],['hs','Hollywood Studios'],['ak','Animal Kingdom'],['ds','Springs / Resorts'],['rs','Resort']];
 /* live status for a restaurant (park feeds only — Springs/resort venues
    aren't in the park live data) */
 function papiDineMeta(name){
@@ -2771,21 +2813,38 @@ function dnNameSuggest(id){
       papiCatDining(L[0]).forEach(function(rst){
         if(out.length>=8)return;
         if(rst.name.toLowerCase().indexOf(q)<0)return;
-        out.push({n:rst.name,loc:L[0],lbl:L[1]+(rst.venue?(' \u00b7 '+rst.venue):'')});
+        out.push({n:rst.name,loc:L[0],ven:rst.venue||'',lbl:L[1]+(rst.venue?(' \u00b7 '+rst.venue):'')});
       });
     });
   }
-  box.innerHTML=out.map(function(x){return '<div class="papi-sug" data-n="'+esc(x.n)+'" data-loc="'+x.loc+'" onclick="dnNamePick(\''+id+'\',this.getAttribute(\'data-n\'),this.getAttribute(\'data-loc\'))">'+esc(x.n)+' <span class="papi-sugtag">'+esc(x.lbl)+'</span></div>';}).join('');
+  box.innerHTML=out.map(function(x){return '<div class="papi-sug" data-n="'+esc(x.n)+'" data-loc="'+x.loc+'" data-ven="'+esc(x.ven)+'" onclick="dnNamePick(\''+id+'\',this.getAttribute(\'data-n\'),this.getAttribute(\'data-loc\'),this.getAttribute(\'data-ven\'))">'+esc(x.n)+' <span class="papi-sugtag">'+esc(x.lbl)+'</span></div>';}).join('');
   var m=document.getElementById(id+'__meta');if(m)m.innerHTML=papiDineMeta(inp.value.trim());
 }
-function dnNamePick(id,name,loc){
+function dnNamePick(id,name,loc,ven){
   var inp=document.getElementById(id);if(inp)inp.value=name;
   var box=document.getElementById(id+'__sug');if(box)box.innerHTML='';
   if(loc==='ds'||loc==='rs')S._formLoc=loc;
   else{S._formLoc='in';S._dnPark=loc;}
+  if(loc==='rs')S._dnResort=ven||'';
   renderScreen_inplace2();
   var e=document.getElementById('dd-park');if(e&&loc!=='ds'&&loc!=='rs')e.value=loc;
+  var rE=document.getElementById('dd-resort');if(rE&&loc==='rs')rE.value=ven||'';
   var m=document.getElementById(id+'__meta');if(m)m.innerHTML=papiDineMeta(name);
+}
+/* resort-name autocomplete over the live hotel catalog. Free text allowed. */
+function rsNameBox(id,v){
+  return '<input class="field-input" id="'+id+'" placeholder="Start typing a resort\u2026" autocomplete="off" value="'+esc(v||'')+'" oninput="rsNameSuggest(\''+id+'\')"><div id="'+id+'__sug"></div>';
+}
+function rsNameSuggest(id){
+  var inp=document.getElementById(id),box=document.getElementById(id+'__sug');
+  if(!inp||!box)return;
+  var q=inp.value.trim().toLowerCase(),out=[];
+  if(q.length>=2)rsAllResorts().forEach(function(n){if(out.length<8&&n.toLowerCase().indexOf(q)>=0)out.push(n);});
+  box.innerHTML=out.map(function(n){return '<div class="papi-sug" data-n="'+esc(n)+'" onclick="rsNamePick(\''+id+'\',this.getAttribute(\'data-n\'))">'+esc(n)+'</div>';}).join('');
+}
+function rsNamePick(id,name){
+  var inp=document.getElementById(id);if(inp)inp.value=name;
+  var box=document.getElementById(id+'__sug');if(box)box.innerHTML='';
 }
 function ridesFor(date){return RIDES.filter(function(r){return r.trip===S.tripId&&r.day===date;});}
 /* parse a loose time string ("5:45 AM", "Evening", "Afternoon") to minutes for sorting */
@@ -3843,7 +3902,7 @@ function dayPlanItems(d){
     if(lg.depDate===date) out.push({t:lg.depTime,x:'Depart '+lg.depApt+' — '+lg.airline+(lg.num?' '+lg.num:''),type:'flight',who:f.who});
     if(lg.arrDate===date) out.push({t:lg.arrTime,x:'Arrive '+lg.arrApt+(lg.arrCity&&lg.arrCity!==lg.arrApt?' ('+lg.arrCity+')':''),type:'flight',who:f.who});
   });});
-  diningFor(date).forEach(function(dn){if(dn.status==='reserved'||dn.status==='planned')out.push({t:dn.time,x:dn.meal+' — '+dn.name,name:dn.name,meal:dn.meal,park:(dn.loc==='in'?dn.park:null),loc:dn.loc,area:dn.area||'',type:'dining',who:dn.who,ref:dn.id,status:dn.status,dstatus:dn.status,soft:dn.status==='planned'});});
+  diningFor(date).forEach(function(dn){if(dn.status==='reserved'||dn.status==='planned')out.push({t:dn.time,x:dn.meal+' — '+dn.name,name:dn.name,meal:dn.meal,park:(dn.loc==='in'?dn.park:null),loc:dn.loc,area:dn.area||'',resort:dn.resort||'',type:'dining',who:dn.who,ref:dn.id,status:dn.status,dstatus:dn.status,soft:dn.status==='planned'});});
   showsFor(date).forEach(function(s){if((s.status||'attend')==='attend')out.push({t:s.time,x:s.name,name:s.name,park:s.park,type:'show',who:s.who,ref:s.id,status:s.status||'attend'});});
   paradesFor(date).forEach(function(p){if((p.status||'attend')==='attend')out.push({t:p.time,x:p.name,name:p.name,park:p.park,type:'parade',who:p.who,ref:p.id,status:p.status||'attend'});});
   /* a planned ride that links a Lightning Lane ABSORBS it: one merged row
@@ -3926,7 +3985,7 @@ function dayPlanCard(d,pk){
       if(e.type==='ride'&&e.ll){ tags.push(planChip('ll')); if(e.ll.status)tags.push(statusBadge(e.ll.status)); }
       if((e.type==='dining'||e.type==='show'||e.type==='parade'||e.type==='ll')&&e.status) tags.push(statusBadge(e.status));
       if(e.type==='dining'){
-        tags.push(e.park&&PARKS[e.park]?'<span class="inpark-badge" style="background:'+PARKS[e.park].color+'">'+esc(PARKS[e.park].short)+'</span>':(e.loc==='in'?'<span class="inpark-badge" style="background:#8C9BAA">In-Park</span>':(e.area==='ds'?'<span class="nonpark-badge">Springs</span>':e.area==='rs'?'<span class="nonpark-badge">Resort</span>':'<span class="nonpark-badge">Non-Park</span>')));
+        tags.push(e.park&&PARKS[e.park]?'<span class="inpark-badge" style="background:'+PARKS[e.park].color+'">'+esc(PARKS[e.park].short)+'</span>':(e.loc==='in'?'<span class="inpark-badge" style="background:#8C9BAA">In-Park</span>':(e.area==='ds'?'<span class="nonpark-badge">Springs</span>':e.area==='rs'?'<span class="nonpark-badge">'+esc(rsShort(e.resort)||'Resort')+'</span>':'<span class="nonpark-badge">Non-Park</span>')));
       }
       if((e.type==='show'||e.type==='parade')&&e.park&&PARKS[e.park]) tags.push('<span class="inpark-badge" style="background:'+PARKS[e.park].color+'">'+esc(PARKS[e.park].short)+'</span>');
       /* non-component rows keep the soft "Planned" hint */
@@ -4071,7 +4130,7 @@ function diningRow(dn){
   var o='<div class="item-row"><div style="flex:1;min-width:0"><div class="item-name">'+esc(dn.name)+'</div>';
   o+='<div style="display:flex;align-items:center;gap:6px;margin-top:4px;flex-wrap:wrap">';
   o+=statusBadge(dn.status);
-  o+=dpk?'<span class="inpark-badge" style="background:'+dpk.color+'">'+esc(dpk.short)+'</span>':(dn.loc==='in'?'<span class="inpark-badge" style="background:#8C9BAA">In-Park</span>':(dn.area==='ds'?'<span class="nonpark-badge">Springs</span>':dn.area==='rs'?'<span class="nonpark-badge">Resort</span>':'<span class="nonpark-badge">Non-Park</span>'));
+  o+=dpk?'<span class="inpark-badge" style="background:'+dpk.color+'">'+esc(dpk.short)+'</span>':(dn.loc==='in'?'<span class="inpark-badge" style="background:#8C9BAA">In-Park</span>':(dn.area==='ds'?'<span class="nonpark-badge">Springs</span>':dn.area==='rs'?'<span class="nonpark-badge">'+esc(rsShort(dn.resort)||'Resort')+'</span>':'<span class="nonpark-badge">Non-Park</span>'));
   o+=whoChips(dn.who);
   o+='</div>';
   if(dn.status==='reserved'&&dn.conf&&dn.conf!=='walk-up') o+='<div class="item-conf">Confirmation '+esc(dn.conf)+'</div>';
@@ -5543,7 +5602,7 @@ function delFlight(id){
 function scrAddDining(){
   var edit=S.screen.edit?DINING.filter(function(x){return x.id===S.screen.edit;})[0]:null;
   var dseed=(!edit&&S.screen.seed)?S.screen.seed:null;
-  if(S._formInit!=='din'){S._formStatus.dd=edit?edit.status:((dseed&&dseed.status)||'planned');S._formLoc=edit?(edit.loc==='in'?'in':(edit.area||'off')):((dseed&&dseed.loc)||'in');S._dnPark=null;S._formInit='din';}
+  if(S._formInit!=='din'){S._formStatus.dd=edit?edit.status:((dseed&&dseed.status)||'planned');S._formLoc=edit?(edit.loc==='in'?'in':(edit.area||'off')):((dseed&&dseed.loc)||'in');S._dnPark=null;S._dnResort=null;S._formInit='din';}
   var st=S._formStatus.dd,loc=S._formLoc,pre=edit?edit.who:'all';
   var meals=['Breakfast','Lunch','Dinner','Drinks','Snack'];
   var body='';
@@ -5563,6 +5622,7 @@ function scrAddDining(){
     +'<button class="seg-btn'+(loc==='rs'?' on':'')+'" onclick="pickLoc(\'rs\')">Resort</button>'
     +'<button class="seg-btn'+(loc==='off'?' on':'')+'" onclick="pickLoc(\'off\')">Other</button></div></div>';
   if(loc==='in'){var _dy=(edit&&edit.day)||S.screen.day||'2026-07-15';body+='<div class="field"><label class="field-label">Which park</label><select class="field-select" id="dd-park">'+parkResOptions(S._dnPark||(edit&&edit.park)||dayPrimaryPark(_dy)||'mk')+'</select></div>';}
+  if(loc==='rs')body+='<div class="field"><label class="field-label">Which resort <span class="opt">(so everyone knows where to find it)</span></label>'+rsNameBox('dd-resort',(S._dnResort!=null?S._dnResort:(edit&&edit.resort||'')))+'</div>';
   body+=whoSelectField(pre);
   body+=notifyField('Dining');
   body+='<div class="field"><label class="field-label">Appears on day</label><select class="field-select" id="dd-day">'+dayOptions((edit&&edit.day)||S.screen.day||'2026-07-15')+'</select></div>';
@@ -5580,6 +5640,7 @@ function saveDining(){
   rec.day=dy;rec.meal=val('dd-meal')||'Dinner';rec.name=nm;rec.time=val('dd-time')||'TBD';
   rec.loc=(S._formLoc==='in')?'in':'off';
   rec.area=(S._formLoc==='ds'||S._formLoc==='rs')?S._formLoc:'';
+  rec.resort=(S._formLoc==='rs')?(val('dd-resort')||''):'';
   rec.park=(S._formLoc==='in')?(val('dd-park')||dayPrimaryPark(dy)):null;
   rec.status=S._formStatus.dd||'planned';rec.conf=val('dd-conf')||'';rec.who=whoVal();
   if(!edit)DINING.push(rec);
@@ -5807,9 +5868,11 @@ function importPromptText(){
 'Each item has a "type" and these fields (use YYYY-MM-DD for all dates, omit anything you cannot find):',
 '',
 '• resort:    {"type":"resort","name":"","room":"","checkin":"","checkout":"","inTime":"4:00 PM","outTime":"11:00 AM","conf":"","status":"booked"}',
-'• dining:    {"type":"dining","name":"","day":"","meal":"Breakfast|Lunch|Dinner|Drinks","time":"7:40 PM","park":"mk|ep|hs|ak (omit if not in a park)","loc":"in|off","conf":"","status":"reserved|want|planned"}',
-'• lightning: {"type":"lightning","ride":"","day":"","park":"mk|ep|hs|ak","tier":"sp|mp1|mp2","status":"booked|planning","winStart":"10:00 AM","winEnd":"11:00 AM","rideTime":"10:15 AM","conf":""}',
-'   (tier: sp = Single/Individual Lightning Lane, mp1 = Multi Pass tier 1, mp2 = Multi Pass tier 2; window = the ride-time window if given)',
+'• dining:    {"type":"dining","name":"","day":"","meal":"Breakfast|Lunch|Dinner|Drinks","time":"7:40 PM","park":"mk|ep|hs|ak (only when loc is in)","loc":"in|springs|resort|off","resort":"Disney\'s Pop Century Resort (which resort — only when loc is resort)","conf":"","status":"reserved|want|planned"}',
+'• ride:      {"type":"ride","name":"Space Mountain","day":"","time":"2:15 PM","park":"mk|ep|hs|ak"}',
+'   (a planned ride/attraction — the time is when we plan to ride. Emit one for every attraction in the plan, not just Lightning Lane rides.)',
+'• lightning: {"type":"lightning","ride":"","day":"","park":"mk|ep|hs|ak","tier":"sp|mp1|mp2","status":"booked|planning","winStart":"10:00 AM","winEnd":"11:00 AM","conf":""}',
+'   (tier: sp = Single/Individual Lightning Lane, mp1 = Multi Pass tier 1, mp2 = Multi Pass tier 2; window = the return window if given. ALSO emit a matching ride item — same name and day — for each lightning item; the app links them into one merged agenda entry. The ride carries the time to ride; the Lightning Lane carries the window.)',
 '• rebook:    {"type":"rebook","day":"","afterRide":"Jungle Cruise","text":"Buzz Lightyear","anchor":"after|before","time":"2:00 PM"}',
 '   (a ROLLING re-book: after you tap into the Multi Pass ride named in afterRide, book what is in text. afterRide MUST exactly match the "ride" of a lightning item above on the SAME day so they link up. List them in tap order. Omit afterRide for a standalone reminder. This is the "in-park rolling re-books — book each right after you tap the prior one" pattern.)',
 '• parkres:   {"type":"parkres","day":"","park":"mk|ep|hs|ak","status":"booked|planning"}',
@@ -5833,7 +5896,8 @@ function importPromptText(){
 '• Dining: "reserved" ONLY with a confirmation #; "planned" = intend to book; "want" = wishlist.',
 '• Show: "attend" = committed; "scheduled" = tentative.',
 '',
-'For dining, use loc:"in" with a park if it is inside a park, or loc:"off" (omit park) for resort / Disney Springs / Dolphin / Swan restaurants.',
+'For dining: loc:"in" plus a park when it is inside a park; loc:"springs" for Disney Springs; loc:"resort" plus the resort name for hotel restaurants; loc:"off" (omit park) for anywhere else (Dolphin / Swan / off-site).',
+'Show and parade times for FUTURE days are welcome — the app treats them as planning times and swaps in Disney\'s official schedule automatically on the day.',
 '',
 'Return one item per reservation (a Lightning Lane plan = many lightning items). If something is ambiguous, make your best guess and still include it.'
   ].join('\n');
@@ -5871,6 +5935,7 @@ function importSummary(type,rec){
   if(!rec)return '';
   if(type==='Resort')return rec.name+(rec.room?' · '+rec.room:'')+(impDLabel(rec.checkin)?' · '+impDLabel(rec.checkin):'');
   if(type==='Dining')return rec.name+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'')+(rec.time?' · '+rec.time:'');
+  if(type==='Ride')return rec.name+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'')+(rec.rideTime?' · '+rec.rideTime:'');
   if(type==='Lightning Lane')return rec.ride+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'')+' · '+tagShort(rec.tier);
   if(type==='Park reservation')return (IMPORT_PARKS[rec.park]||'?')+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'');
   if(type==='Park hours'){var hrs=rec.open?rec.open+(rec.close?'–'+rec.close:''):'';var ex=[];if(rec.early)ex.push('EE '+rec.early);if(rec.late)ex.push('Late '+rec.late);return (IMPORT_PARKS[rec.park]||'?')+(impDLabel(rec.day)?' · '+impDLabel(rec.day):'')+(hrs?' · '+hrs:'')+(ex.length?' · '+ex.join(' · '):'');}
@@ -5902,9 +5967,16 @@ function buildImportItem(it){
       inTime:it.inTime||'4:00 PM',outTime:it.outTime||'11:00 AM',conf:it.conf||'',status:it.status||'booked'}));
   }
   if(t==='dining'){
+    var lc2=(it.loc||'').toLowerCase();
+    var area2=(lc2==='ds'||lc2==='springs')?'ds':((lc2==='rs'||lc2==='resort')?'rs':'');
     var rec2=base({name:it.name?String(it.name):'',day:impDate(it.day),meal:it.meal||'Dinner',time:it.time||'',
-      loc:(it.loc==='off'?'off':'in'),status:it.status||'reserved',conf:it.conf||'',park:impPark(it.park)});
+      loc:(area2||lc2==='off')?'off':'in',area:area2,resort:(area2==='rs'?String(it.resort||''):''),
+      status:it.status||'reserved',conf:it.conf||'',park:(area2||lc2==='off')?'':impPark(it.park)});
     return finalizeImport('Dining',rec2);
+  }
+  if(t==='ride'||t==='attraction'){
+    return finalizeImport('Ride',base({by:S.persona,name:it.name?String(it.name):(it.ride?String(it.ride):''),day:impDate(it.day),
+      park:impPark(it.park),rideTime:it.time||it.rideTime||'',llId:''}));
   }
   if(t==='lightning'||t==='ll'||t==='lightninglane'){
     var tier=({sp:'sp',mp1:'mp1',mp2:'mp2'})[(it.tier||'').toLowerCase()]||'mp1';
@@ -6012,7 +6084,7 @@ function importParse(){
 /* commit the valid items into their collections */
 function importSave(){
   var items=S._importItems||[],added=[];
-  var M={'Resort':RESORTS,'Dining':DINING,'Lightning Lane':LLS,'Park reservation':PARKRES,'Park hours':PARKHOURS,'Re-book':REBOOKS,'Show':SHOWS,'Parade':PARADES,'Flight':FLIGHTS};
+  var M={'Resort':RESORTS,'Dining':DINING,'Ride':RIDES,'Lightning Lane':LLS,'Park reservation':PARKRES,'Park hours':PARKHOURS,'Re-book':REBOOKS,'Show':SHOWS,'Parade':PARADES,'Flight':FLIGHTS};
   /* resolve rolling re-books: link rec.after (an LL id) to the Lightning Lane
      matching afterRide + day. Index the batch's LLs (already carry ids) plus any
      already saved, so a re-book can follow a ride imported in the same paste. */
@@ -6025,6 +6097,15 @@ function importSave(){
       if(e.rec.afterRide){var aid=llIndex[llKey(e.rec.day,e.rec.afterRide)];if(aid)e.rec.after=aid;}
       delete e.rec.afterRide;   /* helper field — not part of the stored record */
     }
+  });
+  /* link imported rides to Lightning Lanes by ride name + day (batch or
+     already saved) — each LL claims at most one ride, matching the merged
+     agenda-row model */
+  var llTaken={};RIDES.forEach(function(r){if(r.llId)llTaken[r.llId]=1;});
+  items.forEach(function(e){
+    if(e.type!=='Ride'||!e.rec||e.error||e._removed)return;
+    var lid=llIndex[llKey(e.rec.day,e.rec.name)];
+    if(lid&&!llTaken[lid]){e.rec.llId=lid;llTaken[lid]=1;}
   });
   var extra=0,touchedLists=false;
   items.forEach(function(e){
@@ -6075,7 +6156,7 @@ function importReset(){S._importItems=null;S._importEdit=null;S.importStep=1;ren
 
 /* ── CSV template (download → fill in Excel/Sheets → upload) ──
    Reuses the same builder + review screen as the JSON path. */
-var IMPORT_CSV_COLS=['type','name','room','checkin','checkout','inTime','outTime','day','meal','time','park','loc','ride','tier','window','winStart','winEnd','rideTime','afterRide','text','label','airline','num','depApt','depCity','depTime','depDate','arrApt','arrCity','arrTime','arrDate','open','close','early','late','crowd','headline','blurb','strategy','tags','alert','when','section','item','needBuy','conf','status'];
+var IMPORT_CSV_COLS=['type','name','room','checkin','checkout','inTime','outTime','day','meal','time','park','loc','resort','ride','tier','window','winStart','winEnd','rideTime','afterRide','text','label','airline','num','depApt','depCity','depTime','depDate','arrApt','arrCity','arrTime','arrDate','open','close','early','late','crowd','headline','blurb','strategy','tags','alert','when','section','item','needBuy','conf','status'];
 function csvEsc(v){v=(v==null?'':String(v));return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}
 function importCsvTemplate(){
   var rows=[IMPORT_CSV_COLS];
@@ -6083,10 +6164,11 @@ function importCsvTemplate(){
   var ex={
     resort:{type:'resort',name:"Disney\'s Pop Century",room:'Standard Room',checkin:'2026-07-14',checkout:'2026-07-16',conf:'A10293847',status:'booked'},
     dining:{type:'dining',name:'Space 220',day:'2026-07-15',meal:'Dinner',time:'6:45 PM',park:'ep',loc:'in',status:'reserved'},
+    ride:{type:'ride',name:'Slinky Dog Dash',day:'2026-07-17',park:'hs',time:'2:15 PM'},
     lightning:{type:'lightning',ride:'Rise of the Resistance',day:'2026-07-17',park:'hs',tier:'sp',status:'planning'},
     flight:{type:'flight',label:'Outbound',status:'booked',airline:'Southwest',num:'WN 4657',depApt:'BOS',depCity:'Boston',depTime:'5:45 AM',depDate:'2026-07-14',arrApt:'MCO',arrCity:'Orlando',arrTime:'11:50 AM',arrDate:'2026-07-14'}
   };
-  ['resort','dining','lightning','flight'].forEach(function(k){
+  ['resort','dining','ride','lightning','flight'].forEach(function(k){
     rows.push(IMPORT_CSV_COLS.map(function(c){return csvEsc(ex[k][c]||'');}));
   });
   return rows.map(function(r){return r.join(',');}).join('\n');
@@ -6854,7 +6936,8 @@ function importCsvFile(ev){
 /* editable fields per type: [key,label,kind]  kind: text | date | [options] */
 var IMPORT_FIELDS={
   Resort:[['name','Name','text'],['room','Room','text'],['checkin','Check-in','date'],['checkout','Check-out','date'],['conf','Confirmation #','text'],['status','Status',['booked','planning']]],
-  Dining:[['name','Name','text'],['day','Date','date'],['time','Time','text'],['meal','Meal',['Breakfast','Lunch','Dinner','Drinks','Snack']],['loc','Location',['in','off']],['conf','Confirmation #','text'],['status','Status',['reserved','planned']]],
+  Dining:[['name','Name','text'],['day','Date','date'],['time','Time','text'],['meal','Meal',['Breakfast','Lunch','Dinner','Drinks','Snack']],['loc','Location',['in','ds','rs','off']],['resort','Resort','text'],['conf','Confirmation #','text'],['status','Status',['reserved','planned']]],
+  Ride:[['name','Ride','text'],['day','Date','date'],['park','Park',['mk','ep','hs','ak']],['rideTime','Time','text']],
   'Lightning Lane':[['ride','Ride','text'],['day','Date','date'],['park','Park',['mk','ep','hs','ak']],['tier','Tier',['sp','mp1','mp2']],['status','Status',['booked','planning']],['winStart','Window from','text'],['winEnd','Window to','text'],['rideTime','Time to ride','text'],['conf','Confirmation #','text']],
   'Park reservation':[['day','Date','date'],['park','Park',['mk','ep','hs','ak']],['status','Status',['booked','planning']]],
   Show:[['name','Name','text'],['day','Date','date'],['time','Time','text'],['park','Park',['mk','ep','hs','ak']],['status','Status',['attend','scheduled']]],
@@ -6865,7 +6948,7 @@ var IMPORT_FIELDS={
   Packing:[['section','Section','text'],['n','Item','text']]
 };
 /* required fields per type (re-checked after an edit) */
-var IMPORT_REQ={Resort:['name'],Dining:['name','day'],'Lightning Lane':['ride','day'],'Park reservation':['park','day'],'Park hours':['park','day'],'Re-book':['text','day'],Show:['name','day'],Parade:['name','day'],Flight:['label']};
+var IMPORT_REQ={Resort:['name'],Dining:['name','day'],Ride:['name','day'],'Lightning Lane':['ride','day'],'Park reservation':['park','day'],'Park hours':['park','day'],'Re-book':['text','day'],Show:['name','day'],Parade:['name','day'],Flight:['label']};
 function importEditOpen(i){
   var e=(S._importItems||[])[i];if(!e||!e.rec)return;
   S._importEdit=i;
@@ -6879,6 +6962,7 @@ function importEditApply(i){
   (IMPORT_FIELDS[e.type]||[]).forEach(function(f){
     var k=f[0],kind=f[2],v=val('imf-'+i+'-'+k);
     if(kind==='date')e.rec[k]=impDate(v);
+    else if(k==='loc'&&e.type==='Dining'){var lv=(v||'').toLowerCase();e.rec.area=(lv==='ds'||lv==='rs')?lv:'';e.rec.loc=(lv==='in')?'in':'off';if(lv!=='in')e.rec.park='';if(lv!=='rs')e.rec.resort='';}
     else if(k==='park')e.rec[k]=impPark(v);
     else e.rec[k]=v;
   });
@@ -9304,8 +9388,8 @@ function scrStopEdit(){
   var has=S.screen.idx!=null,it=has?d.itin[S.screen.idx]:null;
   var stseed=(!has&&S.screen.seed)?S.screen.seed:null;
   if(S._formInit!=='stop'){S._stPriv=!!(it&&it.priv);S._formInit='stop';}
-  var body='<div class="field"><label class="field-label">Time</label>'+timeField('st-time',it?it.t:'')+'</div>';
-  body+='<div class="field"><label class="field-label">What\'s happening</label><input class="field-input" id="st-text" placeholder="e.g. Rope drop — Test Track" value="'+(it?esc(it.x):(stseed&&stseed.x?esc(stseed.x):''))+'"></div>';
+  var body='<div class="field"><label class="field-label">What\'s happening</label><input class="field-input" id="st-text" placeholder="e.g. Rope drop — Test Track" value="'+(it?esc(it.x):(stseed&&stseed.x?esc(stseed.x):''))+'"></div>';
+  body+='<div class="field"><label class="field-label">Time</label>'+timeField('st-time',it?it.t:'')+'</div>';
   body+='<div class="field"><label class="field-label">Tag <span class="opt">(optional, e.g. Critical, Hop)</span></label><input class="field-input" id="st-crit" placeholder="Critical" value="'+(it&&it.crit?esc(it.crit):'')+'"></div>';
   body+=whoSelectField(it?it.who:'all');
   body+='<div class="field" style="margin:0"><label class="field-label">Privacy</label><div class="seg"><button class="seg-btn'+(!S._stPriv?' on':'')+'" onclick="stFormPriv(false)">Shared</button><button class="seg-btn'+(S._stPriv?' on book':'')+'" onclick="stFormPriv(true)">'+IC.lock+' Keep private</button></div></div>';
@@ -9446,7 +9530,7 @@ function scrResortEdit(){
   var edit=S.screen.edit?RESORTS.filter(function(x){return x.id===S.screen.edit;})[0]:null;
   if(S._formInit!=='rs'){S._formStatus.rs=edit?edit.status:'planning';S._formInit='rs';}
   var st=S._formStatus.rs,pre=edit?edit.who:'all';
-  var body='<div class="field"><label class="field-label">Resort name</label><input class="field-input" id="rs-name" placeholder="Disney\'s Pop Century Resort" value="'+(edit?esc(edit.name):'')+'"></div>';
+  var body='<div class="field"><label class="field-label">Resort name</label>'+rsNameBox('rs-name',edit?edit.name:'')+'</div>';
   body+='<div class="field"><label class="field-label">Room type</label><input class="field-input" id="rs-room" placeholder="Standard Room · Pool View" value="'+(edit?esc(edit.room):'')+'"></div>';
   var _td=tripDays();var _d0=(_td[0]||{date:''}).date,_dN=(_td[_td.length-1]||{date:''}).date;
   body+='<div class="field-row"><div class="field"><label class="field-label">Check-in day</label><select class="field-select" id="rs-in">'+dayOptions(edit?edit.checkin:_d0)+'</select></div>';

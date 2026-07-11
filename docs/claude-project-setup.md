@@ -46,10 +46,12 @@ Rules that always apply:
 
 ## Item types & fields (omit anything unknown)
 - resort:    {"type":"resort","name":"","room":"","checkin":"","checkout":"","inTime":"4:00 PM","outTime":"11:00 AM","conf":"","status":"booked|planning"}
-- dining:    {"type":"dining","name":"","day":"","meal":"Breakfast|Lunch|Dinner|Drinks","time":"7:40 PM","park":"mk|ep|hs|ak (omit if not in a park)","loc":"in|off","conf":"","status":"reserved|planned|want"}
-- lightning: {"type":"lightning","ride":"","day":"","park":"mk|ep|hs|ak","tier":"sp|mp1|mp2","status":"booked|planning","conf":""}
+- dining:    {"type":"dining","name":"","day":"","meal":"Breakfast|Lunch|Dinner|Drinks","time":"7:40 PM","park":"mk|ep|hs|ak (only when loc is in)","loc":"in|springs|resort|off","resort":"Disney's Pop Century Resort (only when loc is resort)","conf":"","status":"reserved|planned|want"}
+- ride:      {"type":"ride","name":"Space Mountain","day":"","time":"2:15 PM","park":"mk|ep|hs|ak"}
+- lightning: {"type":"lightning","ride":"","day":"","park":"mk|ep|hs|ak","tier":"sp|mp1|mp2","status":"booked|planning","winStart":"10:00 AM","winEnd":"11:00 AM","conf":""}
 - parkres:   {"type":"parkres","day":"","park":"mk|ep|hs|ak","status":"booked|planning"}
-- show:      {"type":"show","name":"","day":"","time":"9:00 PM","status":"attend|scheduled"}
+- show:      {"type":"show","name":"","day":"","time":"9:00 PM","park":"mk|ep|hs|ak (optional)","status":"attend|scheduled"}
+- parade:    {"type":"parade","name":"","day":"","time":"3:00 PM","park":"mk|ep|hs|ak (optional)","status":"attend|scheduled"}
 - flight:    {"type":"flight","label":"Outbound|Return","day":"","status":"booked|planning","legs":[
      {"airline":"","num":"WN 4657","conf":"","depApt":"BOS","depCity":"Boston","depTime":"5:45 AM","depDate":"","arrApt":"MCO","arrCity":"Orlando","arrTime":"11:50 AM","arrDate":""} ]}
 
@@ -67,18 +69,27 @@ Wrap output as: {"items":[ ... ]}
 
 ## Codes
 - Parks: mk=Magic Kingdom, ep=EPCOT, hs=Hollywood Studios, ak=Animal Kingdom.
-- Dining location: loc:"in" + a park if inside a park; loc:"off" (omit park)
-  for resort / Disney Springs / Dolphin / Swan restaurants.
+- Dining location: loc:"in" + a park if inside a park; loc:"springs" for
+  Disney Springs; loc:"resort" + the resort name for hotel restaurants;
+  loc:"off" (omit park) for anywhere else (Dolphin / Swan / off-site).
 - Lightning Lane tiers: sp = Individual/Single Lightning Lane,
   mp1 = Multi Pass tier 1 (the premium picks), mp2 = Multi Pass tier 2.
+- Rides & Lightning Lanes: ALSO emit a ride item (same name + day) for each
+  lightning item — the app links them into one merged agenda entry. The ride
+  carries the time to ride; the Lightning Lane carries the return window.
+- Show/parade times for future days are planning times — the app swaps in
+  Disney's official schedule automatically on the day.
 
 ## Example A — a confirmed dining email -> import
 {"items":[{"type":"dining","name":"Bourbon Steak","day":"2026-07-15","meal":"Dinner","time":"7:00 PM","loc":"off","conf":"356148789438","status":"reserved"}]}
 
 ## Example B — a Lightning Lane PLAN (nothing booked yet) -> import
 {"items":[
+ {"type":"ride","name":"Avatar Flight of Passage","day":"2026-07-18","park":"ak","time":"9:30 AM"},
  {"type":"lightning","ride":"Avatar Flight of Passage","day":"2026-07-18","park":"ak","tier":"sp","status":"planning"},
+ {"type":"ride","name":"Kilimanjaro Safaris","day":"2026-07-18","park":"ak","time":"11:00 AM"},
  {"type":"lightning","ride":"Kilimanjaro Safaris","day":"2026-07-18","park":"ak","tier":"mp1","status":"planning"},
+ {"type":"ride","name":"Na'vi River Journey","day":"2026-07-18","park":"ak"},
  {"type":"lightning","ride":"Na'vi River Journey","day":"2026-07-18","park":"ak","tier":"mp2","status":"planning"}
 ]}
 ```

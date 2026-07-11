@@ -346,7 +346,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     renderOverlay();
     document.getElementById('dd-name').value = 'zz springs';
     dnNameSuggest('dd-name');
-    r.dineSuggests = document.getElementById('dd-name__sug').innerHTML.indexOf('ZZ Springs Cafe') >= 0 && document.getElementById('dd-name__sug').innerHTML.indexOf('Disney Springs') >= 0;
+    r.dineSuggests = document.getElementById('dd-name__sug').innerHTML.indexOf('ZZ Springs Cafe') >= 0 && document.getElementById('dd-name__sug').innerHTML.indexOf('Springs / Resorts') >= 0;
     dnNamePick('dd-name', 'ZZ Springs Cafe', 'ds');
     r.dinePickSetsLoc = S._formLoc === 'ds';
     saveDining();
@@ -763,6 +763,55 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     const stMid = papiData(); stMid.times = Object.assign(stMid.times || {}, { 'ent-race2': { [DAY]: '9:59 PM' } }); papiSave(stMid);
     await new Promise(res => setTimeout(res, 400));
     r.refreshKeepsSweepTimes = !!(papiData().times && papiData().times['ent-race2']) && papiData().times['ent-race2'][DAY] === '9:59 PM';
+
+    // ── Build 408: day-of official-time sync onto USER-entered records ──
+    // planning times survive future days; today's swap to the official
+    // schedule; a chosen time that IS official is kept; ownership unchanged
+    window.fetch = goodFetch;
+    SHOWS.push({ id: 'su_today', trip: 'jul26', by: 'scott', day: DAY, name: 'Happily Ever After', time: '9:00 PM', status: 'attend', park: 'mk', who: 'all' });
+    SHOWS.push({ id: 'su_pick', trip: 'jul26', by: 'scott', day: DAY, name: 'Happily Ever After', time: '10:30 PM', status: 'attend', park: 'mk', who: 'all' });
+    SHOWS.push({ id: 'su_future', trip: 'jul26', by: 'scott', day: '2026-07-18', name: 'Happily Ever After', time: '9:15 PM', status: 'attend', park: 'mk', who: 'all' });
+    localStorage.setItem('dtp__parkapi', JSON.stringify(Object.assign(papiData(), { fetched: 0, crowdFetched: 0 })));
+    papiRefresh(true);
+    await new Promise(res => setTimeout(res, 300));
+    r.liveSyncUpdatesUserToday = SHOWS.filter(s => s.id === 'su_today')[0].time === '8:30 PM & 10:30 PM';
+    r.liveSyncKeepsChosenTime = SHOWS.filter(s => s.id === 'su_pick')[0].time === '10:30 PM';
+    r.liveSyncLeavesFuture = SHOWS.filter(s => s.id === 'su_future')[0].time === '9:15 PM';
+    r.liveSyncNoOwnershipGrab = SHOWS.filter(s => s.id === 'su_today')[0].src === undefined;
+
+    // ── Build 408: import formats — ride type, ride⇄LL link, dining areas ──
+    const impRide = buildImportItem({ type: 'ride', name: 'ZZ Space Mountain', day: DAY, park: 'mk', time: '2:15 PM' });
+    r.importRideBuilds = impRide.type === 'Ride' && !impRide.error && impRide.rec.rideTime === '2:15 PM' && impRide.rec.park === 'mk';
+    const impDs = buildImportItem({ type: 'dining', name: 'ZZ Springs Cafe', day: DAY, loc: 'springs' });
+    r.importDiningSprings = !impDs.error && impDs.rec.loc === 'off' && impDs.rec.area === 'ds';
+    const impRs = buildImportItem({ type: 'dining', name: 'ZZ Resort Steakhouse', day: DAY, loc: 'resort', resort: "Disney's Pop Century Resort" });
+    r.importDiningResort = !impRs.error && impRs.rec.area === 'rs' && impRs.rec.resort === "Disney's Pop Century Resort";
+    const impLL = buildImportItem({ type: 'lightning', ride: 'ZZ Space Mountain', day: DAY, park: 'mk', tier: 'sp', status: 'planning' });
+    S.screen = { type: 'import' }; S.importStep = 2;
+    S._importItems = [impRide, impLL];
+    const ridesBefore408 = RIDES.length;
+    importSave();
+    const newRide408 = RIDES.filter(x => x.name === 'ZZ Space Mountain' && x.day === DAY && x.id === impRide.rec.id)[0];
+    r.importRideLinksLL = RIDES.length === ridesBefore408 + 1 && !!newRide408 && newRide408.llId === impLL.rec.id && LLS.some(l => l.id === impLL.rec.id);
+    S.screen = null;
+
+    // ── Build 408: resorts — autocomplete, dining resort field, badge names ──
+    r.rsShortTrims = rsShort("Disney's Pop Century Resort") === 'Pop Century' && rsShort("Disney's Grand Floridian Resort & Spa") === 'Grand Floridian';
+    r.hotelsCatalog = papiCatHotels().some(h => h.name === 'ZZ Grand Hotel');
+    r.resortListMerged = rsAllResorts().indexOf("Disney's Pop Century Resort") >= 0 && rsAllResorts().indexOf('ZZ Grand Hotel') >= 0;
+    S.screen = { type: 'resortedit' }; S._formInit = '';
+    r.resortFormAutocomplete = scrResortEdit().indexOf("rsNameSuggest") >= 0;
+    S.screen = { type: 'adddining', day: DAY, seed: { loc: 'rs' } }; S._formInit = '';
+    const dinHtml = scrAddDining();
+    r.diningResortField = dinHtml.indexOf('Which resort') >= 0 && dinHtml.indexOf('dd-resort') >= 0;
+    S.screen = null; S._formInit = '';
+    r.diningBadgeResortName = diningRow({ id: 'dn_rs1', trip: 'jul26', day: DAY, meal: 'Dinner', name: 'ZZ Resort Steakhouse', time: '7:00 PM', loc: 'off', area: 'rs', resort: "Disney's Pop Century Resort", status: 'reserved', who: 'all' }).indexOf('Pop Century') >= 0;
+
+    // ── Build 408: Add Plan (stop) form is name-first like every other form ──
+    S.screen = { type: 'stopedit', day: DAY }; S._formInit = '';
+    const stopHtml = scrStopEdit();
+    r.stopFormNameFirst = stopHtml.indexOf('st-text') >= 0 && stopHtml.indexOf('st-text') < stopHtml.indexOf('st-time');
+    S.screen = null;
 
     // ── production build: the engine ships LIVE from Build 392 (user-approved promotion) ──
     const realBuild = window.BUILD;
