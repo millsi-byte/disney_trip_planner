@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='409';
+var BUILD='411';
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -3448,7 +3448,12 @@ function tdVisibleCount(pid){return TODO.filter(function(t){return t.trip===S.tr
    device without syncing a view setting across the group */
 function tdHideDone(){try{return localStorage.getItem('bt_tdHideDone')==='1';}catch(e){return false;}}
 function tdToggleHideDone(){try{localStorage.setItem('bt_tdHideDone',tdHideDone()?'0':'1');}catch(e){}refreshTodo();}
-function tdNotDone(t){return !t.done;}
+/* everyone-mode ('each') to-dos: the creator + every assignee each check off
+   their OWN copy (doneBy map); the task is finished only when all have */
+function tdRequired(t){var req=(t.who&&t.who.length)?t.who.slice():[t.by],out=[],seen={};req.forEach(function(p){if(p&&!seen[p]){seen[p]=1;out.push(p);}});return out;}
+function tdDoneFor(t,pid){return t.each?!!(t.doneBy&&t.doneBy[pid]):!!t.done;}
+function tdMyDone(t){return tdDoneFor(t,S.persona);}
+function tdNotDone(t){return !tdMyDone(t);}
 function todoHideToggle(anyDone){
   if(!anyDone)return '';
   return '<div style="display:flex;justify-content:flex-end;margin:-2px 2px 8px"><button class="lens-btn'+(tdHideDone()?' on':'')+'" onclick="tdToggleHideDone()">'+(tdHideDone()?'Show completed':'Hide completed')+'</button></div>';
@@ -3491,16 +3496,32 @@ function refreshTodo(){
   render();
 }
 
-function tdToggle(id){var t=tdById(id);if(!t)return;if(!tdCanCheck(t)){toast('Only the creator, an assignee or an admin can check this');return;}t.done=!t.done;saveTODO();refreshTodo();}
+function tdToggle(id,pid){
+  var t=tdById(id);if(!t)return;
+  if(!tdCanCheck(t)){toast('Only the creator, an assignee or an admin can check this');return;}
+  var target=pid||S.persona;
+  if(target!==S.persona&&!todoOversight()){toast('Only an admin can check someone else\u2019s copy');return;}
+  if(t.each){
+    var req=tdRequired(t);
+    if(req.indexOf(target)<0){
+      var nm=req.map(function(p){var pp=person(p);return pp?pp.name:'';}).filter(Boolean).join(', ');
+      toast('Each person checks off their own \u2014 this one is for '+(nm||'the assignees'));return;
+    }
+    t.doneBy=t.doneBy||{};
+    if(t.doneBy[target])delete t.doneBy[target];else t.doneBy[target]=1;
+  }else t.done=!t.done;
+  saveTODO();refreshTodo();
+}
 function tdAddOpen(){
-  S.tdForm={id:null};S._who=new Set();S._tdPriv=false;S._notify=notifDefault();refreshTodo();
+  S.tdForm={id:null};S._who=new Set();S._tdPriv=false;S._tdEach=false;S._notify=notifDefault();refreshTodo();
   /* the new-task editor renders at the BOTTOM of My to-dos — scroll to it + focus */
   setTimeout(function(){var e=document.getElementById('td-name');if(e){try{e.scrollIntoView({block:'center',behavior:'smooth'});}catch(_){e.scrollIntoView();}try{e.focus({preventScroll:true});}catch(_2){e.focus();}}},60);
 }
-function tdEdit(id){var t=tdById(id);if(!t)return;if(!tdCanEdit(t)){toast('Only the creator or an admin can edit this');return;}S.tdForm={id:id};S._who=new Set(t.who||[]);S._tdPriv=!!t.priv;S._notify=notifDefault();refreshTodo();}
-function tdCancelForm(){S.tdForm=null;S._who=null;S._tdPriv=false;refreshTodo();}
+function tdEdit(id){var t=tdById(id);if(!t)return;if(!tdCanEdit(t)){toast('Only the creator or an admin can edit this');return;}S.tdForm={id:id};S._who=new Set(t.who||[]);S._tdPriv=!!t.priv;S._tdEach=!!t.each;S._notify=notifDefault();refreshTodo();}
+function tdCancelForm(){S.tdForm=null;S._who=null;S._tdPriv=false;S._tdEach=false;refreshTodo();}
 function tdRemoveCancel(){S._deltd=null;refreshTodo();}
 function tdFormPriv(v){S._tdPriv=v;renderScreen_inplace2();}
+function tdFormEach(v){S._tdEach=v;renderScreen_inplace2();}
 function tdSave(){
   var nm=val('td-name');if(!nm){toast('Add a task');return;}
   var f=S.tdForm;if(!f)return;
@@ -3508,11 +3529,12 @@ function tdSave(){
   if(edit&&!tdCanEdit(edit)){toast('Only the creator or an admin can edit this');S.tdForm=null;refreshTodo();return;}
   var creator=edit?edit.by:S.persona;
   var oldWho=edit?(edit.who||[]):[];
-  var who=S._who?tripMembers().filter(function(id){return id!==creator&&S._who.has(id);}):[];
+  var who=S._who?tripMembers().filter(function(id){return S._who.has(id);}):[];
   var rec=edit||{id:'td'+Date.now(),trip:S.tripId,by:S.persona,done:false};
   rec.n=nm;rec.when=val('td-when');rec.who=who;rec.priv=!!S._tdPriv;
+  rec.each=!!S._tdEach;if(rec.each&&!rec.doneBy)rec.doneBy={};
   if(!edit){TODO.push(rec);tdMarkStarted(S.persona);}
-  saveTODO();afterWhoSave('To Do',rec,oldWho);S.tdForm=null;S._who=null;S._tdPriv=false;toast('Saved');refreshTodo();
+  saveTODO();afterWhoSave('To Do',rec,oldWho);S.tdForm=null;S._who=null;S._tdPriv=false;S._tdEach=false;toast('Saved');refreshTodo();
 }
 function tdRemove(id){
   var t=tdById(id);if(!t)return;
@@ -4853,10 +4875,10 @@ function prTodoHTML(){
     var mem=tripMembers();if(S.listWho)mem=mem.filter(function(p){return p===S.listWho;});
     mem.forEach(function(pid){var p=person(pid);if(!p)return;
       var items=tdMine(pid).concat(tdAssignedTo(pid)).filter(tdCanSee);
-      if(hide)items=items.filter(tdNotDone);
+      if(hide)items=items.filter(function(t){return !tdDoneFor(t,pid);});
       body+='<div style="font-size:17px;font-weight:700;margin:16px 0 2px">'+esc(p.name)+'</div>';
       if(!items.length)body+='<div style="color:#555;font-size:13px">No items.</div>';
-      items.forEach(function(t){body+=prItem(t.n,t.done,prTodoMeta(t));});
+      items.forEach(function(t){body+=prItem(t.n,tdDoneFor(t,pid),prTodoMeta(t));});
     });
     sub='Everyone’s to-dos';
   }else{
@@ -4864,9 +4886,9 @@ function prTodoHTML(){
     if(hide){mine=mine.filter(tdNotDone);assigned=assigned.filter(tdNotDone);}
     body+=prSection('My to-dos',mine.length);
     if(!mine.length)body+='<div style="color:#555;font-size:13px">Nothing here.</div>';
-    mine.forEach(function(t){body+=prItem(t.n,t.done,prTodoMeta(t));});
+    mine.forEach(function(t){body+=prItem(t.n,tdMyDone(t),prTodoMeta(t));});
     if(assigned.length){body+=prSection('Assigned to me',assigned.length);
-      assigned.forEach(function(t){body+=prItem(t.n,t.done,prTodoMeta(t));});}
+      assigned.forEach(function(t){body+=prItem(t.n,tdMyDone(t),prTodoMeta(t));});}
     var mep=person(me);sub=mep?mep.name+'’s to-dos':'';
   }
   return prWrap(prHead('To-Do List',sub)+body+prFoot());
@@ -4914,7 +4936,7 @@ function todoBody(){
   /* personal view — identical for every user */
   var mine=tdMine(me), assigned=tdAssignedTo(me);
   o+=todoSticky(mine.concat(assigned));
-  o+=todoHideToggle(mine.concat(assigned).some(function(t){return t.done;}));
+  o+=todoHideToggle(mine.concat(assigned).some(function(t){return tdMyDone(t);}));
   if(!tdHasStarted(me))o+=todoStarter();
   var hide=tdHideDone();
   var mineV=hide?mine.filter(tdNotDone):mine, assignedV=hide?assigned.filter(tdNotDone):assigned;
@@ -4956,21 +4978,21 @@ function todoEveryoneView(){
     /* a person's list = what they created PLUS what others assigned to them, so an
        item you assign to someone shows up under THEM here (not just under you) */
     var items=tdMine(pid).concat(tdAssignedTo(pid)).filter(tdCanSee);
-    var done=items.filter(function(t){return t.done;}).length;
+    var done=items.filter(function(t){return tdDoneFor(t,pid);}).length;
     if(done)anyDone=true;
     if(S.listWho&&pid!==S.listWho)continue;   /* individual filter */
-    var shown=hide?items.filter(tdNotDone):items;
+    var shown=hide?items.filter(function(t){return !tdDoneFor(t,pid);}):items;
     var b=pbHead(pid,done,items.length);
     b+='<div class="card" style="padding:6px 0 0">';
     if(!shown.length)b+='<div class="body-empty" style="text-align:left;padding:6px 12px">'+(hide&&items.length?'All done.':'No items.')+'</div>';
-    for(var k=0;k<shown.length;k++)b+=todoRowOrEditor(shown[k]);
+    for(var k=0;k<shown.length;k++)b+=todoRowOrEditor(shown[k],null,pid);
     b+='</div>';
     blocks.push(b);
   }
   return o+personFilterRow(mem)+todoHideToggle(anyDone)+blocks.join('');
 }
 function todoSticky(items){
-  var total=items.length,done=items.filter(function(t){return t.done;}).length;
+  var total=items.length,done=items.filter(function(t){return tdMyDone(t);}).length;
   var pct=total?Math.round(done/total*100):0;
   var o='<div class="plan-sticky">';
   o+='<div class="prog-label">'+done+' of '+total+' done</div>';
@@ -4989,26 +5011,32 @@ function todoStarter(){
   o+='</div></div>';
   return o;
 }
-function todoRowOrEditor(t,drag){
+function todoRowOrEditor(t,drag,forPid){
   if(S.tdForm&&S.tdForm.id===t.id)return todoRow(t,true)+todoEditor(t);
-  return todoRow(t,false,drag);
+  return todoRow(t,false,drag,forPid);
 }
-function todoRow(t,expanded,drag){
-  var me=S.persona;
+function todoRow(t,expanded,drag,forPid){
+  var me=S.persona,vp=forPid||me,tArg=forPid?('\''+t.id+'\',\''+forPid+'\''):('\''+t.id+'\'');
   var canEdit=tdCanEdit(t), amAssignee=t.who&&t.who.indexOf(me)>=0;
   var pend=S._deltd==='tdrm_'+t.id;
   var sub=[];
   if(t.who&&t.who.length)sub.push('Assigned to '+t.who.map(function(p){var pp=person(p);return pp?esc(pp.name):'';}).filter(Boolean).join(', '));
+  if(t.each){
+    var reqE=tdRequired(t),dnE=reqE.filter(function(p){return t.doneBy&&t.doneBy[p];});
+    var waitE=reqE.filter(function(p){return !(t.doneBy&&t.doneBy[p]);}).map(function(p){var pp=person(p);return pp?esc(pp.name):'';}).filter(Boolean);
+    sub.push('Each checks their own \u00b7 '+dnE.length+' of '+reqE.length+' done'+((dnE.length&&waitE.length)?(' \u00b7 waiting on '+waitE.join(', ')):''));
+  }
   if(!todoOversight()&&t.by!==me){var c=person(t.by);sub.push('From '+(c?esc(c.name):'someone'));}
   if(t.priv)sub.push(IC.lock+' Hidden');
   var dg=drag&&!expanded;
   var o='<div class="pk-row'+(expanded?' expanded':'')+(dg?' dgrow':'')+'"'+(dg?' data-dg="'+drag.group+'" data-di="'+drag.idx+'"':'')+'>';
   if(dg)o+=dgHandle();
-  o+='<div class="chkbox'+(t.done?' on':'')+'" onclick="tdToggle(\''+t.id+'\')">'+(t.done?IC.checkw:'')+'</div>';
+  var myDn=tdDoneFor(t,vp);
+  o+='<div class="chkbox'+(myDn?' on':'')+'" onclick="tdToggle('+tArg+')">'+(myDn?IC.checkw:'')+'</div>';
   var meta='';
   if(t.when)meta+='<span class="td-when">'+esc(t.when)+'</span>';
   if(sub.length)meta+='<span class="pk-by">'+sub.join(' · ')+'</span>';
-  o+='<div class="pk-name'+(t.done?' done':'')+'" onclick="tdToggle(\''+t.id+'\')">'+esc(t.n)+(meta?'<div class="td-meta">'+meta+'</div>':'')+'</div>';
+  o+='<div class="pk-name'+(myDn?' done':'')+'" onclick="tdToggle('+tArg+')">'+esc(t.n)+(meta?'<div class="td-meta">'+meta+'</div>':'')+'</div>';
   if(expanded){
     o+='<button class="hdr-icon pk-edit-on" style="width:30px;height:30px;flex-shrink:0" title="Close" onclick="tdCancelForm()">'+IC.chevUp+'</button>';
   }else if(canEdit){
@@ -5031,7 +5059,9 @@ function todoEditor(item){
   if(!item)o+='<div class="inline-editor-title">'+IC.pencil+' New task</div>';
   o+='<div class="field" style="margin:0"><label class="field-label">Task</label><input class="field-input" id="td-name" placeholder="e.g. Refill prescriptions" value="'+(item?esc(item.n):'')+'"></div>';
   o+='<div class="field" style="margin:0"><label class="field-label">When <span class="opt">(optional)</span></label><input class="field-input" id="td-when" placeholder="e.g. 14 days" value="'+(item&&item.when?esc(item.when):'')+'"></div>';
-  o+=todoAssignField(creator);
+  o+=todoAssignField(creator,true);
+  o+='<div class="field" style="margin:0"><label class="field-label">Completion</label><div class="seg"><button class="seg-btn'+(!S._tdEach?' on':'')+'" onclick="tdFormEach(false)">One person completes it</button><button class="seg-btn'+(S._tdEach?' on book':'')+'" onclick="tdFormEach(true)">Everyone checks their own</button></div></div>';
+  if(S._tdEach)o+='<div class="priv-note">Each person ticked under Assign to gets their own checkbox \u2014 tick yourself if this is also yours to do. The task is finished only when everyone has checked theirs off.</div>';
   o+='<div class="field" style="margin:0"><label class="field-label">Privacy</label><div class="seg"><button class="seg-btn'+(!S._tdPriv?' on':'')+'" onclick="tdFormPriv(false)">Visible</button><button class="seg-btn'+(S._tdPriv?' on book':'')+'" onclick="tdFormPriv(true)">'+IC.lock+' Hidden</button></div></div>';
   if(S._tdPriv)o+='<div class="priv-note">Hidden from the trip owner and admins. Anyone you assign it to still sees it; otherwise it\'s just yours.</div>';
   o+=notifyField('To Do');
@@ -5039,13 +5069,13 @@ function todoEditor(item){
   o+='</div>';
   return o;
 }
-function todoAssignField(creator){
-  var mem=tripMembers().filter(function(id){return id!==creator;});
+function todoAssignField(creator,includeSelf){
+  var mem=includeSelf?tripMembers():tripMembers().filter(function(id){return id!==creator;});
   var h='<div class="field" style="margin:0"><label class="field-label">Assign to <span class="opt">(optional — also shows on their list)</span></label>';
-  if(!mem.length){h+='<div class="body-empty" style="text-align:left;padding:2px 0">No one else on this trip to assign to.</div>';return h+'</div>';}
+  if(!mem.filter(function(id){return id!==creator;}).length&&!includeSelf){h+='<div class="body-empty" style="text-align:left;padding:2px 0">No one else on this trip to assign to.</div>';return h+'</div>';}
   h+='<div class="whoselect">';
   for(var i=0;i<mem.length;i++){var p=person(mem[i]);if(!p)continue;var on=S._who&&S._who.has(p.id);
-    h+='<div class="who-opt'+(on?' on':'')+'" onclick="toggleWho(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+'<span class="wcheck">'+IC.checkw.replace('currentColor','#15803D')+'</span></div>';
+    h+='<div class="who-opt'+(on?' on':'')+'" onclick="toggleWho(\''+p.id+'\')"><span class="wdot" style="background:'+p.color+'">'+esc(p.name[0])+'</span>'+esc(p.name)+(includeSelf&&p.id===creator?' <span class="opt">(you)</span>':'')+'<span class="wcheck">'+IC.checkw.replace('currentColor','#15803D')+'</span></div>';
   }
   return h+'</div></div>';
 }
@@ -5884,8 +5914,8 @@ function importPromptText(){
 '     {"airline":"","num":"WN 4657","conf":"","depApt":"BOS","depCity":"Boston","depTime":"5:45 AM","depDate":"","arrApt":"MCO","arrCity":"Orlando","arrTime":"11:50 AM","arrDate":""} ]}',
 '• day:       {"type":"day","day":"","headline":"Magic Kingdom","blurb":"short line under the headline","strategy":"The plan / verbiage for the day. Use blank lines to start a new paragraph.","tags":["Activate APs"],"alert":"optional heads-up"}',
 '   (day-level VERBIAGE for one date — the strategy narrative, headline, blurb, tags and any alert. The first sentence of strategy shows as “The plan” on the Day Plan. One day item per date; it UPDATES the existing day, so omit any field you do not have.)',
-'• todo:      {"type":"todo","text":"Airline online check-in","when":"24h before"}',
-'   (a to-do / checklist task for the trip. when = optional timing label.)',
+'• todo:      {"type":"todo","text":"Airline online check-in","when":"24h before","each":true}',
+'   (a to-do / checklist task for the trip. when = optional timing label. each:true = every assigned person checks it off individually — use for things like online check-in; omit when one person completing it covers everyone.)',
 '• packing:   {"type":"packing","section":"Health","item":"Sunblock","qty":1,"needBuy":false}',
 '   (a packing-list item, grouped under section. qty optional. needBuy:true flags it as “need to get”.)',
 '',
@@ -6036,8 +6066,9 @@ function buildImportItem(it){
   }
   if(t==='todo'||t==='to-do'||t==='task'){
     var tdDone=it.done===true||it.done==='true'||/^done$/i.test(it.status||'');
+    var eachT=it.each===true||it.each==='true'||it.each===1;
     var recT={_kind:'todo',id:impId('td'),trip:tid,by:S.persona,who:[],priv:false,done:tdDone,
-      n:(it.text||it.task||it.n||'')+'',when:(it.when||'')+''};
+      each:eachT,doneBy:{},n:(it.text||it.task||it.n||'')+'',when:(it.when||'')+''};
     var oT=finalizeImport('To Do',recT);
     if(!oT.error&&!recT.n)oT.error='To Do needs a task';
     return oT;
@@ -6156,7 +6187,7 @@ function importReset(){S._importItems=null;S._importEdit=null;S.importStep=1;ren
 
 /* ── CSV template (download → fill in Excel/Sheets → upload) ──
    Reuses the same builder + review screen as the JSON path. */
-var IMPORT_CSV_COLS=['type','name','room','checkin','checkout','inTime','outTime','day','meal','time','park','loc','resort','ride','tier','window','winStart','winEnd','rideTime','afterRide','text','label','airline','num','depApt','depCity','depTime','depDate','arrApt','arrCity','arrTime','arrDate','open','close','early','late','crowd','headline','blurb','strategy','tags','alert','when','section','item','needBuy','conf','status'];
+var IMPORT_CSV_COLS=['type','name','room','checkin','checkout','inTime','outTime','day','meal','time','park','loc','resort','ride','tier','window','winStart','winEnd','rideTime','afterRide','text','label','airline','num','depApt','depCity','depTime','depDate','arrApt','arrCity','arrTime','arrDate','open','close','early','late','crowd','headline','blurb','strategy','tags','alert','when','each','section','item','needBuy','conf','status'];
 function csvEsc(v){v=(v==null?'':String(v));return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}
 function importCsvTemplate(){
   var rows=[IMPORT_CSV_COLS];

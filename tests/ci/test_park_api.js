@@ -813,6 +813,38 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.stopFormNameFirst = stopHtml.indexOf('st-text') >= 0 && stopHtml.indexOf('st-text') < stopHtml.indexOf('st-time');
     S.screen = null;
 
+    // ── Build 410/411: everyone-mode to-dos (each person checks off their own) ──
+    const mem410 = tripMembers().filter(p => p !== 'scott');
+    // creator ticked THEMSELF plus one other → required = exactly the assignees
+    TODO.push({ id: 'tde1', trip: 'jul26', by: 'scott', n: 'ZZ Online check-in', when: '', who: ['scott', mem410[0]], priv: false, each: true, done: false, doneBy: {} });
+    S.persona = 'scott';
+    tdToggle('tde1');
+    const tde1 = TODO.filter(t => t.id === 'tde1')[0];
+    r.eachToggleOnlyMe = !!tde1.doneBy['scott'] && !tde1.doneBy[mem410[0]] && tde1.done === false;
+    const rowMine = todoRow(tde1, false);
+    r.eachRowShowsProgress = rowMine.indexOf('1 of 2 done') >= 0 && rowMine.indexOf('chkbox on') >= 0;
+    // a row rendered FOR another person (admin everyone-view) shows THEIR state, not the viewer's
+    r.eachRowPerPerson = todoRow(tde1, false, null, mem410[0]).indexOf('chkbox on') < 0;
+    // creator NOT ticked → not required: their tap marks nothing
+    TODO.push({ id: 'tde2', trip: 'jul26', by: 'scott', n: 'ZZ Kids only', when: '', who: [mem410[0]], priv: false, each: true, done: false, doneBy: {} });
+    tdToggle('tde2');
+    const tde2 = TODO.filter(t => t.id === 'tde2')[0];
+    r.eachCreatorNotAssumed = Object.keys(tde2.doneBy || {}).length === 0;
+    // an admin can check off another person's copy from the everyone view
+    tdToggle('tde1', mem410[0]);
+    r.eachAdminChecksOther = !!tde1.doneBy[mem410[0]];
+    S.persona = mem410[0];
+    r.eachRowOtherNowChecked = todoRow(tde1, false).indexOf('chkbox on') >= 0;
+    S.persona = 'scott';
+    // the assign field offers the creator themself
+    S.tdForm = { id: null }; S._who = new Set(); S._tdEach = true;
+    r.assignOffersSelf = todoEditor(null).indexOf('(you)') >= 0;
+    S.tdForm = null; S._who = null; S._tdEach = false;
+    const impEach = buildImportItem({ type: 'todo', text: 'ZZ Check in', each: true });
+    r.importTodoEach = !impEach.error && impEach.rec.each === true && !!impEach.rec.doneBy;
+    const impPlain = buildImportItem({ type: 'todo', text: 'ZZ Book dinner' });
+    r.importTodoSharedDefault = !impPlain.error && !impPlain.rec.each;
+
     // ── production build: the engine ships LIVE from Build 392 (user-approved promotion) ──
     const realBuild = window.BUILD;
     window.BUILD = realBuild.replace('-dev', '');
