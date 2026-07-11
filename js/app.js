@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='406';
+var BUILD='407';
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -972,6 +972,28 @@ function papiFetchShowTimes(st,entId,y,m){
     return true;
   });
 }
+/* Capture day-of showtimes from a park's live feed. Unlike the entity
+   monthly schedule endpoint, the live feed currently carries Disney's real
+   performance times. Keep both display forms in sync so Browse rows and the
+   batch time selector see the same data. */
+function papiCaptureLiveShowTimes(st,liveData,ds){
+  var found=0;
+  (liveData||[]).forEach(function(e){
+    if(!e||!e.id||!e.showtimes||!e.showtimes.length)return;
+    var ts=[];
+    e.showtimes.forEach(function(sh){
+      var t=papiT(sh&&(sh.startTime||sh.openingTime)||'');
+      if(t&&ts.indexOf(t)<0)ts.push(t);
+    });
+    if(!ts.length)return;
+    ts.sort(function(a,b){return mins(a)-mins(b);});
+    st.times=st.times||{};(st.times[e.id]=st.times[e.id]||{})[ds]=ts.join(' & ');
+    st.timesList=st.timesList||{};(st.timesList[e.id]=st.timesList[e.id]||{})[ds]=ts;
+    st.timesLive=st.timesLive||{};(st.timesLive[e.id]=st.timesLive[e.id]||{})[ds]=1;
+    found++;
+  });
+  return found;
+}
 /* cached showtime lookups — device cache first, then the synced catalog
    (a fetch-blocked device reads what another device published) */
 function papiShowTime(entId,ds,st0){
@@ -1258,7 +1280,8 @@ function papiFetchCrowd(tr,np,st){
   Object.keys(PAPI_IDS).forEach(function(pk){
     chain=chain.then(function(){
       return papiGet('/entity/'+PAPI_IDS[pk]+'/live','live').then(function(j){
-        var waits=[],byName={},byId={},dnBy={},gotShowtimes=false;
+        var waits=[],byName={},byId={},dnBy={};
+        var gotShowtimes=papiCaptureLiveShowTimes(st,j&&j.liveData,np.date)>0;
         (j&&j.liveData||[]).forEach(function(e){
           var w=e&&e.queue&&e.queue.STANDBY&&e.queue.STANDBY.waitTime;
           if(typeof w==='number'&&e.status==='OPERATING')waits.push(w);
@@ -1281,16 +1304,6 @@ function papiFetchCrowd(tr,np,st){
               fc:fc};
             byName[e.name.toLowerCase()]=rec;
             if(e.id)byId[e.id]=rec;
-          }
-          /* today's REAL performance times — fresher than the monthly schedule */
-          if(e&&e.id&&e.showtimes&&e.showtimes.length){
-            var ts=[];e.showtimes.forEach(function(sh){var t=papiT(sh&&(sh.startTime||sh.openingTime)||'');if(t)ts.push(t);});
-            if(ts.length){
-              ts.sort(function(a,b){return mins(a)-mins(b);});
-              st.times=st.times||{};(st.times[e.id]=st.times[e.id]||{})[np.date]=ts.join(' & ');
-              st.timesLive=st.timesLive||{};(st.timesLive[e.id]=st.timesLive[e.id]||{})[np.date]=1;
-              gotShowtimes=true;
-            }
           }
         });
         parks[pk]={by:byName,byId:byId,dn:dnBy};
@@ -1673,18 +1686,39 @@ function papiShowSweep(pk,ds){
   var key=pk+'_'+ds.slice(0,7);
   window.__papiSweep=window.__papiSweep||{};
   if(window.__papiSweep[key])return;
-  var st=papiData(),list=(st.shows&&st.shows[pk])||[];
+  var st=papiData(),list=papiCatShows(pk);
   if(st.coolUntil&&Date.now()<st.coolUntil)return;   /* respect the rate-limit backoff — don't hammer while blocked */
-  if(!list.length)return;   /* fetch-blocked device: times arrive via the synced catalog */
+  if(!list.length)return;
+  var prevInfo=window.__papiSweepInfo;
+  if(prevInfo&&prevInfo.key===key&&(Date.now()-prevInfo.at)<1000)return;   /* a completion repaint schedules us again */
   window.__papiSweep[key]=1;
-  var y=ds.slice(0,4),m=ds.slice(5,7),got=0,bad=0,chain=Promise.resolve();
-  list.forEach(function(s){
-    chain=chain.then(function(){return papiFetchShowTimes(st,s.id,y,m).then(function(f){if(f)got++;},function(){bad++;});});
-  });
+  /* The initial Browse paint schedules this sweep with setTimeout. Repaint
+     once after marking it active so "Fetching showtimes..." is visible. */
+  if(S.screen&&S.screen.type==='apishows'&&S.screen.day===ds&&(S.screen.pk||dayPrimaryPark(ds)||'mk')===pk)renderScreen_inplace2();
+  var y=ds.slice(0,4),m=ds.slice(5,7),got=0,bad=0,found=0,chain=Promise.resolve();
+  if(ds===nowParts().date&&PAPI_IDS[pk]){
+    /* Day-of performance times live on the park feed. One request replaces
+       the many per-show monthly calls that can succeed with empty arrays. */
+    var lk='live_show_'+pk+'_'+ds;
+    if(st.stamps&&st.stamps[lk]&&(Date.now()-st.stamps[lk])<15*60*1000){
+      list.forEach(function(s){if(papiShowTime(s.id,ds,st))found++;});
+    }else{
+      chain=chain.then(function(){
+        return papiGet('/entity/'+PAPI_IDS[pk]+'/live','live').then(function(j){
+          got++;st.stamps=st.stamps||{};st.stamps[lk]=Date.now();
+          found=papiCaptureLiveShowTimes(st,j&&j.liveData,ds);
+        },function(){bad++;});
+      });
+    }
+  }else{
+    list.forEach(function(s){
+      chain=chain.then(function(){return papiFetchShowTimes(st,s.id,y,m).then(function(f){if(f)got++;if(papiShowTime(s.id,ds,st))found++;},function(){bad++;});});
+    });
+  }
   chain.then(function(){
     delete window.__papiSweep[key];
-    window.__papiSweepInfo={key:key,got:got,bad:bad,at:Date.now()};
-    if(!got){
+    window.__papiSweepInfo={key:key,got:got,bad:bad,found:found,at:Date.now()};
+    if(!got&&bad&&!found){
       /* every fetch failed → let Browse SAY so instead of bare rows */
       if(bad&&S.screen&&S.screen.type==='apishows')renderScreen_inplace2();
       return;
@@ -1698,7 +1732,7 @@ function papiShowSweep(pk,ds){
       Object.keys(st[f]).forEach(function(eid){st2[f][eid]=Object.assign(st2[f][eid]||{},st[f][eid]);});
     });
     st2.stamps=st2.stamps||{};
-    Object.keys(st.stamps||{}).forEach(function(k){if(k.indexOf('sched_')===0&&!st2.stamps[k])st2.stamps[k]=st.stamps[k];});
+    Object.keys(st.stamps||{}).forEach(function(k){if((k.indexOf('sched_')===0||k.indexOf('live_show_')===0)&&!st2.stamps[k])st2.stamps[k]=st.stamps[k];});
     papiSave(st2);
     papiPublishCat(st2);
     if(S.screen&&(S.screen.type==='apishows'||S.screen.type==='showtimes'))renderScreen_inplace2();
@@ -1726,6 +1760,7 @@ function scrApiShows(){
     if(st.coolUntil&&Date.now()<st.coolUntil)body+='<div class="papi-line">Live data is backing off after failed fetches — showtimes resume in ~'+Math.ceil((st.coolUntil-Date.now())/60000)+'m.</div>';
     else if(swActive)body+='<div class="papi-line">Fetching showtimes…</div>';
     else if(swInfo&&swInfo.key===swKey&&swInfo.bad&&!swInfo.got)body+='<div class="papi-line" style="color:#B91C1C">Couldn’t fetch showtimes just now (rate-limited or blocked) — they’ll fill in on a later try.</div>';
+    else if(swInfo&&swInfo.key===swKey&&!swInfo.found)body+='<div class="papi-line">No published showtimes for this day yet.</div>';
   }
   if(list.length)body+='<div class="body-empty" style="text-align:left;padding:2px 2px 8px">Tap a show’s name to add it with the full form, or tick several and set all their times at once.</div>';
   var taken={};SHOWS.concat(PARADES).forEach(function(r){if(r.trip===S.tripId&&r.day===d.date)taken[(r.name||'').toLowerCase()]=1;});
