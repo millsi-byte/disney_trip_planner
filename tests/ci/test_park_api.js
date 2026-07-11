@@ -346,7 +346,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     renderOverlay();
     document.getElementById('dd-name').value = 'zz springs';
     dnNameSuggest('dd-name');
-    r.dineSuggests = document.getElementById('dd-name__sug').innerHTML.indexOf('ZZ Springs Cafe') >= 0 && document.getElementById('dd-name__sug').innerHTML.indexOf('Disney Springs') >= 0;
+    r.dineSuggests = document.getElementById('dd-name__sug').innerHTML.indexOf('ZZ Springs Cafe') >= 0 && document.getElementById('dd-name__sug').innerHTML.indexOf('Springs / Resorts') >= 0;
     dnNamePick('dd-name', 'ZZ Springs Cafe', 'ds');
     r.dinePickSetsLoc = S._formLoc === 'ds';
     saveDining();
@@ -798,6 +798,7 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     // ── Build 408: resorts — autocomplete, dining resort field, badge names ──
     r.rsShortTrims = rsShort("Disney's Pop Century Resort") === 'Pop Century' && rsShort("Disney's Grand Floridian Resort & Spa") === 'Grand Floridian';
     r.hotelsCatalog = papiCatHotels().some(h => h.name === 'ZZ Grand Hotel');
+    r.resortListMerged = rsAllResorts().indexOf("Disney's Pop Century Resort") >= 0 && rsAllResorts().indexOf('ZZ Grand Hotel') >= 0;
     S.screen = { type: 'resortedit' }; S._formInit = '';
     r.resortFormAutocomplete = scrResortEdit().indexOf("rsNameSuggest") >= 0;
     S.screen = { type: 'adddining', day: DAY, seed: { loc: 'rs' } }; S._formInit = '';

@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='408-dev';
+var BUILD='409-dev';
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -2773,9 +2773,18 @@ function papiCatRides(pk){var st=papiData();return (st.rides&&st.rides[pk])||(PA
 function papiCatShows(pk){var st=papiData();return (st.shows&&st.shows[pk])||(PAPICAT.shows&&PAPICAT.shows[pk])||[];}
 function papiCatDining(loc){var st=papiData();return (st.dining&&st.dining[loc])||(PAPICAT.dining&&PAPICAT.dining[loc])||[];}
 function papiCatHotels(){var st=papiData();return (st.hotels&&st.hotels.length)?st.hotels:((PAPICAT.hotels&&PAPICAT.hotels.length)?PAPICAT.hotels:[]);}
+/* the API has NO hotel entities for WDW (verified: destination /children is
+   parks/attractions/shows/restaurants only) — resorts are a stable, curated
+   list. Any hotels the API ever adds merge in on top. */
+var WDW_RESORTS=["Disney's All-Star Movies Resort","Disney's All-Star Music Resort","Disney's All-Star Sports Resort","Disney's Animal Kingdom Lodge","Disney's Art of Animation Resort","Disney's Beach Club Resort","Disney's BoardWalk Inn","Disney's Caribbean Beach Resort","Disney's Contemporary Resort","Disney's Coronado Springs Resort","Disney's Fort Wilderness Resort & Campground","Disney's Grand Floridian Resort & Spa","Disney's Old Key West Resort","Disney's Polynesian Village Resort","Disney's Pop Century Resort","Disney's Port Orleans Resort - French Quarter","Disney's Port Orleans Resort - Riverside","Disney's Riviera Resort","Disney's Saratoga Springs Resort & Spa","Disney's Wilderness Lodge","Disney's Yacht Club Resort","Bay Lake Tower at Disney's Contemporary Resort","Walt Disney World Swan","Walt Disney World Dolphin","Shades of Green"];
+function rsAllResorts(){
+  var out=WDW_RESORTS.slice(),seen={};out.forEach(function(n){seen[n.toLowerCase()]=1;});
+  papiCatHotels().forEach(function(h){if(h&&h.name&&!seen[h.name.toLowerCase()]){seen[h.name.toLowerCase()]=1;out.push(h.name);}});
+  return out;
+}
 /* badge-sized resort name: "Disney's Pop Century Resort" -> "Pop Century" */
 function rsShort(n){return String(n||'').replace(/^Disney's\s+/i,'').replace(/\s+(Resort\s*&\s*(Spa|Campground)|Resort|Villas)\s*$/i,'').trim();}
-var DN_LOCS=[['mk','Magic Kingdom'],['ep','EPCOT'],['hs','Hollywood Studios'],['ak','Animal Kingdom'],['ds','Disney Springs'],['rs','Resort']];
+var DN_LOCS=[['mk','Magic Kingdom'],['ep','EPCOT'],['hs','Hollywood Studios'],['ak','Animal Kingdom'],['ds','Springs / Resorts'],['rs','Resort']];
 /* live status for a restaurant (park feeds only — Springs/resort venues
    aren't in the park live data) */
 function papiDineMeta(name){
@@ -2830,7 +2839,7 @@ function rsNameSuggest(id){
   var inp=document.getElementById(id),box=document.getElementById(id+'__sug');
   if(!inp||!box)return;
   var q=inp.value.trim().toLowerCase(),out=[];
-  if(q.length>=2)papiCatHotels().forEach(function(h){if(out.length<8&&h.name.toLowerCase().indexOf(q)>=0)out.push(h.name);});
+  if(q.length>=2)rsAllResorts().forEach(function(n){if(out.length<8&&n.toLowerCase().indexOf(q)>=0)out.push(n);});
   box.innerHTML=out.map(function(n){return '<div class="papi-sug" data-n="'+esc(n)+'" onclick="rsNamePick(\''+id+'\',this.getAttribute(\'data-n\'))">'+esc(n)+'</div>';}).join('');
 }
 function rsNamePick(id,name){
