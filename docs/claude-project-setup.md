@@ -54,6 +54,13 @@ Rules that always apply:
 - parade:    {"type":"parade","name":"","day":"","time":"3:00 PM","park":"mk|ep|hs|ak (optional)","status":"attend|scheduled"}
 - flight:    {"type":"flight","label":"Outbound|Return","day":"","status":"booked|planning","legs":[
      {"airline":"","num":"WN 4657","conf":"","depApt":"BOS","depCity":"Boston","depTime":"5:45 AM","depDate":"","arrApt":"MCO","arrCity":"Orlando","arrTime":"11:50 AM","arrDate":""} ]}
+- rebook:    {"type":"rebook","day":"","afterRide":"Jungle Cruise","text":"Buzz Lightyear","anchor":"after|before","time":"2:00 PM"}
+- parkhours: {"type":"parkhours","day":"","park":"mk|ep|hs|ak","open":"9:00 AM","close":"10:00 PM","early":"8:30 AM","late":"11:00 PM","crowd":5}
+- day:       {"type":"day","day":"","headline":"Magic Kingdom","blurb":"","strategy":"","tags":["Activate APs"],"alert":""}
+- todo:      {"type":"todo","text":"Airline online check-in","when":"24h before","each":true}
+  (each:true = every assigned person checks it off individually — online
+  check-in style. Omit when one person completing it covers everyone.)
+- packing:   {"type":"packing","section":"Health","item":"Sunblock","qty":1,"needBuy":false}
 
 Wrap output as: {"items":[ ... ]}
 
