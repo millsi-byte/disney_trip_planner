@@ -845,6 +845,14 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     const impPlain = buildImportItem({ type: 'todo', text: 'ZZ Book dinner' });
     r.importTodoSharedDefault = !impPlain.error && !impPlain.rec.each;
 
+    // ── Build 412: the app opens on TODAY when the trip is underway ──
+    // __nowOverride is pinned to 2026-07-15; demo trip runs 07-14..19 → index 1
+    r.defDayIsToday = defDayIdx() === 1 && tripDays()[defDayIdx()].date === DAY;
+    const saveNow = window.__nowOverride;
+    window.__nowOverride = { date: '2026-09-01', mins: 600 };   // outside the trip → first day
+    r.defDayOutsideTrip = defDayIdx() === 0;
+    window.__nowOverride = saveNow;
+
     // ── production build: the engine ships LIVE from Build 392 (user-approved promotion) ──
     const realBuild = window.BUILD;
     window.BUILD = realBuild.replace('-dev', '');
