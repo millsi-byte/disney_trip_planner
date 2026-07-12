@@ -50,7 +50,7 @@ var IC = {
 var S = {
   tripId:"jul26",
   tab:"home",
-  dayIdx:1,            // default to first real park day
+  dayIdx:0,            // boot + trip switches land on today via defDayIdx()
   fmode:"all",         // primary person filter: all | mine | notme
   filter:new Set(),    // specific-person filter (rare); non-empty overrides fmode
   planView:"dayplan",  // agenda view: dayplan (Daily Agenda: strategy + day plan) | all (Daily Planning: everything)
@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='411-dev';
+var BUILD='412-dev';
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -664,7 +664,7 @@ function activeParty(){return partyById(S.partyId)||visibleParties()[0]||PARTIES
    cloud workspace name (which can be a stale "Planning Party" default) */
 function partyLabel(){var g=activeParty();return (g&&g.name)||(window.CLOUD&&window.CLOUD.partyName)||'Group';}
 function ensureActiveParty(){var vg=visibleParties();if(!vg.length){S.partyId=(PARTIES[0]||{}).id||null;return;}for(var i=0;i<vg.length;i++)if(vg[i].id===S.partyId)return;S.partyId=vg[0].id;}
-function switchParty(pid){if(pid===S.partyId){closeSheet();return;}S.partyId=pid;savePartyId();ensureVisibleTrip();S.dayIdx=0;S.open=defOpen();S.fmode='all';S.filter.clear();closeSheet();toast('Group: '+((partyById(pid)||{}).name||''));render();}
+function switchParty(pid){if(pid===S.partyId){closeSheet();return;}S.partyId=pid;savePartyId();ensureVisibleTrip();S.dayIdx=defDayIdx();S.open=defOpen();S.fmode='all';S.filter.clear();closeSheet();toast('Group: '+((partyById(pid)||{}).name||''));render();}
 function trip(){for(var i=0;i<TRIPS.length;i++)if(TRIPS[i].id===S.tripId)return TRIPS[i];return visibleTrips()[0]||TRIPS[0];}
 /* trips the current persona may see: within the active party; admins see all of
    it, others only trips they own or are a member of (owning always wins) */
@@ -704,6 +704,14 @@ var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'
 function monOf(ds){return MON[parseInt(ds.slice(5,7),10)-1]||'';}
 function tripDays(){return DAYS.filter(function(d){return d.trip===S.tripId;}).sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:0;});}
 function day(){var ds=tripDays();return ds[S.dayIdx]||ds[0]||null;}
+/* the day to land on when the app opens or the trip changes: TODAY when the
+   trip is underway, otherwise the first day */
+function defDayIdx(){
+  var days=tripDays();if(!days.length)return 0;
+  var np=nowParts();
+  for(var i=0;i<days.length;i++)if(days[i].date===np.date)return i;
+  return 0;
+}
 function dayByDate(ds){for(var i=0;i<DAYS.length;i++)if(DAYS[i].trip===S.tripId&&DAYS[i].date===ds)return DAYS[i];return null;}
 function fmtDay(ds){var d=dayByDate(ds);return d?(monOf(ds)+" "+d.d+" · "+d.dl):ds;}
 /* park visits — first-class items that drive each day\'s park */
@@ -2931,7 +2939,7 @@ function openSheet(def){S.sheet=def;renderOverlay();requestAnimationFrame(functi
 /* only tears down the sheet — must NOT re-render screen-host, or a screen
    opened right after (e.g. New trip) loses its slide-in and flies off */
 function closeSheet(){var host=document.getElementById('sheet-host');var b=host&&host.firstChild;if(b){b.classList.remove('in');setTimeout(function(){S.sheet=null;var hh=document.getElementById('sheet-host');if(hh)hh.innerHTML='';},240);}else{S.sheet=null;var h2=document.getElementById('sheet-host');if(h2)h2.innerHTML='';}}
-function switchTrip(id){saveLists();S.tripId=id;saveTripId();var _st=tripById(id);if(_st&&_st.parties&&_st.parties[0]&&partyById(_st.parties[0])){S.partyId=_st.parties[0];savePartyId();}loadLists();S.dayIdx=0;S.tab="home";S.open=defOpen();S.fmode='all';S.filter.clear();closeSheet();toast("Switched to "+trip().name);render();}
+function switchTrip(id){saveLists();S.tripId=id;saveTripId();var _st=tripById(id);if(_st&&_st.parties&&_st.parties[0]&&partyById(_st.parties[0])){S.partyId=_st.parties[0];savePartyId();}loadLists();S.dayIdx=defDayIdx();S.tab="home";S.open=defOpen();S.fmode='all';S.filter.clear();closeSheet();toast("Switched to "+trip().name);render();}
 
 /* screens (slide-in) */
 /* leaf edit forms — opening one of these from a list/management screen should
@@ -9774,6 +9782,7 @@ if(!awaitingFirstCloudSync())materializeAllDays();
 ensureActiveParty();
 ensureVisibleTrip();
 loadLists();
+S.dayIdx=defDayIdx();
 S.open=defOpen();
 render();
 /* Zero-latency lock: if this device has a real cloud account but hasn't yet
