@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='412';
+var BUILD='413';
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -8678,7 +8678,7 @@ function scrSection(){
   var m=map[sec]||['Section',IC.route,'var(--ink)'];
   var owned=(sec!=='hours');   /* park hours have no per-item owner → no Mine/Everyone filter */
   function fnote(label){return '<div class="body-empty">No '+label+(filterActive()?' for the current filter':'')+' yet.</div>';}
-  var body='',add='',TD=tripDays(),dft=(TD[1]||TD[0]||{date:''}).date;
+  var body='',add='',TD=tripDays(),dft=(TD[defDayIdx()]||TD[0]||{date:''}).date;
   if(sec==='dining'){
     for(var i=0;i<TD.length;i++){var din=diningFor(TD[i].date).filter(function(x){return visible(x.who);});if(!din.length)continue;
       body+=dayHd(TD[i].date);for(var j=0;j<din.length;j++)body+='<div class="ov-card'+(isPlanningStatus(din[j].status)?' planning':'')+'">'+diningRow(din[j])+'</div>';}

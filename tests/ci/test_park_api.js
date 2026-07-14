@@ -853,6 +853,11 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
     r.defDayOutsideTrip = defDayIdx() === 0;
     window.__nowOverride = saveNow;
 
+    // ── Build 413: Plan sections (and their Browse buttons) default to TODAY ──
+    S.screen = { type: 'section', section: 'rides' };
+    r.sectionBrowseDefaultsToday = scrSection().indexOf("type:'apirides',day:'" + DAY + "'") >= 0;
+    S.screen = null;
+
     // ── production build: the engine ships LIVE from Build 392 (user-approved promotion) ──
     const realBuild = window.BUILD;
     window.BUILD = realBuild.replace('-dev', '');
