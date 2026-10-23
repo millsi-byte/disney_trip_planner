@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='413';
+var BUILD='414';
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -3428,6 +3428,28 @@ function pkStartFromTemplate(){
   PACKING[S.persona]=t?t.map(function(c){return {cat:c.cat,items:(c.items||[]).map(function(it){return {n:it.n,qty:it.qty,l:!!it.l,store:it.store||'',priv:!!it.priv,done:false,needBuy:false,who:[]};})};}):[];
   pkMarkStarted(S.persona);saveLists();toast(t&&t.length?'Loaded your template':'Your template is empty');refreshLists();
 }
+/* load the global template into a list that's already started: MERGE, never
+   wipe — add any template section/item the trip list lacks (names matched
+   case-insensitively), leaving existing items and their packed state alone */
+function pkLoadTemplate(){
+  var t=PACKING_TMPL[S.persona]||[];
+  if(!t.some(function(c){return c.items&&c.items.length;})){toast('Your template is empty');return;}
+  var mine=PACKING[S.persona]||(PACKING[S.persona]=[]),added=0;
+  function key(x){return String(x||'').trim().toLowerCase();}
+  t.forEach(function(tc){
+    var sec=null;for(var i=0;i<mine.length;i++){if(key(mine[i].cat)===key(tc.cat)){sec=mine[i];break;}}
+    if(!sec){sec={cat:tc.cat,items:[]};mine.push(sec);}
+    if(!sec.items)sec.items=[];
+    (tc.items||[]).forEach(function(it){
+      if(sec.items.some(function(x){return key(x.n)===key(it.n);}))return;
+      sec.items.push({n:it.n,qty:it.qty,l:!!it.l,store:it.store||'',priv:!!it.priv,done:false,needBuy:false,who:[]});added++;
+    });
+  });
+  pkMarkStarted(S.persona);
+  if(added)saveLists();
+  toast(added?'Added '+added+' item'+(added===1?'':'s')+' from your template':'Everything in your template is already on this list');
+  refreshLists();
+}
 function pkStartEmpty(){if(!PACKING[S.persona])PACKING[S.persona]=[];pkMarkStarted(S.persona);refreshLists();}
 function pkSaveAsTemplate(){
   PACKING_TMPL[S.persona]=(PACKING[S.persona]||[]).map(function(c){return {cat:c.cat,items:(c.items||[]).map(function(it){return {n:it.n,qty:it.qty,l:!!it.l,store:it.store||'',priv:!!it.priv};})};});
@@ -4652,9 +4674,10 @@ function packEveryoneView(){
 function packSticky(pid){
   var done=0,tot=0;(PACKING[pid]||[]).forEach(function(c){(c.items||[]).forEach(function(it){tot++;if(it.done)done++;});});
   var pct=tot?Math.round(done/tot*100):0;
+  var load=(pid===S.persona&&pkHasStarted(pid)&&pkTmplCount())?'<button class="prog-btn blu" onclick="pkLoadTemplate()">Load my template</button>':'';
   return '<div class="plan-sticky"><div class="prog-label">'+done+' of '+tot+' packed</div>'
     +'<div class="prog-outer"><div class="prog-inner" style="width:'+pct+'%"></div></div>'
-    +'<div class="prog-actions"><button class="prog-btn blu" onclick="pkSaveAsTemplate()">Save as my template</button></div></div>';
+    +'<div class="prog-actions">'+load+'<button class="prog-btn blu" onclick="pkSaveAsTemplate()">Save as my template</button></div></div>';
 }
 function pbHead(pid,done,total){var p=person(pid);
   return '<div class="person-block-hd"><span class="pbdot" style="background:'+p.color+'">'+p.name[0]+'</span><span class="pbname">'+esc(p.name)+(pid===S.persona?' (you)':'')+'</span><span class="pbcount">'+done+'/'+total+'</span></div>';
