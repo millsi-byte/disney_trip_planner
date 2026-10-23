@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='414';
+var BUILD='415';
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -3580,6 +3580,24 @@ function tdStartFromTemplate(){
   for(var i=0;i<tmpl.length;i++)TODO.push({id:'td'+Date.now()+'_'+i,trip:S.tripId,by:S.persona,done:false,n:tmpl[i].n,when:tmpl[i].when||'',priv:!!tmpl[i].priv,who:[]});
   tdMarkStarted(S.persona);saveTODO();toast(tmpl.length?'Loaded your template':'Your template is empty');refreshTodo();
 }
+/* load the global template into a list that's already started: MERGE, never
+   wipe — add template to-dos you don't already have on this trip (names matched
+   case-insensitively against your own items), leaving existing ones alone */
+function tdLoadTemplate(){
+  var tmpl=(TODO_TMPL[S.persona]||[]).filter(function(t){return t&&t.n;});
+  if(!tmpl.length){toast('Your template is empty');return;}
+  function key(x){return String(x||'').trim().toLowerCase();}
+  var have={};tdMine(S.persona).forEach(function(t){have[key(t.n)]=1;});
+  var added=0,ts=Date.now();
+  tmpl.forEach(function(t,i){
+    if(have[key(t.n)])return;have[key(t.n)]=1;
+    TODO.push({id:'td'+ts+'_'+i,trip:S.tripId,by:S.persona,done:false,n:t.n,when:t.when||'',priv:!!t.priv,who:[]});added++;
+  });
+  tdMarkStarted(S.persona);
+  if(added)saveTODO();
+  toast(added?'Added '+added+' to-do'+(added===1?'':'s')+' from your template':'Everything in your template is already on this list');
+  refreshTodo();
+}
 function tdStartEmpty(){tdMarkStarted(S.persona);refreshTodo();}
 function tdSaveAsTemplate(){
   var mine=tdMine(S.persona);
@@ -5028,7 +5046,8 @@ function todoSticky(items){
   var o='<div class="plan-sticky">';
   o+='<div class="prog-label">'+done+' of '+total+' done</div>';
   o+='<div class="prog-outer"><div class="prog-inner" style="width:'+pct+'%"></div></div>';
-  o+='<div class="prog-actions"><button class="prog-btn blu" onclick="tdSaveAsTemplate()">Save as my template</button></div></div>';
+  var load=(tdHasStarted(S.persona)&&tdTmplCount())?'<button class="prog-btn blu" onclick="tdLoadTemplate()">Load my template</button>':'';
+  o+='<div class="prog-actions">'+load+'<button class="prog-btn blu" onclick="tdSaveAsTemplate()">Save as my template</button></div></div>';
   return o;
 }
 function todoStarter(){
