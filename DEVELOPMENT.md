@@ -1,23 +1,35 @@
 # Development guide — Baseline Tap
 
-This branch (`dev`) is the working copy for all roadmap work. The safety model
-exists because the production branch **is** production: every push to
-`claude/disney-trip-planner-design-p89zx9` auto-deploys to the live site the
-family uses. Read this before changing anything.
+The `dev` branch is the working copy for all new work. The safety model exists
+because the `production` branch **is** production: every push to `production`
+auto-deploys to the live site the family uses. Read this before changing
+anything.
 
 ## The two branches
 
 | Branch | What it is | What a push does |
 |---|---|---|
-| `claude/disney-trip-planner-design-p89zx9` | **PRODUCTION.** Frozen at Build 345 until after the trip. | Auto-deploys to disney-trip-planner-447d7.web.app within minutes. |
-| `dev` | All new work (audit roadmap items). Shows "(DEV)" in the title and `<n>-dev` as the build. | Deploys **nothing** automatically. Preview deploys are manual-only; every push runs the CI test suite. |
+| `production` | **PRODUCTION.** The live site. Currently Build 415. | Auto-deploys to disney-trip-planner-447d7.web.app within minutes. |
+| `dev` | All new work. Shows "(DEV)" in the title and `<n>-dev` as the build. | Deploys **nothing** automatically. Preview deploys are manual-only; every push runs the CI test suite. |
 
-Rules of the freeze:
-- **No pushes to the production branch until after the trip**, except a
-  genuinely necessary hotfix — and then cherry-pick a single verified commit,
-  never merge `dev` wholesale.
-- After the trip: merge `dev` → production in roadmap-step-sized pieces, each
-  with its tests run first, never all at once.
+Rules:
+- **Never push straight to `production`.** Open a pull request from `dev` (or a
+  short-lived feature branch) into `production`. The PR runs the CI suite, and
+  merging it is what publishes to the live site.
+- Promote in reviewable pieces with tests run first, not in one big merge.
+- Keep `dev` current: after a merge to `production`, merge `production` back
+  down into `dev` so the next piece of work starts from shipped code.
+- Bump `BUILD` in `js/app.js` and `CACHE` in `sw.js` together on every change
+  that ships; `dev` carries the `-dev` suffix, `production` does not.
+
+### History note (Oct 2026)
+Builds 353–415 were promoted through one-off `release-<n>` branches, each
+merged into production by PR and then abandoned. That pattern left ~20 dead
+branches behind and has been retired — the `release-*` branches were deleted
+once their content was verified present in production. Use a PR from `dev`
+instead. The production branch was also renamed from
+`claude/disney-trip-planner-design-p89zx9` to `production`; the old name
+survives only in closed PRs #1–#22.
 
 ## Three ways to run the dev copy, by risk level
 
