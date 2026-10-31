@@ -8,7 +8,7 @@ on:
   push:
     branches: [dev]
   pull_request:
-    branches: [claude/disney-trip-planner-design-p89zx9]
+    branches: [production]
   workflow_dispatch:
 
 jobs:

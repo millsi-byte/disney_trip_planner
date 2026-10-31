@@ -3,7 +3,7 @@ name: Deploy to Firebase Hosting
 on:
   push:
     branches:
-      - claude/disney-trip-planner-design-p89zx9
+      - production
   workflow_dispatch:
 
 jobs:
