@@ -90,7 +90,7 @@ function awaitingFirstCloudSync(){
 /* schema guard — when the saved-data shape changes, bump this so old
    localStorage is cleared instead of breaking the app */
 var DATA_VERSION='11';
-var BUILD='415';
+var BUILD='416';
 var PALETTE=[['#2563EB','Blue'],['#DB2777','Pink'],['#16A34A','Green'],['#EA580C','Orange'],['#7C3AED','Purple'],['#0891B2','Teal'],['#CA8A04','Gold'],['#DC2626','Red'],['#4F46E5','Indigo'],['#0D9488','Emerald'],['#9333EA','Violet'],['#475569','Slate']];
 /* Global error capture (audit F-10: the app knew about failures it never
    surfaced). Every uncaught error / rejection lands in a ring buffer
@@ -4827,13 +4827,15 @@ function notifyPackAssign(it,target){
    ============================================================ */
 function listContext(){return '<div class="pg-sub" style="margin:-2px 0 12px">'+esc(trip().name)+'</div>';}
 
-/* ── Print / Save-as-PDF for the three lists (Build 359) ─────────────────
+/* ── Print / Save-as-PDF for the three lists (Build 359, iOS fix 416) ────
    Builds a clean, paper-friendly version of whatever the list currently
-   shows (same mine/everyone scope, person filter, and hide-completed state)
-   into #print-host, then hands it to the browser's native print dialog —
-   which prints to a printer OR saves as PDF. #print-host is display:none on
-   screen and only revealed by the @media print rule, so nothing about the
-   live UI changes. */
+   shows (same mine/everyone scope, person filter, and hide-completed state).
+   Desktop hands that sheet to the browser print dialog (print or Save as PDF).
+   iPhone/iPad cannot use that path: WebKit drops window.print() unless it
+   runs in the tap itself, and the installed Home Screen app has no print
+   dialog at all — the button did nothing. On those devices the same sheet
+   goes out as a PDF through the system share sheet, which offers Print and
+   Save to Files. */
 function printBar(kind){
   return '<div style="display:flex;justify-content:flex-end;margin:0 2px 10px">'
     +'<button class="btn-secondary" style="width:auto;margin:0;padding:7px 14px;font-size:13px" onclick="printCurrentList(\''+kind+'\')">🖨 Print / Save PDF</button></div>';
@@ -4959,18 +4961,196 @@ function prWishMeta(w){
   var by=person(w.by);if(by)m.push('by '+by.name);
   return m.filter(Boolean).join(' · ');
 }
-function printCurrentList(kind){
+/* iPhone, iPod, and iPad. iPadOS sends a desktop Mac user-agent, so a
+   touch-screen "Mac" counts too. navigator.standalone is the Home Screen app. */
+function isIOSSignals(ua, platform, touches, standalone){
+  if(standalone) return true;
+  ua=ua||'';
+  if(/iPad|iPhone|iPod/.test(ua)) return true;
+  if((platform||'')==='MacIntel' && (touches||0)>1) return true;
+  return false;
+}
+function isIOSDevice(){
+  try{
+    return isIOSSignals(navigator.userAgent, navigator.platform, navigator.maxTouchPoints, navigator.standalone===true);
+  }catch(e){ return false; }
+}
+function printFileBase(kind){
+  var t=trip();
+  var label=kind==='packing'?'Packing List':kind==='todo'?'To-Do List':kind==='wishlist'?'Wish List':'List';
+  var name=(t&&t.name)?String(t.name):'Trip';
+  var base=(name+' '+label).replace(/[^\w.\- ]+/g,'').replace(/\s+/g,' ').trim();
+  if(!base) base=label;
+  if(base.length>80) base=base.slice(0,80).trim();
+  return base;
+}
+/* Keep the PDF in WinAnsi/Helvetica. Checkboxes become [ ] / [x]. */
+function pdfSanitize(s){
+  return String(s==null?'':s)
+    .replace(/\u00a0/g,' ')
+    .replace(/[\u2018\u2019\u2032]/g,"'")
+    .replace(/[\u201C\u201D]/g,'"')
+    .replace(/[\u2013\u2014]/g,'-')
+    .replace(/\u2026/g,'...')
+    .replace(/\u00d7/g,'x')
+    .replace(/\u00b7/g,'-')
+    .replace(/\u2610/g,'[ ] ')
+    .replace(/[\u2611\u2612]/g,'[x] ')
+    .replace(/[\r\n\t]+/g,' ')
+    .replace(/[^\x20-\x7E]/g,' ')
+    .replace(/ {2,}/g,' ')
+    .trim();
+}
+function pdfEscape(s){ return String(s).replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)'); }
+function wrapPdfLine(text, size, bold, maxW){
+  var maxChars=Math.max(8, Math.floor(maxW/(size*(bold?0.56:0.52))));
+  var words=String(text).split(' '), lines=[], cur='';
+  for(var i=0;i<words.length;i++){
+    var w=words[i];
+    if(!w) continue;
+    while(w.length>maxChars){
+      if(cur){ lines.push(cur); cur=''; }
+      lines.push(w.slice(0,maxChars));
+      w=w.slice(maxChars);
+    }
+    if(!w) continue;
+    if(!cur) cur=w;
+    else if((cur+' '+w).length<=maxChars) cur+=' '+w;
+    else { lines.push(cur); cur=w; }
+  }
+  if(cur) lines.push(cur);
+  return lines.length?lines:[''];
+}
+/* One block per on-screen line. Nested divs (the sheet header) are walked
+   so each title, section, and item becomes its own PDF line. */
+function htmlToPrintLines(html){
+  var root=document.createElement('div');
+  root.innerHTML=html||'';
+  var lines=[];
+  function emit(el){
+    if(!el||el.nodeType!==1) return;
+    var kids=[];
+    for(var i=0;i<el.children.length;i++){ if(el.children[i].tagName==='DIV') kids.push(el.children[i]); }
+    if(kids.length){ kids.forEach(emit); return; }
+    var text=(el.textContent||'').replace(/\s+/g,' ').trim();
+    if(!text) return;
+    var style=el.getAttribute('style')||'';
+    var sm=style.match(/font-size:\s*(\d+(?:\.\d+)?)px/);
+    var size=sm?Math.round(parseFloat(sm[1])):12;
+    lines.push({text:text, size:size, bold:/font-weight:\s*700/.test(style)});
+  }
+  emit(root.firstElementChild||root);
+  return lines;
+}
+function assemblePdf(pageStreams){
+  var n=pageStreams.length, font1=3+n*2, font2=font1+1, objs=[], kids=[];
+  objs.push('<< /Type /Catalog /Pages 2 0 R >>');
+  for(var i=0;i<n;i++) kids.push((3+i*2)+' 0 R');
+  objs.push('<< /Type /Pages /Kids ['+kids.join(' ')+'] /Count '+n+' >>');
+  for(var p=0;p<n;p++){
+    var stream=pageStreams[p];
+    objs.push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents '+(4+p*2)+' 0 R /Resources << /Font << /F1 '+font1+' 0 R /F2 '+font2+' 0 R >> >> >>');
+    objs.push('<< /Length '+stream.length+' >>\nstream\n'+stream+'endstream');
+  }
+  objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>');
+  var pdf='%PDF-1.4\n', offsets=[0];
+  for(var o=0;o<objs.length;o++){
+    offsets.push(pdf.length);
+    pdf+=(o+1)+' 0 obj\n'+objs[o]+'\nendobj\n';
+  }
+  var xrefPos=pdf.length;
+  pdf+='xref\n0 '+(objs.length+1)+'\n';
+  pdf+='0000000000 65535 f \n';
+  for(var x=1;x<offsets.length;x++) pdf+=('0000000000'+offsets[x]).slice(-10)+' 00000 n \n';
+  pdf+='trailer << /Size '+(objs.length+1)+' /Root 1 0 R >>\nstartxref\n'+xrefPos+'\n%%EOF';
+  return pdf;
+}
+function buildListPdf(lines){
+  var pageH=792, margin=54, maxW=612-margin*2;
+  var pages=[], content='', y=pageH-margin, first=true;
+  function breakPage(){ if(content) pages.push(content); content=''; y=pageH-margin; first=true; }
+  (lines||[]).forEach(function(ln){
+    var size=ln.size||12;
+    if(size>22) size=22;
+    if(size<9) size=9;
+    var text=pdfSanitize(ln.text);
+    if(!text) return;
+    var leading=Math.round(size*1.35)+2;
+    var parts=wrapPdfLine(text, size, !!ln.bold, maxW);
+    var gap=(!first && ln.bold)?(size>=16?8:4):0;
+    parts.forEach(function(piece, idx){
+      var need=leading+(idx===0?gap:0);
+      if(y-need<margin) breakPage();
+      if(idx===0 && gap && !first) y-=gap;
+      content+='BT /'+(ln.bold?'F2':'F1')+' '+size+' Tf 1 0 0 1 '+margin+' '+(y-size)+' Tm ('+pdfEscape(piece)+') Tj ET\n';
+      y-=leading;
+      first=false;
+    });
+  });
+  if(content) pages.push(content);
+  if(!pages.length) pages.push('BT /F1 12 Tf 1 0 0 1 54 720 Tm (Nothing to print) Tj ET\n');
+  return assemblePdf(pages);
+}
+/* Synchronous on purpose: iOS only honors share/print inside the tap. */
+function shareListPdf(kind, html){
+  try{
+    if(typeof navigator.share!=='function' || typeof navigator.canShare!=='function') return false;
+    var base=printFileBase(kind);
+    var pdf=buildListPdf(htmlToPrintLines(html));
+    var bytes=new Uint8Array(pdf.length);
+    for(var i=0;i<pdf.length;i++) bytes[i]=pdf.charCodeAt(i)&255;
+    var file=new File([bytes], base+'.pdf', {type:'application/pdf'});
+    if(!navigator.canShare({files:[file]})) return false;
+    var pending=navigator.share({files:[file], title:base});
+    if(pending&&typeof pending.catch==='function') pending.catch(function(err){
+      if(err&&err.name==='AbortError') return;
+      toast('Could not open the share sheet');
+    });
+    return true;
+  }catch(e){ return false; }
+}
+/* Last resort when this iOS browser cannot share a file. The window stays
+   open: iOS shows the print sheet asynchronously, and closing here would
+   dismiss it before it appears. */
+function printViaPopup(html, title){
+  var w=null;
+  try{ w=window.open('', '_blank'); }catch(e){ w=null; }
+  if(!w) return false;
+  try{
+    w.document.open();
+    w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+esc(title)+'</title>'
+      +'<style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#000;margin:16px}@media print{body{margin:0}}</style>'
+      +'</head><body>'+html+'</body></html>');
+    w.document.close();
+    w.focus();
+    w.print();
+    return true;
+  }catch(e){
+    try{ w.close(); }catch(e2){}
+    return false;
+  }
+}
+function printViaHost(html){
   var host=document.getElementById('print-host');
   if(!host){toast('Printing not available here');return;}
+  host.innerHTML=html;
+  /* Short delay so the sheet is in the DOM before desktop print. Do NOT clear
+     on 'afterprint': iOS Safari fires it the instant a print sheet opens,
+     which used to blank the preview. #print-host stays display:none on screen
+     and is cleared when you leave the list (clearPrintHost in closeScreen). */
+  setTimeout(function(){try{window.print();}catch(e){toast('Printing not available on this device');host.innerHTML='';}},80);
+}
+function printCurrentList(kind){
   var html=kind==='packing'?prPackingHTML():kind==='todo'?prTodoHTML():kind==='wishlist'?prWishHTML():'';
   if(!html){toast('Nothing to print');return;}
-  host.innerHTML=html;
-  /* Do NOT clear on 'afterprint': iOS Safari fires it the instant the print
-     sheet opens, which blanked the preview before it could render. #print-host
-     is display:none on screen, so leaving the content in place is invisible
-     and harmless — it's replaced on the next print and cleared when you leave
-     the list (clearPrintHost in closeScreen). */
-  setTimeout(function(){try{window.print();}catch(e){toast('Printing not available on this device');host.innerHTML='';}},80);
+  if(isIOSDevice()){
+    if(shareListPdf(kind, html)) return;
+    if(printViaPopup(html, printFileBase(kind))) return;
+    toast('Printing not available on this device');
+    return;
+  }
+  printViaHost(html);
 }
 function clearPrintHost(){try{var h=document.getElementById('print-host');if(h)h.innerHTML='';}catch(e){}}
 function scrTodo(){

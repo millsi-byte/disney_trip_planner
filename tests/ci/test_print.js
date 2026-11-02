@@ -1,7 +1,9 @@
-/* Build 359: Print / Save-as-PDF for the three lists.
+/* Build 359 / 416: Print / Save-as-PDF for the three lists.
    Verifies each builder produces a clean sheet, respects the hide-completed
    and everyone/mine scope filters, and that printCurrentList populates
-   #print-host, calls window.print(), and clears on afterprint. */
+   #print-host, calls window.print(), and clears on afterprint.
+   On iPhone/iPad the same button must hand a PDF to the system share sheet
+   (Print / Save to Files) instead of the deferred window.print() iOS ignores. */
 const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
 
 (async () => {
@@ -68,6 +70,102 @@ const { chromium, APP_URL, LAUNCH_OPTS, report } = require('../_env');
 
     // print-host is hidden on screen (only shown by @media print)
     r.printHostHiddenOnScreen = getComputedStyle(document.getElementById('print-host')).display === 'none';
+
+    // the on-screen button is wired to the same path (desktop still prints)
+    window.__printed = 0;
+    openScreen({type:'packlist'});
+    var btn = document.querySelector('#screen-host button[onclick*="printCurrentList"]');
+    r.printButtonPresent = !!btn && btn.textContent.indexOf('Print / Save PDF') >= 0;
+    if (btn) btn.click();
+    await new Promise(res => setTimeout(res, 160));
+    r.printButtonCallsPrint = window.__printed === 1;
+    r.printButtonFillsHost = document.getElementById('print-host').innerHTML.indexOf('Packing List') >= 0;
+
+    // ── iOS device detection (iPadOS uses a desktop Mac user-agent) ──
+    r.iosPhone = isIOSSignals('Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1', 'iPhone', 5, false) === true;
+    r.iosPad = isIOSSignals('Mozilla/5.0 (iPad; CPU OS 18_5 like Mac OS X) AppleWebKit/605.1.15', 'iPad', 5, false) === true;
+    r.iosPadDesktopUA = isIOSSignals('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15', 'MacIntel', 5, false) === true;
+    r.iosHomeScreen = isIOSSignals('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15', 'MacIntel', 0, true) === true;
+    r.iosMacIsDesktop = isIOSSignals('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15', 'MacIntel', 0, false) === false;
+    r.iosAndroidIsNo = isIOSSignals('Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36', 'Linux armv8l', 5, false) === false;
+
+    // ── iOS share sheet receives a real PDF of the current list ──
+    isIOSDevice = function(){ return true; };
+    window.__shareCalls = 0;
+    window.__shared = null;
+    var shareFn = function(data){ window.__shareCalls++; window.__shared = data; return Promise.resolve(); };
+    var canYes = function(data){ return !!(data && data.files && data.files.length); };
+    try {
+      Object.defineProperty(navigator, 'share', {configurable:true, writable:true, value:shareFn});
+      Object.defineProperty(navigator, 'canShare', {configurable:true, writable:true, value:canYes});
+    } catch (e) {
+      navigator.share = shareFn;
+      navigator.canShare = canYes;
+    }
+    window.__printed = 0;
+    PACKING.scott[0].items.push({ n: 'ZZPDFITEM', done: false, qty: 1, store: 'bag' });
+    localStorage.setItem('bt_pkHideDone', '0');
+    printCurrentList('packing');
+    r.iosShareCalled = window.__shareCalls === 1 && window.__shared.files.length === 1;
+    r.iosDidNotCallWindowPrint = window.__printed === 0;
+    var f = window.__shared.files[0];
+    r.iosPdfType = f.type === 'application/pdf' && /\.pdf$/.test(f.name) && f.name.indexOf('Packing List') >= 0;
+    var pdfTxt = new TextDecoder('latin1').decode(await f.arrayBuffer());
+    r.iosPdfHeader = pdfTxt.indexOf('%PDF-1.4') === 0 && /%%EOF\s*$/.test(pdfTxt);
+    r.iosPdfHasList = pdfTxt.indexOf('Packing List') >= 0 && pdfTxt.indexOf('ZZPDFITEM') >= 0 && pdfTxt.indexOf('[ ]') >= 0;
+    r.iosPdfKeepsQty = pdfTxt.indexOf('Suitcase x7') >= 0;
+    r.iosPdfStructure = (function(txt){
+      var sm = txt.match(/startxref\n(\d+)\n%%EOF\s*$/);
+      if (!sm) return false;
+      var at = parseInt(sm[1], 10);
+      if (txt.slice(at, at + 5) !== 'xref\n') return false;
+      var re = /\/Length (\d+) >>\nstream\n/g, m, ok = false;
+      while ((m = re.exec(txt))) {
+        ok = true;
+        var len = parseInt(m[1], 10);
+        var start = m.index + m[0].length;
+        if (txt.slice(start, start + len).length !== len) return false;
+        if (txt.slice(start + len, start + len + 9) !== 'endstream') return false;
+      }
+      return ok;
+    })(pdfTxt);
+
+    PACKING.scott[0].items.push({ n: 'ZZ (paren) item', done: false, qty: 1, store: 'bag' });
+    printCurrentList('packing');
+    var pdf2 = new TextDecoder('latin1').decode(await window.__shared.files[0].arrayBuffer());
+    r.iosPdfEscapesParens = pdf2.indexOf('ZZ \\(paren\\) item') >= 0 && /%%EOF\s*$/.test(pdf2);
+
+    PACKING.scott[0].items.push({ n: 'ZZHIDEME', done: true, qty: 1, store: 'person' });
+    localStorage.setItem('bt_pkHideDone', '1');
+    printCurrentList('packing');
+    var pdf3 = new TextDecoder('latin1').decode(await window.__shared.files[0].arrayBuffer());
+    r.iosPdfHidesPacked = pdf3.indexOf('ZZHIDEME') < 0 && pdf3.indexOf('ZZPDFITEM') >= 0;
+    localStorage.setItem('bt_pkHideDone', '0');
+
+    var many = [];
+    for (var i = 0; i < 90; i++) many.push({text:'Row ' + i + ' sunscreen shirts socks', size:14, bold:false});
+    var big = buildListPdf(many);
+    r.iosPdfMultipage = (big.match(/\/Type \/Page /g) || []).length >= 2;
+
+    // no file-share support: still do something in the same tap (not the
+    // 80ms desktop timer, which iOS would ignore)
+    var callsBefore = window.__shareCalls;
+    window.__printed = 0;
+    window.__opened = null;
+    var canNo = function(){ return false; };
+    try { Object.defineProperty(navigator, 'canShare', {configurable:true, writable:true, value:canNo}); }
+    catch (e2) { navigator.canShare = canNo; }
+    window.open = function(){
+      var doc = { html:'', open:function(){}, close:function(){}, write:function(h){ this.html += h; } };
+      var w = { document:doc, focus:function(){}, print:function(){ window.__printed++; }, close:function(){} };
+      window.__opened = w;
+      return w;
+    };
+    printCurrentList('todo');
+    r.iosFallbackSyncPrint = window.__printed === 1
+      && window.__shareCalls === callsBefore
+      && window.__opened
+      && window.__opened.document.html.indexOf('To-Do List') >= 0;
 
     return r;
   });
